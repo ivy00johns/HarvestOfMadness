@@ -226,6 +226,21 @@ export interface WorldApi {
 }
 
 // ---------------------------------------------------------------------------
+// Render seam (v1.1 addendum) — implemented by WorldScene (world-agent),
+// consumed by the agent pipeline (agents-agent) for sprite + speech rendering.
+// Agents are data; the world scene owns all drawing.
+// ---------------------------------------------------------------------------
+
+export interface RenderApi {
+  /** idempotent; labeled circle placeholder when no art is present */
+  registerAgentSprite(name: string, color: number, pos: Vec2): void;
+  /** tween/walk the sprite toward tile pos; instant when speed multiplier high */
+  setAgentPos(name: string, pos: Vec2): void;
+  /** transient speech bubble above the sprite (~4s, truncate ~60 chars) */
+  showSpeech(name: string, text: string): void;
+}
+
+// ---------------------------------------------------------------------------
 // §8 Observability — event log + inspector data model (PDoM pattern: every
 // decision groups its spans under one turnId)
 // ---------------------------------------------------------------------------
