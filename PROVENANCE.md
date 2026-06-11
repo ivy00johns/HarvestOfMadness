@@ -9,7 +9,8 @@ lift code. Source repos:
 
 | Source | Module | Target | Refactor notes |
 |---|---|---|---|
-| FreeLLMAPI | `lib/error-redaction.ts` + `lib/content.ts` error-redaction/content-coercion patterns | `server/llm/*` | pending W1 (llm-agent): sanitize upstream errors into the ApiError envelope; never leak the key |
+| FreeLLMAPI | `server/src/lib/error-redaction.ts` (`sanitizeProviderErrorMessage`) | `server/llm/redact.ts` (`sanitizeErrorMessage`) | W1 (llm-agent): vendored the full REDACTIONS table (Bearer/sk-/gsk_/freellmapi-/AIza/JWT/URL patterns), whitespace collapse, 240-char cap; renamed export, default message "Upstream error"; applied to every ApiError envelope the proxy emits |
+| FreeLLMAPI | `server/src/lib/content.ts` (`contentToString`) | `server/llm/content.ts` | W1 (llm-agent): vendored only `contentToString` (string/null/array-of-blocks → string, accepts typeless `{text}` Gemini-style blocks); dropped flatten/image/outbound-normalize helpers and the `@freellmapi/shared` type import — used to coerce upstream `choices[0].message.content` into `CompleteResponse.raw` |
 | PDoM | decision-pipeline patterns: parse-retry-once, `turnId` trace chain, OTel `llm_call` fields | `src/agents/*` + `src/obs/*` | pending W2 (agents-agent + obs-agent): strip the tick barrier, async per mission §6; trace shapes per contracts/types.ts |
 
 Engine note: Phaser 4 (`phaser@^4.1.0`) is published and stable on npm, so the
