@@ -1,0 +1,92 @@
+openapi: 3.1.0
+info:
+  title: Harvest of Madness — agent proxy API
+  version: 1.0.0
+  description: >
+    Thin Express proxy. Holds the FreeLLMAPI unified key server-side and
+    forwards agent decision requests to the running FreeLLMAPI instance.
+    Conventions: no trailing slashes; Content-Type application/json; all
+    fields camelCase; errors use the ApiError envelope (contracts/types.ts).
+servers:
+  - url: http://localhost:8787
+paths:
+  /api/health:
+    get:
+      summary: Liveness + upstream reachability
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, upstream, decisionsToday, dailyCeiling]
+                properties:
+                  status: { type: string, const: ok }
+                  upstream: { type: string, enum: [ok, unreachable, unauthorized] }
+                  decisionsToday: { type: integer }
+                  dailyCeiling: { type: integer }
+  /api/agent/complete:
+    post:
+      summary: One agent decision completion via FreeLLMAPI
+      description: >
+        Forwards to POST {FREELLMAPI_BASE_URL}/v1/chat/completions with
+        model=$FREELLMAPI_MODEL (default "auto"), messages=[{role:system},
+        {role:user}], stream=false. Response model = X-Routed-Via header when
+        present, else body.model. latencyMs measured server-side. Server
+        increments a UTC-day decision counter; past DAILY_CEILING returns 429
+        budget_exceeded WITHOUT calling upstream.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agentId, system, user]
+              properties:
+                agentId: { type: string }
+                system: { type: string }
+                user: { type: string }
+                jsonSchema: { type: object }
+      responses:
+        "200":
+          description: Completion
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [raw, model, latencyMs]
+                properties:
+                  raw: { type: string }
+                  model: { type: string }
+                  latencyMs: { type: number }
+                  tokensIn: { type: integer }
+                  tokensOut: { type: integer }
+        "400": { $ref: "#/components/responses/Err" } # invalid_request_error
+        "401": { $ref: "#/components/responses/Err" } # authentication_error (bad/missing FREELLMAPI_API_KEY)
+        "429": { $ref: "#/components/responses/Err" } # rate_limit_error | budget_exceeded
+        "502": { $ref: "#/components/responses/Err" } # upstream_error
+components:
+  responses:
+    Err:
+      description: ApiError envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [message, type]
+                properties:
+                  message: { type: string, maxLength: 240 }
+                  type:
+                    type: string
+                    enum:
+                      - authentication_error
+                      - rate_limit_error
+                      - budget_exceeded
+                      - upstream_error
+                      - invalid_request_error
+                      - server_error
