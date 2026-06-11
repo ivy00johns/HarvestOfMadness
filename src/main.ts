@@ -1,36 +1,36 @@
 /**
- * STUB — world-agent (W1) replaces this file with the real bootstrap
- * (src/main.ts + src/config.ts + src/scenes/*). It exists only so
- * `npm run dev` renders something on day zero.
+ * Harvest of Madness — game bootstrap.
+ *
+ * Logical resolution is the tilemap (24*16 x 18*16 = 384x288), zoomed x2 and
+ * letterboxed/fit to the window. World + TimeSystem singletons live in
+ * src/world/instance.ts (getWorld()) — import from there, never construct.
+ *
+ * W2 carve-out: obs-agent adds `import { UIScene } ...` and appends it to
+ * the SCENES array below. Keep that the only edit this file needs.
  */
 import Phaser from "phaser";
+import { MAP_HEIGHT, MAP_WIDTH, TILE_SIZE } from "@contracts/types";
+import { BACKGROUND_COLOR, GAME_ZOOM } from "./config";
+import { BootScene } from "./scenes/BootScene";
+import { WorldScene } from "./scenes/WorldScene";
 
-class PendingScene extends Phaser.Scene {
-  constructor() {
-    super("pending");
-  }
-
-  create(): void {
-    this.add
-      .text(
-        this.scale.width / 2,
-        this.scale.height / 2,
-        "Harvest of Madness — world engine pending",
-        {
-          fontFamily: "ui-monospace, Menlo, monospace",
-          fontSize: "20px",
-          color: "#9be89b",
-        },
-      )
-      .setOrigin(0.5);
-  }
-}
+const SCENES: Phaser.Types.Scenes.SceneType[] = [BootScene, WorldScene];
 
 new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
-  width: 768,
-  height: 576,
-  backgroundColor: "#101014",
-  scene: [PendingScene],
+  pixelArt: true,
+  backgroundColor: BACKGROUND_COLOR,
+  scale: {
+    mode: Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width: MAP_WIDTH * TILE_SIZE,
+    height: MAP_HEIGHT * TILE_SIZE,
+    zoom: GAME_ZOOM,
+    max: {
+      width: MAP_WIDTH * TILE_SIZE * 4,
+      height: MAP_HEIGHT * TILE_SIZE * 4,
+    },
+  },
+  scene: SCENES,
 });
