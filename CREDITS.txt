@@ -1,0 +1,188 @@
+CREDITS — Harvest of Madness v2 Asset Attribution
+==================================================
+
+This file satisfies the attribution requirements for all CC-BY-SA, GPL, and OGA-BY
+licensed assets shipped in public/assets/. You MUST retain this file in any public
+distribution of the repository.
+
+All assets in this project carry licenses that permit redistribution in a public
+repository: CC-BY-SA 3.0, GPL 3.0, or OGA-BY 3.0. No CC-NC, CC-ND, or proprietary
+assets are included.
+
+---
+
+TERRAIN TILESET
+  File: assets/lpc/terrain/terrain.png
+  Title: [LPC] Terrains (v7)
+  Author(s): bluecarrot16, Lanea Zimmerman (Sharm), Daniel Eddeland (Daneeklu),
+             Richard Kettering (Jetrel), Zachariah Husiar (Zabin), Hyptosis,
+             Casper Nilsson, Buko Studios, Nushio, ZaPaper, billknye,
+             William Thompson, caeles, Redshrike, Bertram, Rayane Félix (RayaneFLX)
+  License: CC-BY-SA 3.0 and/or GPL 3.0
+  Source: https://opengameart.org/content/lpc-terrains
+  Modifications: Extracted terrain-v7.png from archive, renamed to terrain.png
+
+---
+
+WATER TILES (primary animation source)
+  File: assets/lpc/water/water_tiles.png
+  Title: LPC Base Assets — water.png
+  Author: Lanea Zimmerman (Sharm)
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  Modifications: Extracted from base assets archive, renamed to water_tiles.png
+
+WATERFALL TILES (supplemental)
+  File: assets/lpc/water/waterfall.png
+  Title: LPC Base Assets — waterfall.png
+  Author: Lanea Zimmerman (Sharm)
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  Modifications: Extracted from base assets archive
+
+ANIMATED WATER (supplemental / decorative)
+  File: assets/lpc/water/wateranimate2.png
+  Title: LPC Animated Water and Waterfalls
+  Author: ZaPaper
+  License: CC-BY-SA 3.0
+  Attribution notice: "Use the original LPC license and attribution. Would be nice
+                       to also link to: http://peterlzy.wix.com/rpgaction"
+  Source: https://opengameart.org/content/lpc-animated-water-and-waterfalls
+  Modifications: None
+
+---
+
+FARMING TILESETS
+  Files: assets/lpc/farming/farming.png, assets/lpc/farming/fence.png,
+         assets/lpc/farming/plowed_soil.png
+  Title: [LPC] Farming Tilesets, Magic Animations and UI Elements
+  Author: Daniel Eddeland (Daneeklu)
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-farming-tilesets-magic-animations-and-ui-elements
+  Modifications: Extracted farming_fishing.png, fence.png, plowed_soil.png from archive;
+                 renamed farming_fishing.png to farming.png
+
+---
+
+CROPS SPRITESHEET
+  File: assets/lpc/crops/crops.png
+  Extracted strips: assets/lpc/crops/potato_strip.png, parsnip_strip.png,
+                    carrot_strip.png, turnip_strip.png
+  Title: [LPC] Crops (v2.1)
+  Author(s): bluecarrot16, Daniel Eddeland (daneeklu), Joshua Taylor,
+             Richard Kettering (Jetrel). Commissioned by castelonia.
+  License: CC-BY-SA 3.0+ / GPL 3.0+
+  Source: https://opengameart.org/content/lpc-crops
+  Based on:
+    - [LPC] Farming Tilesets by Daniel Eddeland (CC-BY-SA 3.0 / GPL 3.0)
+      https://opengameart.org/content/lpc-farming-tilesets-magic-animations-and-ui-elements
+    - Fruit and Veggie Inventory by Joshua Taylor (CC-BY-SA 3.0 / GPL 3.0)
+      https://opengameart.org/content/fruit-and-veggie-inventory
+    - RPG item set by Richard Kettering (CC0)
+      https://opengameart.org/content/rpg-item-set
+  Modifications: Extracted individual 160x64 px crop strips (5 stages x 32px width x 64px height)
+                 for parsnip (crop index 7: row 1 col 1 in sheet),
+                 potato (crop index 0: row 0 col 0),
+                 carrot (crop index 6: row 1 col 0),
+                 turnip (crop index 10: row 1 col 4)
+
+---
+
+FRUIT TREES
+  File: assets/lpc/trees/fruit-trees.png
+  Title: [LPC] Fruit Trees
+  Author(s): bluecarrot16, Joshua Taylor, cynicmusic. Commissioned by castelonia.
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-fruit-trees
+  Based on:
+    - Fruit and Veggie Inventory by Joshua Taylor (CC-BY-SA 3.0 / GPL 3.0)
+      https://opengameart.org/content/fruit-and-veggie-inventory
+    - Pixelsphere 32x32 Tileset by cynicmusic (CC0)
+      http://opengameart.org/content/pixelsphere-32x32-tileset-grass-trees
+  Modifications: Extracted fruit-trees.png from archive
+
+BASE TREE TILES
+  Files: assets/lpc/trees/treetop.png, assets/lpc/trees/trunk.png
+  Title: LPC Base Assets — treetop.png, trunk.png
+  Author: Lanea Zimmerman (Sharm)
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  Modifications: Extracted from base assets archive
+
+---
+
+BUILDING TILESET
+  File: assets/lpc/buildings/house.png
+  Title: LPC Base Assets — house.png
+  Author: Lanea Zimmerman (Sharm)
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  Modifications: Extracted from base assets archive
+
+---
+
+CHARACTER SPRITESHEETS
+
+  File: assets/characters/farmer_male.png
+  Composite of layers from LPC Character Sprites (walkcycle/BODY_male.png,
+  LEGS_pants_greenish.png, TORSO_leather_armor_shirt_white.png, HEAD_leather_armor_hat.png)
+  Author(s): Johannes Sjölund (wulax). Body/base layers by Lanea Zimmerman (Sharm) and
+             Stephen Challener (Redshrike) from LPC Base Assets.
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/lpc-medieval-fantasy-character-sprites
+  Modifications: Composited 4 layer PNGs using ImageMagick -flatten to create single spritesheet
+
+  File: assets/characters/village_woman.png
+  Title: LPC Base Assets — female_walkcycle.png
+  Author: Stephen Challener (Redshrike), based on work by Lanea Zimmerman (Sharm)
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  Modifications: Copied and renamed from base assets
+
+  File: assets/characters/soldier.png
+  Title: LPC Base Assets — soldier.png
+  Author: Manuel Riecke (MrBeast)
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  Modifications: Copied and renamed from base assets
+
+  File: assets/characters/princess.png
+  Title: LPC Base Assets — princess.png
+  Author: Lanea Zimmerman (Sharm)
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/liberated-pixel-cup-lpc-base-assets-sprites-map-tiles
+  Modifications: Copied and renamed from base assets
+
+  File: assets/characters/mage.png
+  Composite of layers from LPC Character Sprites (walkcycle/BODY_male.png,
+  LEGS_robe_skirt.png, TORSO_robe_shirt_brown.png, HEAD_robe_hood.png)
+  Author(s): Johannes Sjölund (wulax). Body/base layers by Lanea Zimmerman (Sharm) and
+             Stephen Challener (Redshrike) from LPC Base Assets.
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0
+  Source: https://opengameart.org/content/lpc-medieval-fantasy-character-sprites
+  Modifications: Composited 4 layer PNGs using ImageMagick -flatten to create single spritesheet
+
+---
+
+CC-BY-SA 3.0 NOTICE
+====================
+
+Creative Commons Attribution-ShareAlike 3.0 Unported
+
+You are free to:
+  Share — copy and redistribute the material in any medium or format
+  Adapt — remix, transform, and build upon the material for any purpose, even commercially
+
+Under the following terms:
+  Attribution — You must give appropriate credit, provide a link to the license, and
+                indicate if changes were made.
+  ShareAlike — If you remix, transform, or build upon the material, you must distribute
+               your contributions under the same license as the original.
+
+Full license text: http://creativecommons.org/licenses/by-sa/3.0/
+
+All CC-BY-SA assets in this project are also dual-licensed under GPL 3.0:
+  https://www.gnu.org/licenses/gpl-3.0.html
+
+OGA-BY 3.0 (for applicable assets by Lanea Zimmerman and Stephen Challener):
+  https://opengameart.org/content/oga-by-30-faq
