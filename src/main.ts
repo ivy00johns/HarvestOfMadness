@@ -13,8 +13,9 @@ import { MAP_HEIGHT, MAP_WIDTH, TILE_SIZE } from "@contracts/types";
 import { BACKGROUND_COLOR, GAME_ZOOM } from "./config";
 import { BootScene } from "./scenes/BootScene";
 import { WorldScene } from "./scenes/WorldScene";
+import { UIScene } from "./scenes/UIScene";
 
-const SCENES: Phaser.Types.Scenes.SceneType[] = [BootScene, WorldScene];
+const SCENES: Phaser.Types.Scenes.SceneType[] = [BootScene, WorldScene, UIScene];
 
 new Phaser.Game({
   type: Phaser.AUTO,
