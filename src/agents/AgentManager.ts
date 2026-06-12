@@ -6,9 +6,12 @@
  * EXECUTING (multi-frame action) -> IDLE.
  *
  * Daily ceiling (domain rule 5, manager side): a manager-level counter of
- * decisions for the current UTC date; past maxDecisionsPerDay ALL agents are
- * routed via mockRouter and ONE budget_reached event is emitted. The counter,
- * per-agent decisionsToday, and the ceiling latch reset on UTC date change.
+ * LIVE-router decisions for the current UTC date — §6's MAX_DECISIONS_PER_DAY
+ * is a COST kill-switch, so $0 mock decisions never count (whether mock by
+ * VITE_MODEL_MODE, per-agent budget fallback, or the latch itself). Past
+ * maxDecisionsPerDay ALL agents are routed via mockRouter and ONE
+ * budget_reached event is emitted. The counter, per-agent decisionsToday,
+ * and the ceiling latch reset on UTC date change.
  *
  * HUD API (consumed by obs-agent): pause/resume/step/setSpeed/agents/isPaused.
  */
@@ -69,6 +72,7 @@ export class AgentManager {
   private speed = 1;
   private inFlight = 0;
   private readonly lastDecisionAt = new Map<string, number>();
+  /** LIVE-router decisions this UTC date (cost ceiling) — NOT all cycles. */
   private decisionsThisUtcDay = 0;
   private utcDayKey = currentUtcDayKey();
   private ceilingReached = false;
@@ -211,8 +215,19 @@ export class AgentManager {
     for (const a of this.agentList) a.decisionsToday = 0;
   }
 
-  private routerForDecision(): Router {
-    if (this.ceilingReached) return mockRouter;
+  /**
+   * Would the NEXT decision for this agent hit the live (costed) path?
+   * False when the manager latch is down, the agent is on its per-agent
+   * budget fallback, or the base router IS the mock (VITE_MODEL_MODE=mock /
+   * unset). An injected test router counts as live.
+   */
+  private nextDecisionIsLive(agent: Agent): boolean {
+    if (this.ceilingReached || agent.budgetFallback) return false;
+    return (this.baseRouter ?? getRouter()) !== mockRouter;
+  }
+
+  private routerForDecision(agent: Agent): Router {
+    if (this.ceilingReached || agent.budgetFallback) return mockRouter;
     return this.baseRouter ?? getRouter();
   }
 
@@ -221,20 +236,22 @@ export class AgentManager {
     opts: { ignorePause?: boolean },
   ): Promise<void> {
     this.rolloverUtcDay();
-    this.decisionsThisUtcDay++;
-    if (
-      !this.ceilingReached &&
-      this.decisionsThisUtcDay > this.config.maxDecisionsPerDay
-    ) {
-      this.ceilingReached = true;
-      const t = getWorld().time();
-      this.bus.emit({
-        day: t.day,
-        phase: t.phase,
-        kind: "budget_reached",
-        text: `Daily decision ceiling (${this.config.maxDecisionsPerDay}) reached — all agents fall back to the mock heuristic`,
-        payload: { scope: "manager", ceiling: this.config.maxDecisionsPerDay },
-      });
+    // CEILING math counts live (costed) decisions ONLY — mock turns are $0
+    // and must never trip the kill-switch (W4 finding). agent.decisionsToday/
+    // decisionsTotal keep counting EVERY cycle for the HUD (AgentRuntime).
+    if (this.nextDecisionIsLive(agent)) {
+      this.decisionsThisUtcDay++;
+      if (this.decisionsThisUtcDay > this.config.maxDecisionsPerDay) {
+        this.ceilingReached = true;
+        const t = getWorld().time();
+        this.bus.emit({
+          day: t.day,
+          phase: t.phase,
+          kind: "budget_reached",
+          text: `Daily live-decision ceiling (${this.config.maxDecisionsPerDay}) reached — all agents fall back to the mock heuristic`,
+          payload: { scope: "manager", ceiling: this.config.maxDecisionsPerDay },
+        });
+      }
     }
 
     // Semaphore slot covers THINKING only; released when EXECUTING begins.
@@ -253,7 +270,7 @@ export class AgentManager {
         world: getWorld(),
         agents: this.agentList,
         bus: this.bus,
-        router: this.routerForDecision(),
+        router: this.routerForDecision(agent),
         onExecuting: () => {
           release();
           agent.fsm = "EXECUTING";

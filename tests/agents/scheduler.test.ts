@@ -107,16 +107,17 @@ describe("in-flight semaphore", () => {
   });
 });
 
-describe("daily ceiling (domain rule 5, manager side)", () => {
-  it("past maxDecisionsPerDay all agents flip to mock and budget_reached fires once", async () => {
+describe("daily ceiling (domain rule 5, manager side — counts LIVE decisions only)", () => {
+  it("past maxDecisionsPerDay live decisions, all agents flip to mock and budget_reached fires once", async () => {
     let liveCalls = 0;
-    const counting: Router = async () => {
+    // injected router !== mockRouter -> counts as the live (costed) path
+    const fakeLive: Router = async () => {
       liveCalls++;
       return waitResponse("live-stub");
     };
     manager = new AgentManager({
       config: { decisionCooldownMs: 200, maxConcurrentDecisions: 3, maxDecisionsPerDay: 3 },
-      router: counting,
+      router: fakeLive,
     });
     manager.start(personas(1));
     await vi.advanceTimersByTimeAsync(3_000);
@@ -134,6 +135,56 @@ describe("daily ceiling (domain rule 5, manager side)", () => {
       .filter((e) => e.kind === "llm_call")
       .pop();
     expect(lastLlm?.payload?.model).toBe("mock");
+  });
+
+  it("mock mode NEVER latches: $0 decisions don't count toward the cost ceiling", async () => {
+    // no injected router -> getRouter() -> mockRouter under vitest (mode unset)
+    manager = new AgentManager({
+      config: { decisionCooldownMs: 200, maxConcurrentDecisions: 3, maxDecisionsPerDay: 3 },
+    });
+    manager.start(personas(1));
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    // far more cycles than the ceiling, yet no badge and no latch
+    expect(totalDecisions(manager)).toBeGreaterThan(3);
+    const budgetEvents = getEventBus()
+      .recent()
+      .filter((e) => e.kind === "budget_reached");
+    expect(budgetEvents).toHaveLength(0);
+    for (const e of getEventBus().recent().filter((x) => x.kind === "llm_call")) {
+      expect(e.payload?.model).toBe("mock");
+    }
+    // HUD counters still track every cycle
+    expect(manager.agents()[0].decisionsToday).toBeGreaterThan(3);
+  });
+
+  it("per-agent budget-fallback decisions stop counting toward the manager ceiling", async () => {
+    let liveCalls = 0;
+    const budgetRouter: Router = async () => {
+      liveCalls++;
+      return {
+        raw: "",
+        model: "unknown",
+        latencyMs: 1,
+        error: "budget_exceeded: server says no",
+      };
+    };
+    manager = new AgentManager({
+      config: { decisionCooldownMs: 200, maxConcurrentDecisions: 3, maxDecisionsPerDay: 2 },
+      router: budgetRouter,
+    });
+    manager.start(personas(1));
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    // decision 1 hit the live path once, flipped the agent to its per-agent
+    // fallback; every later cycle is mock and counts 0 -> ceiling (2) never trips
+    expect(liveCalls).toBe(1);
+    expect(totalDecisions(manager)).toBeGreaterThan(2);
+    const budgetEvents = getEventBus()
+      .recent()
+      .filter((e) => e.kind === "budget_reached");
+    expect(budgetEvents).toHaveLength(1); // the per-agent event only
+    expect(budgetEvents[0].payload).toMatchObject({ scope: "agent" });
   });
 });
 
