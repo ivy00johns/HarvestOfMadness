@@ -45,6 +45,31 @@ export interface InspectableAgent {
   decisionsTotal: number;
   /** newest-first */
   trace: DecisionTraceEntry[];
+
+  // -- v2 optional fields (cognition-agent provides them when its seams land;
+  //    everything below degrades to "absent" without throwing) ----------------
+  /** sprite color (Agent.color — what bootstrap passes registerAgentSprite) */
+  color?: number;
+  /** current DailyPlan step text */
+  planStep?: string | null;
+  /**
+   * relationship rows — tolerated shapes: contract `{name, affinity, summary}`
+   * arrays, RelationshipSummary `{otherName, affinity, summary}` arrays, or
+   * the v1 `Record<string, number>` TALK_TO counter (ignored — not affinity).
+   */
+  relationships?: unknown;
+  /** preferred over `relationships` when present (cognition-agent's choice) */
+  relationshipSummaries?: unknown;
+  memoryCount?: number;
+  reflectionCount?: number;
+}
+
+/**
+ * Contract card + obs-local extras. `color` links the card to the sprite
+ * (v1 defect c); contracts/** stays untouched — this extension lives here.
+ */
+export interface ObsAgentCardModel extends AgentCardModel {
+  color?: number;
 }
 
 /** Normalize either persona shape to the display string the card wants. */
@@ -59,12 +84,84 @@ export function truncate(text: string, maxChars: number): string {
   return `${text.slice(0, maxChars)}… (+${hidden} chars)`;
 }
 
+/** Relationship rows shown on a card (top by |affinity|). */
+export const RELATIONSHIP_TOP_N = 3;
+
+/**
+ * Normalize whatever relationship shape the agent carries into contract
+ * `{name, affinity, summary}` rows. Liberal in what it accepts: items may
+ * use `name` or `otherName`; non-arrays (e.g. the v1 Record<string, number>
+ * TALK_TO counter — counts, not affinity) normalize to [].
+ */
+export function normalizeRelationships(
+  raw: unknown,
+): { name: string; affinity: number; summary: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const rows: { name: string; affinity: number; summary: string }[] = [];
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue;
+    const r = item as Record<string, unknown>;
+    const name =
+      typeof r.name === "string"
+        ? r.name
+        : typeof r.otherName === "string"
+          ? r.otherName
+          : null;
+    const affinity =
+      typeof r.affinity === "number" && Number.isFinite(r.affinity)
+        ? Math.max(-100, Math.min(100, Math.round(r.affinity)))
+        : null;
+    if (name === null || affinity === null) continue;
+    rows.push({
+      name,
+      affinity,
+      summary: typeof r.summary === "string" ? r.summary : "",
+    });
+  }
+  return rows;
+}
+
+/** Top-N rows by |affinity| (strongest bonds AND grudges surface first). */
+export function topRelationships<T extends { affinity: number }>(
+  rows: T[],
+  n: number = RELATIONSHIP_TOP_N,
+): T[] {
+  return rows
+    .slice()
+    .sort((a, b) => Math.abs(b.affinity) - Math.abs(a.affinity))
+    .slice(0, Math.max(0, n));
+}
+
+/** Bar slots in a card affinity meter row. */
+export const AFFINITY_BAR_SLOTS = 5;
+
+/**
+ * One affinity meter row: "Sage      ██░░░ +24". Monospace text keeps the
+ * meter a single Text object per row (no per-row rect churn). Any nonzero
+ * affinity lights at least one slot.
+ */
+export function formatAffinityRow(
+  name: string,
+  affinity: number,
+  nameWidth = 9,
+): string {
+  const clipped = name.length > nameWidth ? `${name.slice(0, nameWidth - 1)}…` : name;
+  const padded = clipped.padEnd(nameWidth, " ");
+  const magnitude = Math.min(100, Math.abs(affinity));
+  let filled = Math.round((magnitude / 100) * AFFINITY_BAR_SLOTS);
+  if (magnitude > 0 && filled === 0) filled = 1;
+  const bar = "█".repeat(filled) + "░".repeat(AFFINITY_BAR_SLOTS - filled);
+  const sign = affinity > 0 ? `+${affinity}` : `${affinity}`;
+  return `${padded} ${bar} ${sign}`;
+}
+
 /**
  * Build the contract card for one agent. Thought/say come from defensively
  * re-parsing the newest trace entry's raw response (the trace stores raw
  * model text verbatim); a parse-failed turn yields nulls, never a throw.
+ * v2 optional fields ride along only when the agent actually carries them.
  */
-export function buildAgentCard(agent: InspectableAgent): AgentCardModel {
+export function buildAgentCard(agent: InspectableAgent): ObsAgentCardModel {
   const newest: DecisionTraceEntry | null = agent.trace[0] ?? null;
   const needParse = agent.lastThought === undefined || agent.lastSay === undefined;
   const parsed =
@@ -72,7 +169,13 @@ export function buildAgentCard(agent: InspectableAgent): AgentCardModel {
       ? parseAgentAction(newest.rawResponse)
       : null;
 
-  return {
+  const relationships = normalizeRelationships(
+    agent.relationshipSummaries !== undefined && Array.isArray(agent.relationshipSummaries)
+      ? agent.relationshipSummaries
+      : agent.relationships,
+  );
+
+  const card: ObsAgentCardModel = {
     name: agent.name,
     persona: personaText(agent.persona),
     gold: agent.gold,
@@ -91,6 +194,15 @@ export function buildAgentCard(agent: InspectableAgent): AgentCardModel {
     fsm: agent.fsm,
     trace: agent.trace.slice(0, TRACE_CAP),
   };
+
+  if (typeof agent.color === "number") card.color = agent.color;
+  if (agent.planStep !== undefined) card.planStep = agent.planStep;
+  if (relationships.length > 0) card.relationships = relationships;
+  if (typeof agent.memoryCount === "number") card.memoryCount = agent.memoryCount;
+  if (typeof agent.reflectionCount === "number") {
+    card.reflectionCount = agent.reflectionCount;
+  }
+  return card;
 }
 
 /** Collapsed one-liner for a trace entry in the expandable panel. */

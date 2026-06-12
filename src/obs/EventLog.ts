@@ -25,6 +25,15 @@ const KIND_COLORS: Record<string, number> = {
   economy: 0xffd700,
   day_advanced: 0xbb9af7,
   budget_reached: 0xff5555,
+  // v2 kinds (open union; colors local to src/obs — config.ts is render-agent's)
+  reflection: 0xc678dd,
+  plan_created: 0x56b6c2,
+  relationship_updated: 0xff9e64,
+  gift_given: 0xff79c6,
+  agent_emote: 0x9aa0aa, // feed-suppressed; color kept for completeness
+  llm_offline: 0xff5555,
+  llm_recovered: 0x9ece6a,
+  agent_error: 0xf7768e,
 };
 
 export const DEFAULT_EVENT_COLOR = 0x9aa0aa;
@@ -54,9 +63,14 @@ const PHASE_ABBREV: Record<string, string> = {
   night: "ngt",
 };
 
+/** "D2·aft" — the stamp prefix shared by every feed line. */
+export function formatStamp(day: number, phase: string): string {
+  return `D${day}·${PHASE_ABBREV[phase] ?? phase}`;
+}
+
 /** One feed line: "D2·aft Mira: watered (3,7)" — truncated, single line. */
 export function formatEventLine(e: WorldEvent, maxChars = 64): string {
-  const stamp = `D${e.day}·${PHASE_ABBREV[e.phase] ?? e.phase}`;
+  const stamp = formatStamp(e.day, e.phase);
   const who = e.agentName ? `${e.agentName}: ` : "";
   const text = e.text.replace(/\s+/g, " ").trim();
   const line = `${stamp} ${who}${text}`;

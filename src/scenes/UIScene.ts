@@ -3,125 +3,191 @@
  *
  * Runs as a parallel scene over WorldScene (auto-started via `active: true`;
  * last in main.ts' scene array, so it renders on top). Layout in the logical
- * 384x288 space:
- *   - top bar: controls (pause/step/speed) left, Day/phase/speed + badges right
- *   - agent cards: right column, click a card to open its decision trace panel
- *   - event log: bottom-left, newest ~12 lines colored by kind
+ * 768x576 space (24*32 x 18*32 — see src/obs/layout.ts, where the math is
+ * pure and unit-tested):
+ *   - top row: controls (pause/step/speed) left, Day/phase/speed right
+ *   - badge row: the kill-switch badge (rule 13 — LIVE / LLM OFFLINE / MOCK
+ *     MODE) centered, PAUSED + BUDGET badges beside it
+ *   - agent cards: right column — sprite-color swatch, gold/energy, PLAN
+ *     step, goal, thought, last action, affinity meter (top 3), M:/R: stats;
+ *     click a card (or a feed turn line) to open its decision trace panel
+ *   - event feed: bottom-left — collapsed decision turns (one line per
+ *     turnId), "— Day N —" separators, emphasized dialogue lines
  *
- * Update discipline (contract §8): cards re-render on EventBus events with a
- * ~150ms trailing throttle plus a 500ms timer for live energy/FSM/clock —
- * NEVER per-frame text rebuilds. Phaser 4.1 gotcha respected: no nested
- * containers anywhere; every object is positioned absolutely.
+ * Contract rule 14: every font ≥ 12px effective at zoom 1, integer pixel
+ * positions. Update discipline (§8): re-render on EventBus events with a
+ * ~150ms trailing throttle plus a 500ms live timer for energy/FSM/clock —
+ * NEVER per-frame text rebuilds. No nested containers (Phaser 4.1 gotcha).
+ *
+ * Input: card/feed/panel clicks are resolved by a scene-level pointerdown
+ * hit-test against the pure layout rects — per-object setInteractive on
+ * freshly (re)created objects missed the first click in v1 (input plugin
+ * registers new hit areas a tick late). Only the long-lived top-bar buttons
+ * keep per-object handlers.
  */
 import Phaser from "phaser";
-import type { AgentCardModel, DecisionTraceEntry, WorldEvent } from "@contracts/types";
-import { MAP_HEIGHT, MAP_WIDTH, TILE_SIZE } from "@contracts/types";
+import type { DecisionTraceEntry, WorldEvent } from "@contracts/types";
 import {
-  EventLog,
-  eventColor,
-  formatEventLine,
-  toCssColor,
-} from "../obs/EventLog";
+  FeedModel,
+  formatFeedItem,
+  type FeedItem,
+} from "../obs/Feed";
+import {
+  KillSwitchModel,
+  killSwitchLabel,
+  killSwitchStyle,
+} from "../obs/KillSwitch";
+import { toCssColor } from "../obs/EventLog";
 import {
   buildAgentCard,
+  formatAffinityRow,
   formatTraceEntry,
   formatTraceSummary,
+  personaText,
+  topRelationships,
+  type ObsAgentCardModel,
 } from "../obs/Inspector";
+import {
+  BADGE_ROW_Y,
+  CARD_W,
+  FONT_SIZE_BASE,
+  FONT_SIZE_SMALL,
+  FONT_SIZE_TITLE,
+  HUD_FONT,
+  HUD_W,
+  LOG_H,
+  LOG_LINES,
+  LOG_LINE_H,
+  LOG_MAX_CHARS,
+  LOG_PAD_X,
+  LOG_PAD_Y,
+  LOG_W,
+  LOG_X,
+  LOG_Y,
+  PANEL_CLOSE_RECT,
+  PANEL_H,
+  PANEL_HEADER_H,
+  PANEL_RECT,
+  PANEL_VISIBLE_TRACE,
+  PANEL_W,
+  PANEL_X,
+  PANEL_Y,
+  TOPBAR_H,
+  cardIndexAt,
+  cardRect,
+  feedLineIndexAt,
+  pointInRect,
+} from "../obs/layout";
 import type { ObsConnection } from "../obs/wiring";
 import { connectObservability } from "../obs/wiring";
 import { startAgents } from "../agents/bootstrap";
 import { getTimeSystem } from "../world/instance";
 
-// -- layout constants (logical pixels) ---------------------------------------
+// -- local style (config.ts is render-agent's file; obs colors live here) -----
 
-const W = MAP_WIDTH * TILE_SIZE; // 384
-const H = MAP_HEIGHT * TILE_SIZE; // 288
-const FONT = "ui-monospace, Menlo, monospace";
+const PX_SMALL = `${FONT_SIZE_SMALL}px`;
+const PX_BASE = `${FONT_SIZE_BASE}px`;
+const PX_TITLE = `${FONT_SIZE_TITLE}px`;
 
-const TOPBAR_H = 14;
-const CARD_W = 116;
-const CARD_X = W - CARD_W - 2;
-const CARD_TOP = TOPBAR_H + 2;
+const COLOR_TEXT = "#e6e6e6";
+const COLOR_DIM = "#9aa0aa";
+const COLOR_FAINT = "#6f7682";
+const COLOR_GOLD = "#ffd700";
+const COLOR_GOAL = "#73daca";
+const COLOR_PLAN = "#7aa2f7";
+const COLOR_OK = "#9ece6a";
+const COLOR_BAD = "#f7768e";
+const COLOR_CHROME = 0x101218;
+const COLOR_CARD_BG = 0x14161c;
+const COLOR_BORDER = 0x3d4456;
 
-const LOG_LINES = 12;
-const LOG_LINE_H = 8;
-const LOG_W = 250;
-const LOG_H = LOG_LINES * LOG_LINE_H + 8;
-const LOG_Y = H - LOG_H - 2;
+const FSM_COLORS: Record<string, string> = {
+  IDLE: "#8a8f98",
+  THINKING: "#e0af68",
+  EXECUTING: "#9ece6a",
+};
 
-const PANEL_X = 2;
-const PANEL_Y = TOPBAR_H + 2;
-const PANEL_W = 258;
-const PANEL_H = LOG_Y - PANEL_Y - 4;
-const PANEL_VISIBLE_TRACE = 5;
+const PHASE_ICON: Record<string, string> = {
+  morning: "☀",
+  afternoon: "☼",
+  evening: "☾",
+  night: "✦",
+};
+
+const SPEEDS = [0.5, 1, 2, 4] as const;
 
 const DEPTH_HUD = 100;
 const DEPTH_HUD_TEXT = 101;
+const DEPTH_BADGE = 150;
 const DEPTH_PANEL = 200;
 
 const REFRESH_THROTTLE_MS = 150;
 const LIVE_TIMER_MS = 500;
 
-const FSM_COLORS: Record<string, string> = {
-  IDLE: "#8a8f98", // grey
-  THINKING: "#e0af68", // yellow
-  EXECUTING: "#9ece6a", // green
-};
-
-const PHASE_ICON: Record<string, string> = {
-  morning: "☀", // sun
-  afternoon: "☼", // bright sun
-  evening: "☾", // moon
-  night: "✦", // star
-};
-
-const SPEEDS = [0.5, 1, 2, 4] as const;
+/** VITE_MODEL_MODE, read defensively (absent under plain node / tests). */
+function detectModelMode(): string | undefined {
+  try {
+    return typeof import.meta !== "undefined" && import.meta.env
+      ? (import.meta.env.VITE_MODEL_MODE as string | undefined)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 interface CardUi {
   bg: Phaser.GameObjects.Rectangle;
+  swatch: Phaser.GameObjects.Rectangle;
   name: Phaser.GameObjects.Text;
   fsm: Phaser.GameObjects.Text;
-  persona: Phaser.GameObjects.Text | null;
   gold: Phaser.GameObjects.Text;
   energyBg: Phaser.GameObjects.Rectangle;
   energyFill: Phaser.GameObjects.Rectangle;
   energyText: Phaser.GameObjects.Text;
+  plan: Phaser.GameObjects.Text;
   goal: Phaser.GameObjects.Text;
-  thought: Phaser.GameObjects.Text;
+  thought: Phaser.GameObjects.Text | null;
   action: Phaser.GameObjects.Text;
+  relRows: Phaser.GameObjects.Text[];
   meta: Phaser.GameObjects.Text;
 }
 
 export class UIScene extends Phaser.Scene {
   private conn: ObsConnection | null = null;
-  private readonly eventLog = new EventLog();
+  private readonly feed = new FeedModel();
+  private readonly killSwitch = new KillSwitchModel(detectModelMode());
   private readonly unsubscribers: Array<() => void> = [];
   private destroyed = false;
 
   private budgetReached = false;
   private refreshPending = false;
 
-  // top bar
+  // top bar + badge row
   private statusText!: Phaser.GameObjects.Text;
+  private killBadge!: Phaser.GameObjects.Text;
   private pausedBadge!: Phaser.GameObjects.Text;
   private budgetBadge!: Phaser.GameObjects.Text;
   private pauseBtn!: Phaser.GameObjects.Text;
   private speedBtns = new Map<number, Phaser.GameObjects.Text>();
 
-  // event log
+  // event feed
   private logTexts: Phaser.GameObjects.Text[] = [];
+  /** feed item behind each rendered line (click → trace panel) */
+  private feedLineItems: Array<FeedItem | null> = [];
 
   // agent cards
   private cards = new Map<string, CardUi>();
   private cardLayoutKey = "";
+  /** card order on screen — index ↔ cardIndexAt() hit test */
+  private cardNames: string[] = [];
 
   // trace panel
   private selectedAgent: string | null = null;
   private readonly expandedTurnIds = new Set<string>();
   private traceScroll = 0;
   private panelObjects: Phaser.GameObjects.GameObject[] = [];
-  private panelEntries: Phaser.GameObjects.Text[] = [];
-  private panelContentH = 0;
+  private panelEntryTexts: Phaser.GameObjects.Text[] = [];
+  private panelTraceEntries: DecisionTraceEntry[] = [];
 
   constructor() {
     super({ key: "ui", active: true });
@@ -130,7 +196,11 @@ export class UIScene extends Phaser.Scene {
   create(): void {
     this.scene.bringToTop();
     this.buildTopBar();
-    this.buildEventLogChrome();
+    this.buildBadgeRow();
+    this.buildFeedChrome();
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
+      this.onPointerDown(p.x, p.y),
+    );
     this.input.on(
       Phaser.Input.Events.POINTER_WHEEL,
       (
@@ -157,11 +227,12 @@ export class UIScene extends Phaser.Scene {
     const conn = connectObservability();
     this.conn = conn;
 
-    this.unsubscribers.push(this.eventLog.attach(conn.bus));
+    this.unsubscribers.push(this.feed.attach(conn.bus));
     this.unsubscribers.push(conn.bus.on((e) => this.onBusEvent(e)));
-    // budget_reached badge is sticky — honor events emitted before we attached
-    if (this.eventLog.list().some((e) => e.kind === "budget_reached")) {
-      this.budgetReached = true;
+    // sticky states emitted before we attached: budget latch + kill-switch
+    for (const e of conn.bus.recent()) {
+      if (e.kind === "budget_reached") this.budgetReached = true;
+      this.killSwitch.apply(e.kind);
     }
     this.unsubscribers.push(getTimeSystem().onChange(() => this.refreshTopBar()));
     this.time.addEvent({
@@ -174,6 +245,7 @@ export class UIScene extends Phaser.Scene {
 
   private onBusEvent(e: WorldEvent): void {
     if (e.kind === "budget_reached") this.budgetReached = true;
+    if (this.killSwitch.apply(e.kind)) this.renderBadgeRow();
     this.markDirty();
   }
 
@@ -190,7 +262,8 @@ export class UIScene extends Phaser.Scene {
   private refreshAll(): void {
     if (this.destroyed) return;
     this.refreshTopBar();
-    this.renderEventLog();
+    this.renderBadgeRow();
+    this.renderFeed();
     this.renderCards();
     if (this.selectedAgent) this.rebuildPanelEntries();
   }
@@ -208,18 +281,57 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
+  // -- input: scene-level hit testing (no dead first click) --------------------
+
+  private onPointerDown(px: number, py: number): void {
+    if (this.destroyed) return;
+    if (this.selectedAgent) {
+      if (pointInRect(px, py, PANEL_CLOSE_RECT)) {
+        this.closePanel();
+        return;
+      }
+      if (pointInRect(px, py, PANEL_RECT)) {
+        this.onPanelClick(py);
+        return; // panel swallows its clicks — nothing leaks to the map
+      }
+    }
+    const count = this.cardNames.length;
+    const cardIdx = cardIndexAt(px, py, count);
+    if (cardIdx !== null && cardIdx < count) {
+      this.toggleTracePanel(this.cardNames[cardIdx]);
+      return;
+    }
+    const lineIdx = feedLineIndexAt(px, py);
+    if (lineIdx !== null) {
+      const item = this.feedLineItems[lineIdx];
+      if (item && item.type === "turn") this.toggleTracePanel(item.agentName);
+    }
+  }
+
+  private onPanelClick(py: number): void {
+    for (let i = 0; i < this.panelEntryTexts.length; i++) {
+      const t = this.panelEntryTexts[i];
+      if (!t.visible) continue;
+      if (py >= t.y && py <= t.y + t.height) {
+        const entry = this.panelTraceEntries[i];
+        if (entry) this.toggleTraceEntry(entry);
+        return;
+      }
+    }
+  }
+
   // -- top bar: controls + status ----------------------------------------------
 
   private buildTopBar(): void {
     this.add
-      .rectangle(0, 0, W, TOPBAR_H, 0x101218, 0.88)
+      .rectangle(0, 0, HUD_W, TOPBAR_H, COLOR_CHROME, 0.92)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
 
-    let x = 2;
+    let x = 4;
     const place = (label: string, onClick: () => void): Phaser.GameObjects.Text => {
-      const btn = this.makeButton(x, 2, label, onClick);
-      x = btn.x + btn.width + 3;
+      const btn = this.makeButton(x, 3, label, onClick);
+      x = Math.round(btn.x + btn.width + 4);
       return btn;
     };
 
@@ -229,7 +341,7 @@ export class UIScene extends Phaser.Scene {
       this.refreshTopBar();
     });
     for (const speed of SPEEDS) {
-      const label = speed === 0.5 ? "½" : String(speed);
+      const label = speed === 0.5 ? "½" : `${speed}x`;
       this.speedBtns.set(
         speed,
         place(label, () => {
@@ -240,33 +352,74 @@ export class UIScene extends Phaser.Scene {
     }
 
     this.statusText = this.add
-      .text(W - 3, 3, "", { fontFamily: FONT, fontSize: "7px", color: "#e6e6e6" })
+      .text(HUD_W - 6, 5, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        color: COLOR_TEXT,
+      })
       .setOrigin(1, 0)
       .setDepth(DEPTH_HUD_TEXT);
-    this.pausedBadge = this.add
-      .text(0, 3, "PAUSED", {
-        fontFamily: FONT,
-        fontSize: "7px",
-        color: "#ff5555",
-        backgroundColor: "#3a1418",
-        padding: { x: 2, y: 0 },
-      })
-      .setOrigin(1, 0)
-      .setDepth(DEPTH_HUD_TEXT)
-      .setVisible(false);
-    this.budgetBadge = this.add
-      .text(0, 3, "BUDGET REACHED", {
-        fontFamily: FONT,
-        fontSize: "7px",
-        color: "#ffb86c",
-        backgroundColor: "#3a2a14",
-        padding: { x: 2, y: 0 },
-      })
-      .setOrigin(1, 0)
-      .setDepth(DEPTH_HUD_TEXT)
-      .setVisible(false);
 
     this.refreshTopBar();
+  }
+
+  /** Badge row under the top bar: kill-switch centered, state badges beside. */
+  private buildBadgeRow(): void {
+    this.add
+      .rectangle(0, BADGE_ROW_Y, HUD_W, 20, COLOR_CHROME, 0.92)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD);
+    this.killBadge = this.add
+      .text(0, BADGE_ROW_Y + 2, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        padding: { x: 8, y: 2 },
+      })
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_BADGE);
+    this.pausedBadge = this.add
+      .text(0, BADGE_ROW_Y + 2, "PAUSED", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        color: "#ff5555",
+        backgroundColor: "#3a1418",
+        padding: { x: 6, y: 2 },
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH_BADGE)
+      .setVisible(false);
+    this.budgetBadge = this.add
+      .text(0, BADGE_ROW_Y + 2, "BUDGET REACHED", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        color: "#ffb86c",
+        backgroundColor: "#3a2a14",
+        padding: { x: 6, y: 2 },
+      })
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_BADGE)
+      .setVisible(false);
+    this.renderBadgeRow();
+  }
+
+  private renderBadgeRow(): void {
+    if (this.destroyed || !this.killBadge) return;
+    const state = this.killSwitch.state();
+    const style = killSwitchStyle(state);
+    this.killBadge
+      .setText(killSwitchLabel(state))
+      .setStyle({ color: style.fg, backgroundColor: style.bg });
+    const left = Math.round((HUD_W - this.killBadge.width) / 2);
+    this.killBadge.setX(left);
+    // PAUSED sits left of the kill badge, BUDGET to its right
+    const paused = this.conn?.controls.isPaused() ?? false;
+    this.pausedBadge.setVisible(paused).setX(left - 8);
+    this.budgetBadge
+      .setVisible(this.budgetReached)
+      .setX(Math.round(left + this.killBadge.width + 8));
   }
 
   private makeButton(
@@ -277,11 +430,11 @@ export class UIScene extends Phaser.Scene {
   ): Phaser.GameObjects.Text {
     const btn = this.add
       .text(x, y, label, {
-        fontFamily: FONT,
-        fontSize: "7px",
-        color: "#e6e6e6",
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        color: COLOR_TEXT,
         backgroundColor: "#2a2f3a",
-        padding: { x: 3, y: 1 },
+        padding: { x: 6, y: 2 },
       })
       .setDepth(DEPTH_HUD_TEXT)
       .setInteractive({ useHandCursor: true });
@@ -295,6 +448,7 @@ export class UIScene extends Phaser.Scene {
     if (controls.isPaused()) controls.resume();
     else controls.pause();
     this.refreshTopBar();
+    this.renderBadgeRow();
   }
 
   private refreshTopBar(): void {
@@ -307,51 +461,50 @@ export class UIScene extends Phaser.Scene {
 
     const paused = this.conn?.controls.isPaused() ?? time.isPaused();
     this.pauseBtn.setText(paused ? "▶" : "⏸");
-    this.pausedBadge.setVisible(paused);
-    this.budgetBadge.setVisible(this.budgetReached);
-    // badges stack right-to-left, left of the status readout
-    let right = W - 3 - this.statusText.width - 5;
-    this.pausedBadge.setX(right);
-    if (paused) right -= this.pausedBadge.width + 4;
-    this.budgetBadge.setX(right);
+    if (this.pausedBadge) this.pausedBadge.setVisible(paused);
 
     for (const [s, btn] of this.speedBtns) {
       const active = s === speed;
       btn.setStyle({
         backgroundColor: active ? "#73daca" : "#2a2f3a",
-        color: active ? "#101014" : "#e6e6e6",
+        color: active ? "#101014" : COLOR_TEXT,
       });
     }
   }
 
-  // -- event log ----------------------------------------------------------------
+  // -- event feed ----------------------------------------------------------------
 
-  private buildEventLogChrome(): void {
+  private buildFeedChrome(): void {
     this.add
-      .rectangle(2, LOG_Y, LOG_W, LOG_H, 0x101218, 0.72)
+      .rectangle(LOG_X, LOG_Y, LOG_W, LOG_H, COLOR_CHROME, 0.85)
       .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD);
     for (let i = 0; i < LOG_LINES; i++) {
       this.logTexts.push(
         this.add
-          .text(6, LOG_Y + 4 + i * LOG_LINE_H, "", {
-            fontFamily: FONT,
-            fontSize: "6px",
-            color: "#9aa0aa",
+          .text(LOG_X + LOG_PAD_X, LOG_Y + LOG_PAD_Y + i * LOG_LINE_H, "", {
+            fontFamily: HUD_FONT,
+            fontSize: PX_SMALL,
+            color: COLOR_DIM,
           })
           .setDepth(DEPTH_HUD_TEXT),
       );
+      this.feedLineItems.push(null);
     }
   }
 
-  private renderEventLog(): void {
-    const events = this.eventLog.list(LOG_LINES); // newest-first
+  private renderFeed(): void {
+    const items = this.feed.list(LOG_LINES); // newest-first
     for (let i = 0; i < LOG_LINES; i++) {
       const line = this.logTexts[i];
-      const e = events[i];
-      if (e) {
-        line.setText(formatEventLine(e, 60));
-        line.setColor(toCssColor(eventColor(e)));
+      const item = items[i] ?? null;
+      this.feedLineItems[i] = item;
+      if (item) {
+        const view = formatFeedItem(item, LOG_MAX_CHARS);
+        line.setText(view.text);
+        line.setColor(toCssColor(view.color));
+        line.setFontStyle(view.emphasis ? "bold" : "normal");
       } else if (line.text !== "") {
         line.setText("");
       }
@@ -367,33 +520,38 @@ export class UIScene extends Phaser.Scene {
     if (layoutKey !== this.cardLayoutKey) {
       this.destroyCards();
       this.cardLayoutKey = layoutKey;
-      const cardH = compact ? 54 : 70;
+      this.cardNames = agents.map((a) => a.name);
       agents.forEach((agent, i) => {
+        const rect = cardRect(i, agents.length);
         this.cards.set(
           agent.name,
-          this.createCard(agent.name, CARD_TOP + i * (cardH + 3), cardH, compact),
+          this.createCard(rect.x, rect.y, rect.h, compact),
         );
       });
     }
     for (const agent of agents) {
       const ui = this.cards.get(agent.name);
-      if (ui) this.updateCard(ui, buildAgentCard(agent), compact);
+      if (ui) this.updateCard(ui, buildAgentCard(agent));
     }
   }
 
   private destroyCards(): void {
     for (const ui of this.cards.values()) {
       for (const obj of Object.values(ui)) {
-        (obj as Phaser.GameObjects.GameObject | null)?.destroy();
+        if (Array.isArray(obj)) {
+          for (const o of obj) o.destroy();
+        } else {
+          (obj as Phaser.GameObjects.GameObject | null)?.destroy();
+        }
       }
     }
     this.cards.clear();
+    this.cardNames = [];
   }
 
   /** Flat absolute-positioned children — no containers (Phaser 4.1 gotcha). */
-  private createCard(name: string, y: number, cardH: number, compact: boolean): CardUi {
-    const x = CARD_X;
-    const small = { fontFamily: FONT, fontSize: "6px", color: "#9aa0aa" };
+  private createCard(x: number, y: number, cardH: number, compact: boolean): CardUi {
+    const small = { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
     const text = (
       tx: number,
       ty: number,
@@ -402,88 +560,133 @@ export class UIScene extends Phaser.Scene {
       this.add.text(tx, ty, "", style).setDepth(DEPTH_HUD_TEXT);
 
     const bg = this.add
-      .rectangle(x, y, CARD_W, cardH, 0x14161c, 0.93)
+      .rectangle(x, y, CARD_W, cardH, COLOR_CARD_BG, 0.93)
       .setOrigin(0, 0)
       .setStrokeStyle(1, 0x2a2f3a, 1)
-      .setDepth(DEPTH_HUD)
-      .setInteractive({ useHandCursor: true });
-    bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () =>
-      this.toggleTracePanel(name),
-    );
+      .setDepth(DEPTH_HUD);
 
-    const rowGold = compact ? y + 11 : y + 20;
-    const rowGoal = compact ? y + 19 : y + 28;
-    const rowThought = compact ? y + 27 : y + 36;
-    const rowAction = compact ? y + 35 : y + 52;
-    const rowMeta = compact ? y + 44 : y + 61;
+    // visual sprite link (v1 defect c): swatch in the agent's sprite color
+    const swatch = this.add
+      .rectangle(x + 6, y + 6, 11, 11, 0xffffff, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0xffffff, 0.6)
+      .setDepth(DEPTH_HUD_TEXT);
+
+    const rowGold = y + 20;
+    const rowPlan = y + 34;
+    const rowGoal = y + 48;
+    const rowThought = y + 62; // 2 wrapped lines reserved (normal mode)
+    const rowAction = compact ? y + 62 : y + 90;
+    const relRowCount = compact ? 1 : 3;
+    const rowRel = compact ? y + 76 : y + 104;
+    const rowMeta = compact ? y + 90 : y + 146;
+
+    const relRows: Phaser.GameObjects.Text[] = [];
+    for (let i = 0; i < relRowCount; i++) {
+      relRows.push(text(x + 6, rowRel + i * 14, { ...small }));
+    }
 
     return {
       bg,
-      name: text(x + 4, y + 3, {
-        fontFamily: FONT,
-        fontSize: "7px",
+      swatch,
+      name: text(x + 22, y + 4, {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
         color: "#ffffff",
         fontStyle: "bold",
       }),
-      fsm: text(x + CARD_W - 4, y + 3, { ...small }).setOrigin(1, 0),
-      persona: compact ? null : text(x + 4, y + 12, { ...small }),
-      gold: text(x + 4, rowGold, { fontFamily: FONT, fontSize: "7px", color: "#ffd700" }),
+      fsm: text(x + CARD_W - 6, y + 4, { ...small }).setOrigin(1, 0),
+      gold: text(x + 6, rowGold, {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        color: COLOR_GOLD,
+      }),
       energyBg: this.add
-        .rectangle(x + 40, rowGold + 2, 50, 4, 0x30343c, 1)
+        .rectangle(x + 76, rowGold + 3, 90, 8, 0x30343c, 1)
         .setOrigin(0, 0)
         .setDepth(DEPTH_HUD_TEXT),
       energyFill: this.add
-        .rectangle(x + 40, rowGold + 2, 50, 4, 0x9ece6a, 1)
+        .rectangle(x + 76, rowGold + 3, 90, 8, 0x9ece6a, 1)
         .setOrigin(0, 0)
         .setDepth(DEPTH_HUD_TEXT),
-      energyText: text(x + CARD_W - 4, rowGold, { ...small }).setOrigin(1, 0),
-      goal: text(x + 4, rowGoal, { ...small, color: "#73daca" }),
-      thought: text(x + 4, rowThought, {
-        ...small,
-        color: "#c8ccd4",
-        wordWrap: { width: CARD_W - 8 },
+      energyText: text(x + CARD_W - 6, rowGold, { ...small }).setOrigin(1, 0),
+      plan: text(x + 6, rowPlan, { ...small, color: COLOR_PLAN }),
+      goal: text(x + 6, rowGoal, { ...small, color: COLOR_GOAL }),
+      thought: compact
+        ? null
+        : text(x + 6, rowThought, {
+            ...small,
+            color: "#c8ccd4",
+            wordWrap: { width: CARD_W - 12 },
+          }),
+      action: text(x + 6, rowAction, {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        color: COLOR_OK,
       }),
-      action: text(x + 4, rowAction, { fontFamily: FONT, fontSize: "7px", color: "#9ece6a" }),
-      meta: text(x + 4, rowMeta, { ...small, color: "#6f7682" }),
+      relRows,
+      meta: text(x + 6, rowMeta, { ...small, color: COLOR_FAINT }),
     };
   }
 
-  private updateCard(ui: CardUi, card: AgentCardModel, compact: boolean): void {
-    ui.name.setText(card.name);
+  private updateCard(ui: CardUi, card: ObsAgentCardModel): void {
+    if (typeof card.color === "number") ui.swatch.setFillStyle(card.color, 1);
+    ui.name.setText(this.clip(card.name, 22));
     ui.fsm.setText(card.fsm).setColor(FSM_COLORS[card.fsm] ?? "#8a8f98");
-    ui.persona?.setText(this.clip(card.persona, 30));
     ui.gold.setText(`${card.gold}g`);
     this.updateEnergy(ui, card.energy);
-    ui.goal.setText(this.clip(`goal: ${card.goal ?? "—"}`, 32));
-    // ~22 wrapped chars/line at 6px in CARD_W-8 → clip to guarantee ≤2 lines
-    ui.thought.setText(
-      card.lastThought ? this.clip(card.lastThought, compact ? 21 : 43) : "…",
-    );
+
+    // v2: current plan step ("PLAN: water east plot") — hidden when absent
+    ui.plan.setText(card.planStep ? this.clip(`PLAN: ${card.planStep}`, 30) : "");
+    ui.goal.setText(this.clip(`goal: ${card.goal ?? "—"}`, 30));
+    // ~30 wrapped chars/line at 12px in CARD_W-12 → clip to guarantee ≤2 lines
+    ui.thought?.setText(card.lastThought ? this.clip(card.lastThought, 58) : "…");
+
     if (card.lastAction) {
       const { action, ok, reason } = card.lastAction;
       ui.action
         .setText(
           this.clip(`${action} ${ok ? "✓" : "✗"}${!ok && reason ? ` ${reason}` : ""}`, 30),
         )
-        .setColor(ok ? "#9ece6a" : "#f7768e");
+        .setColor(ok ? COLOR_OK : COLOR_BAD);
     } else {
-      ui.action.setText("—").setColor("#6f7682");
+      ui.action.setText("—").setColor(COLOR_FAINT);
     }
+
+    // v2: affinity meter — top rows by |affinity|, signed bar + number
+    const rels = topRelationships(card.relationships ?? [], ui.relRows.length);
+    for (let i = 0; i < ui.relRows.length; i++) {
+      const row = ui.relRows[i];
+      const rel = rels[i];
+      if (rel) {
+        row.setText(formatAffinityRow(rel.name, rel.affinity));
+        row.setColor(
+          rel.affinity > 0 ? COLOR_OK : rel.affinity < 0 ? COLOR_BAD : COLOR_DIM,
+        );
+      } else if (row.text !== "") {
+        row.setText("");
+      }
+    }
+
+    // v2: memory/reflection stats — agent-provided counts win, the feed's
+    // event-derived counters (memory_written is feed-suppressed) back them up
+    const mem = card.memoryCount ?? this.feed.memoryCount(card.name);
+    const refl = card.reflectionCount ?? this.feed.reflectionCount(card.name);
     const tok =
       card.tokensIn !== null || card.tokensOut !== null
-        ? ` · ${card.tokensIn ?? "?"}/${card.tokensOut ?? "?"}t`
+        ? ` ${card.tokensIn ?? "?"}/${card.tokensOut ?? "?"}t`
         : "";
     ui.meta.setText(
       this.clip(
-        `${card.model ?? "—"} · ${card.latencyMs ?? "—"}ms${tok} · d${card.decisionsToday}/${card.decisionsTotal}`,
-        34,
+        `${card.model ?? "—"} ${card.latencyMs ?? "—"}ms${tok} d${card.decisionsToday}/${card.decisionsTotal} M:${mem} R:${refl}`,
+        30,
       ),
     );
   }
 
   private updateEnergy(ui: CardUi, energy: number): void {
     const ratio = Phaser.Math.Clamp(energy, 0, 100) / 100;
-    ui.energyFill.setSize(Math.max(1, Math.round(50 * ratio)), 4);
+    ui.energyFill.setSize(Math.max(1, Math.round(90 * ratio)), 8);
     ui.energyFill.setFillStyle(
       ratio > 0.5 ? 0x9ece6a : ratio > 0.25 ? 0xe0af68 : 0xf7768e,
     );
@@ -511,36 +714,50 @@ export class UIScene extends Phaser.Scene {
   }
 
   private buildPanelChrome(name: string): void {
+    // v1 defect d: text sat directly on the map — the panel now has a
+    // near-opaque backing rect plus a visible border.
     const bg = this.add
-      .rectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 0x101218, 0.94)
+      .rectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 0x0e1016, 0.96)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, 0x2a2f3a, 1)
+      .setStrokeStyle(2, COLOR_BORDER, 1)
       .setDepth(DEPTH_PANEL);
     const title = this.add
-      .text(PANEL_X + 4, PANEL_Y + 3, `${name} — decision trace (click entry, wheel scrolls)`, {
-        fontFamily: FONT,
-        fontSize: "6px",
-        color: "#e6e6e6",
+      .text(PANEL_X + 8, PANEL_Y + 4, `${name} — decision trace`, {
+        fontFamily: HUD_FONT,
+        fontSize: PX_TITLE,
+        fontStyle: "bold",
+        color: COLOR_TEXT,
       })
       .setDepth(DEPTH_PANEL + 1);
+    const agent = (this.conn?.controls.agents() ?? []).find((a) => a.name === name);
+    const subtitle = this.add
+      .text(
+        PANEL_X + 8,
+        PANEL_Y + 21,
+        this.clip(
+          `${agent ? personaText(agent.persona) : ""} · click a row to expand · wheel scrolls`,
+          70,
+        ),
+        { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_FAINT },
+      )
+      .setDepth(DEPTH_PANEL + 1);
     const close = this.add
-      .text(PANEL_X + PANEL_W - 4, PANEL_Y + 2, "✕", {
-        fontFamily: FONT,
-        fontSize: "7px",
-        color: "#f7768e",
+      .text(PANEL_X + PANEL_W - 8, PANEL_Y + 4, "✕", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_TITLE,
+        color: COLOR_BAD,
       })
       .setOrigin(1, 0)
-      .setDepth(DEPTH_PANEL + 1)
-      .setInteractive({ useHandCursor: true });
-    close.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.closePanel());
+      .setDepth(DEPTH_PANEL + 1);
 
-    this.panelObjects = [bg, title, close];
+    this.panelObjects = [bg, title, subtitle, close];
   }
 
   private closePanel(): void {
     this.selectedAgent = null;
-    for (const obj of this.panelEntries) obj.destroy();
-    this.panelEntries = [];
+    for (const obj of this.panelEntryTexts) obj.destroy();
+    this.panelEntryTexts = [];
+    this.panelTraceEntries = [];
     for (const obj of this.panelObjects) obj.destroy();
     this.panelObjects = [];
   }
@@ -550,40 +767,38 @@ export class UIScene extends Phaser.Scene {
     const name = this.selectedAgent;
     if (!name) return;
     const agent = (this.conn?.controls.agents() ?? []).find((a) => a.name === name);
-    for (const obj of this.panelEntries) obj.destroy();
-    this.panelEntries = [];
+    for (const obj of this.panelEntryTexts) obj.destroy();
+    this.panelEntryTexts = [];
+    this.panelTraceEntries = [];
     if (!agent) return;
 
     const entries = buildAgentCard(agent).trace.slice(0, PANEL_VISIBLE_TRACE);
+    this.panelTraceEntries = entries;
     for (const entry of entries) {
       const expanded = this.expandedTurnIds.has(entry.turnId);
       const content = expanded
-        ? `▾ ${formatTraceSummary(entry, 56)}\n${this.indent(formatTraceEntry(entry))}`
-        : `▸ ${formatTraceSummary(entry, 56)}`;
+        ? `▾ ${formatTraceSummary(entry, 68)}\n${this.indent(formatTraceEntry(entry))}`
+        : `▸ ${formatTraceSummary(entry, 68)}`;
       const textObj = this.add
-        .text(PANEL_X + 5, 0, content, {
-          fontFamily: FONT,
-          fontSize: "6px",
-          color: expanded ? "#c8ccd4" : "#9aa0aa",
+        .text(PANEL_X + 8, 0, content, {
+          fontFamily: HUD_FONT,
+          fontSize: PX_SMALL,
+          color: expanded ? "#c8ccd4" : COLOR_DIM,
           // advanced wrap: raw JSON has no spaces, must hard-break long runs
-          wordWrap: { width: PANEL_W - 12, useAdvancedWrap: true },
+          wordWrap: { width: PANEL_W - 16, useAdvancedWrap: true },
         })
-        .setDepth(DEPTH_PANEL + 1)
-        .setInteractive({ useHandCursor: true });
-      textObj.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () =>
-        this.toggleTraceEntry(entry),
-      );
-      this.panelEntries.push(textObj);
+        .setDepth(DEPTH_PANEL + 1);
+      this.panelEntryTexts.push(textObj);
     }
     if (entries.length === 0) {
       const empty = this.add
-        .text(PANEL_X + 5, 0, "(no decisions yet)", {
-          fontFamily: FONT,
-          fontSize: "6px",
-          color: "#6f7682",
+        .text(PANEL_X + 8, 0, "(no decisions yet)", {
+          fontFamily: HUD_FONT,
+          fontSize: PX_SMALL,
+          color: COLOR_FAINT,
         })
         .setDepth(DEPTH_PANEL + 1);
-      this.panelEntries.push(empty);
+      this.panelEntryTexts.push(empty);
     }
     this.layoutPanel();
   }
@@ -603,14 +818,14 @@ export class UIScene extends Phaser.Scene {
    * by Phaser 4's WebGL renderer.
    */
   private layoutPanel(): void {
-    const top = PANEL_Y + 14;
-    const availH = PANEL_H - 16;
+    const top = PANEL_Y + PANEL_HEADER_H;
+    const availH = PANEL_H - PANEL_HEADER_H - 6;
     const bottom = top + availH;
-    this.panelContentH = this.panelEntries.reduce((h, t) => h + t.height + 4, 0);
-    const minScroll = Math.min(0, availH - this.panelContentH);
+    const contentH = this.panelEntryTexts.reduce((h, t) => h + t.height + 6, 0);
+    const minScroll = Math.min(0, availH - contentH);
     this.traceScroll = Phaser.Math.Clamp(this.traceScroll, minScroll, 0);
-    let y = top + this.traceScroll;
-    for (const t of this.panelEntries) {
+    let y = Math.round(top + this.traceScroll);
+    for (const t of this.panelEntryTexts) {
       t.setY(y);
       const h = t.height;
       if (y + h <= top || y >= bottom) {
@@ -625,7 +840,7 @@ export class UIScene extends Phaser.Scene {
           t.setCrop();
         }
       }
-      y += h + 4;
+      y += h + 6;
     }
   }
 
@@ -638,12 +853,7 @@ export class UIScene extends Phaser.Scene {
 
   private onWheel(pointer: Phaser.Input.Pointer, deltaY: number): void {
     if (!this.selectedAgent) return;
-    const inPanel =
-      pointer.x >= PANEL_X &&
-      pointer.x <= PANEL_X + PANEL_W &&
-      pointer.y >= PANEL_Y &&
-      pointer.y <= PANEL_Y + PANEL_H;
-    if (!inPanel) return;
+    if (!pointInRect(pointer.x, pointer.y, PANEL_RECT)) return;
     this.traceScroll -= deltaY * 0.25;
     this.layoutPanel();
   }
