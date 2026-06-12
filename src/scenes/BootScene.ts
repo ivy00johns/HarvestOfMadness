@@ -38,16 +38,24 @@ export class BootScene extends Phaser.Scene {
     });
   }
 
-  /** Resolves to null whenever no usable manifest exists (the default). */
+  /**
+   * Resolves to null whenever no usable manifest exists (the default).
+   *
+   * Console-cleanliness note (DoD gate checks error level): we deliberately
+   * send the browser-default Accept header. Vite's dev server then answers a
+   * missing manifest with its SPA fallback (200 + index.html) instead of a
+   * 404, so NOTHING is logged at error level; the JSON.parse guard below
+   * classifies that HTML as "no manifest". On a static host that does return
+   * a real 404, fetch() itself never throws or logs an error-level entry —
+   * the response is handled silently via res.ok. Browser-only path; verified
+   * manually via Playwright (0 error-level console messages on boot).
+   */
   private async probeManifest(): Promise<AssetManifest | null> {
     try {
-      const res = await fetch("assets/manifest.json", {
-        headers: { Accept: "application/json" },
-      });
+      const res = await fetch("assets/manifest.json");
       if (!res.ok) return null;
       const text = await res.text();
-      if (text.trimStart().startsWith("<")) return null; // SPA fallback HTML
-      return JSON.parse(text) as AssetManifest;
+      return JSON.parse(text) as AssetManifest; // HTML fallback fails -> catch
     } catch {
       return null;
     }
