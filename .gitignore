@@ -6,3 +6,4 @@ server/.env
 *.tsbuildinfo
 .playwright-mcp/
 w2-gate-*.png
+playwright/

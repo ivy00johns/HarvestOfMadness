@@ -32,7 +32,12 @@ composition mapped onto the mission's own §14 phase numbering.
 ## Phase 5 — Live + personas + polish
 - [ ] `playwright` / `render-sanity` — post-build outcome gate: boot dev server, walk routes, four objective checks must PASS.
 - [ ] `ux-review` — subjective post-build pass on the running sim.
-- [ ] `design-token-guard` — expected N/A (Phaser canvas HUD, no CSS token system); confirm and record reason at gate time.
+- [x] `design-token-guard` — N/A, confirmed at gate time (2026-06-12): zero CSS
+  files, zero style/class attributes in src/**; the entire DOM styling surface
+  is index.html's page-shell `<style>` block (~10 lines, background + font for
+  the canvas host). All game UI is canvas-rendered Phaser with colors in
+  src/config.ts constants. No token system exists to guard; running the gate
+  would lint an empty set. ✅ (N/A with verified reason)
 
 ## Cross-cutting
 - [ ] `qe-agent` (role) — mandatory; produces `coordination/qa-report.json`.
