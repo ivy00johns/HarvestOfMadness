@@ -122,27 +122,32 @@ describe("hostile prompt bodies never break the mock", () => {
   });
 
   // mockRouter is the budget-fallback safety net, so it must never reject.
-  // Today a syntactically-valid but PARTIAL observation (object parses, but
-  // self.persona/nearby/... are missing) makes decide() throw
-  // "Cannot read properties of undefined (reading 'toLowerCase')" at
-  // src/llm/mock.ts:97, and the rejection would kill the calling agent loop
-  // (see scheduler-adversarial KNOWN GAP). See qa-report issue.
-  it.skip("an observation missing fields does not throw (KNOWN GAP — src/llm/mock.ts:97)", async () => {
+  // RESOLVED in 3b91777: normalizeObservation coerces any parsed object into
+  // a safe Observation (missing fields default conservatively) and decide()
+  // is belt-and-braces wrapped, so a partial observation now yields a valid
+  // action instead of a TypeError rejection.
+  it("an observation missing fields does not throw", async () => {
     const req: LlmRequest = {
       agentId: "X",
       system: "s",
       user: '{"self":{"name":"X"}} What do you do next?',
     };
-    // Partial observation: any outcome is fine, crashing is not.
-    await expect(mockRouter(req)).resolves.toBeDefined();
+    // Partial observation: any valid action is fine, crashing is not.
+    const res = await mockRouter(req);
+    expect(res.model).toBe("mock");
+    expect(res.parsed).toBeDefined();
+    // Deterministic too, like every other mock decision.
+    expect((await mockRouter(req)).raw).toBe(res.raw);
   });
 
-  it("documents the current behavior: a partial observation rejects with TypeError", async () => {
-    const req: LlmRequest = {
-      agentId: "X",
-      system: "s",
-      user: '{"self":{"name":"X"}} What do you do next?',
-    };
-    await expect(mockRouter(req)).rejects.toThrow(TypeError);
+  it("hostile-shaped observations (arrays, scalars, nulls in fields) all resolve", async () => {
+    for (const user of [
+      "[1,2,3] What do you do next?",
+      '{"self":null,"time":null,"nearby":null} next?',
+      '{"self":{"inventory":"not-an-array","pos":{"x":"a","y":null}},"nearby":{"tiles":[{"x":1}]}} next?',
+      '{"availableActions":"HARVEST"} next?',
+    ]) {
+      await expect(mockRouter({ agentId: "X", system: "s", user }), user).resolves.toBeDefined();
+    }
   });
 });

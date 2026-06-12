@@ -229,7 +229,7 @@ describe("BUY edge matrix", () => {
     expect(agent.countItem("seed:cauliflower")).toBe(2);
   });
 
-  it("fractional qty floors: BUY 2.9 charges and credits exactly 2", async () => {
+  it("fractional qty is rejected outright (hardened gate, 89ccf81): whole number >= 1", async () => {
     const { world, agent } = shopAgent(1000);
     const r = await executeAction(
       agent,
@@ -238,9 +238,10 @@ describe("BUY edge matrix", () => {
       [],
       INSTANT,
     );
-    expect(r.ok).toBe(true);
-    expect(agent.gold).toBe(1000 - 2 * CROPS.parsnip.seedCost);
-    expect(agent.countItem("seed:parsnip")).toBe(5 + 2);
+    expect(r.ok).toBe(false);
+    expect(r.reason).toMatch(/whole number >= 1/);
+    expect(agent.gold).toBe(1000); // nothing charged
+    expect(agent.countItem("seed:parsnip")).toBe(5); // nothing credited
   });
 
   it("qty 0, negative, and unknown items are rejected without mutation", async () => {
@@ -248,7 +249,7 @@ describe("BUY edge matrix", () => {
     const attacks: Array<{ itemId: string; qty: number }> = [
       { itemId: "seed:parsnip", qty: 0 },
       { itemId: "seed:parsnip", qty: -5 },
-      { itemId: "seed:parsnip", qty: 0.4 }, // floors to 0
+      { itemId: "seed:parsnip", qty: 0.4 }, // fractional -> whole-number gate
       { itemId: "crop:parsnip", qty: 1 }, // shop does not sell crops
       { itemId: "seed:gold_dupe", qty: 1 },
     ];
@@ -389,10 +390,10 @@ describe("MOVE_TO hostile targets", () => {
 
 describe("hostile non-finite quantities (defense-in-depth vs a bypassing router)", () => {
   // parse.ts rejects non-finite qty, so a conforming router can never deliver
-  // these. A custom/buggy router could. The executor SHOULD reject them too;
-  // today it does not (see qa-report issue): NaN flows through Math.floor and
-  // every comparison gate, corrupting gold and inventory to NaN.
-  it.skip("BUY with qty NaN must be rejected (KNOWN GAP: corrupts gold to NaN — src/agents/ActionExecutor.ts:209)", async () => {
+  // these. A custom/buggy router could. RESOLVED in 89ccf81: the executor's
+  // isItemTarget/isVec2 now mirror parse.ts finiteness and gateQty enforces
+  // whole-number >= 1 — NaN can no longer corrupt gold or inventory.
+  it("BUY with qty NaN is rejected and gold stays finite", async () => {
     const world = new World();
     const agent = makeAgent({ ...SHOP_POS });
     const r = await executeAction(
@@ -403,10 +404,11 @@ describe("hostile non-finite quantities (defense-in-depth vs a bypassing router)
       INSTANT,
     );
     expect(r.ok).toBe(false);
-    expect(Number.isFinite(agent.gold)).toBe(true);
+    expect(r.reason).toBeTruthy();
+    expect(agent.gold).toBe(STARTING_GOLD); // untouched, and finite
   });
 
-  it.skip("SELL with qty NaN must be rejected (KNOWN GAP: corrupts inventory to NaN — src/agents/ActionExecutor.ts:235)", async () => {
+  it("SELL with qty NaN is rejected and inventory/gold stay finite", async () => {
     const world = new World();
     const agent = makeAgent({ ...SHOP_POS });
     agent.addItem("crop:parsnip", 2);
@@ -418,8 +420,9 @@ describe("hostile non-finite quantities (defense-in-depth vs a bypassing router)
       INSTANT,
     );
     expect(r.ok).toBe(false);
-    expect(Number.isFinite(agent.countItem("crop:parsnip"))).toBe(true);
-    expect(Number.isFinite(agent.gold)).toBe(true);
+    expect(r.reason).toBeTruthy();
+    expect(agent.countItem("crop:parsnip")).toBe(2); // untouched, and finite
+    expect(agent.gold).toBe(STARTING_GOLD);
   });
 
   it("BUY/SELL with qty Infinity are rejected by the gold/holdings gates", async () => {

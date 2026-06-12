@@ -191,11 +191,11 @@ describe("pause / step adversarial semantics", () => {
 describe("hostile router that REJECTS (rule 1: never crash the loop)", () => {
   // liveRouter/mockRouter never throw, but the Router seam is public and a
   // buggy custom router (or a future regression) returning a rejected promise
-  // must not detonate the agent loop. Today runDecisionCycle has no try/catch
-  // around the router call, so the rejection propagates and (via
-  // AgentManager.loop's un-caught await) becomes an unhandled rejection that
-  // silently kills that agent's loop forever. See qa-report issue.
-  it.skip("a rejecting router degrades the turn to WAIT instead of throwing (KNOWN GAP — src/agents/AgentRuntime.ts:140)", async () => {
+  // must not detonate the agent loop. RESOLVED in 89ccf81: runDecisionCycle
+  // converts the rejection to error-LlmResponse semantics ("router_threw:"),
+  // the turn degrades to WAIT with a complete event chain, and the manager
+  // loop additionally survives any novel failure via an agent_error event.
+  it("a rejecting router degrades the turn to WAIT instead of throwing", async () => {
     const agent = new Agent(personas(1)[0]);
     const explosive: Router = async () => {
       throw new Error("upstream meltdown");
@@ -210,21 +210,32 @@ describe("hostile router that REJECTS (rule 1: never crash the loop)", () => {
       }),
     ).resolves.toBeUndefined();
     expect(agent.lastAction?.action).toBe("WAIT");
+    expect(agent.lastThought).toContain("router_threw");
+    // The event chain stayed complete despite the meltdown.
+    const kinds = getEventBus()
+      .recent()
+      .filter((e) => e.agentName === agent.name)
+      .map((e) => e.kind);
+    for (const k of ["turn_start", "llm_call", "action_chosen", "action_resolved"]) {
+      expect(kinds, k).toContain(k);
+    }
   });
 
-  it("documents the current behavior: the rejection propagates out of runDecisionCycle", async () => {
-    const agent = new Agent(personas(1)[0]);
-    const explosive: Router = async () => {
-      throw new Error("upstream meltdown");
+  it("the scheduler loop survives a mid-run router meltdown and keeps deciding", async () => {
+    let calls = 0;
+    const flaky: Router = async () => {
+      calls++;
+      if (calls === 2) throw new Error("transient meltdown");
+      return waitResponse("flaky");
     };
-    await expect(
-      runDecisionCycle(agent, {
-        world: getWorld(),
-        agents: [agent],
-        bus: getEventBus(),
-        router: explosive,
-        executorOpts: { msPerTile: 0 },
-      }),
-    ).rejects.toThrow("upstream meltdown");
+    manager = new AgentManager({
+      config: { decisionCooldownMs: 200, maxConcurrentDecisions: 3, maxDecisionsPerDay: 1000 },
+      router: flaky,
+    });
+    manager.start(personas(1));
+    await vi.advanceTimersByTimeAsync(2_000);
+    // Decision #2 melted down, yet the loop kept going well past it.
+    expect(manager.agents()[0].decisionsTotal).toBeGreaterThan(3);
+    expect(manager.agents()[0].fsm).toBe("IDLE");
   });
 });
