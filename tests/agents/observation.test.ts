@@ -137,10 +137,10 @@ describe("buildObservation", () => {
       role: "farmer",
       pos: { x: 9, y: 9 },
       energy: 100,
-      gold: 100,
+      gold: 200, // STARTING_GOLD (v1.2)
       goal: "get rich",
     });
-    expect(obs.self.inventory).toEqual([{ itemId: "seed:parsnip", qty: 2 }]);
+    expect(obs.self.inventory).toEqual([{ itemId: "seed:parsnip", qty: 5 }]); // STARTING_SEEDS
     expect(obs.nearby.tiles).toHaveLength(81); // full 9x9 within the map
     expect(obs.nearby.agents).toEqual([
       { name: "Bob", pos: { x: 11, y: 9 }, lastSeenDoing: "tilling (11,8)" },

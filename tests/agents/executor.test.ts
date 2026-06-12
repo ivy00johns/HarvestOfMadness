@@ -83,7 +83,7 @@ describe("TILL", () => {
     const r = await exec(a, act("TILL", { x: 9, y: 8 }));
     expect(r.ok).toBe(true);
     expect(getWorld().getTile(9, 8)!.type).toBe("tilled");
-    expect(a.energy).toBe(ENERGY_START - 3);
+    expect(a.energy).toBe(ENERGY_START - 2); // TILL costs 2 (v1.2)
   });
 
   it("rejects a non-adjacent target", async () => {
@@ -121,9 +121,9 @@ describe("PLANT", () => {
     await exec(a, act("TILL", { x: 9, y: 8 }));
     const r = await exec(a, act("PLANT", { x: 9, y: 8 }));
     expect(r.ok).toBe(true);
-    expect(a.countItem("seed:parsnip")).toBe(1); // started with 2
+    expect(a.countItem("seed:parsnip")).toBe(4); // started with 5 (v1.2)
     expect(getWorld().getTile(9, 8)!.crop).toMatchObject({ kind: "parsnip", stage: 0 });
-    expect(a.energy).toBe(ENERGY_START - 6);
+    expect(a.energy).toBe(ENERGY_START - 3); // TILL 2 + PLANT 1
   });
 
   it("rejects without a seed", async () => {
@@ -163,7 +163,7 @@ describe("WATER", () => {
     const r = await exec(a, act("WATER", { x: 9, y: 8 }));
     expect(r.ok).toBe(true);
     expect(getWorld().getTile(9, 8)!.crop!.watered).toBe(true);
-    expect(a.energy).toBe(ENERGY_START - 9);
+    expect(a.energy).toBe(ENERGY_START - 4); // TILL 2 + PLANT 1 + WATER 1
   });
 
   it("rejects an already-watered crop and a cropless tile", async () => {
@@ -192,7 +192,7 @@ describe("HARVEST", () => {
     const r = await exec(a, act("HARVEST", { x: 9, y: 8 }));
     expect(r.ok).toBe(true);
     expect(a.countItem("crop:parsnip")).toBe(1);
-    expect(a.energy).toBe(energyBefore - 3);
+    expect(a.energy).toBe(energyBefore - 2); // HARVEST costs 2
     expect(getWorld().getTile(9, 8)!.crop).toBeUndefined();
   });
 
@@ -212,8 +212,8 @@ describe("BUY / SELL", () => {
     const a = makeAgent({ ...SHOP_POS });
     const r = await exec(a, act("BUY", { itemId: "seed:parsnip", qty: 2 }));
     expect(r.ok).toBe(true);
-    expect(a.gold).toBe(60);
-    expect(a.countItem("seed:parsnip")).toBe(4);
+    expect(a.gold).toBe(160); // 200 - 2x20
+    expect(a.countItem("seed:parsnip")).toBe(7); // 5 start + 2 bought
   });
 
   it("BUY rejects off the shop tile, with too little gold, unknown items, bad qty", async () => {
@@ -224,7 +224,7 @@ describe("BUY / SELL", () => {
     expect((await exec(a, act("BUY", { itemId: "seed:cauliflower", qty: 10 }))).reason).toMatch(/only have/);
     expect((await exec(a, act("BUY", { itemId: "crop:gold", qty: 1 }))).reason).toMatch(/does not sell/);
     expect((await exec(a, act("BUY", { itemId: "seed:parsnip", qty: 0 }))).ok).toBe(false);
-    expect(a.gold).toBe(100);
+    expect(a.gold).toBe(200);
   });
 
   it("SELL exchanges items for gold on the shop tile", async () => {
@@ -232,7 +232,7 @@ describe("BUY / SELL", () => {
     a.addItem("crop:parsnip", 2);
     const r = await exec(a, act("SELL", { itemId: "crop:parsnip", qty: 2 }));
     expect(r.ok).toBe(true);
-    expect(a.gold).toBe(100 + 70);
+    expect(a.gold).toBe(200 + 70);
     expect(a.countItem("crop:parsnip")).toBe(0);
   });
 

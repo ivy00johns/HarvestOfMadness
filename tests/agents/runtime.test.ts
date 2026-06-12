@@ -165,7 +165,7 @@ describe("event chain + trace", () => {
       "action_resolved",
     ]);
     const resolved = evts[evts.length - 1];
-    expect(resolved.payload).toMatchObject({ ok: true, energy: 100, gold: 100 });
+    expect(resolved.payload).toMatchObject({ ok: true, energy: 100, gold: 200 });
   });
 
   it("emits agent_speech when say is non-null and updates goal/lastSeenDoing", async () => {

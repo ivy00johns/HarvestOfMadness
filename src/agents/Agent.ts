@@ -9,7 +9,7 @@ import type {
   InventoryEntry,
   Vec2,
 } from "@contracts/types";
-import { ENERGY_START, STARTING_GOLD } from "@contracts/types";
+import { ENERGY_START, STARTING_GOLD, STARTING_SEEDS } from "@contracts/types";
 
 /** Persona definition (mission §9) — consumed by AgentManager.start(). */
 export interface Persona {
@@ -35,7 +35,7 @@ export class Agent {
   pos: Vec2;
   energy: number = ENERGY_START;
   gold: number = STARTING_GOLD;
-  inventory: InventoryEntry[] = [{ itemId: "seed:parsnip", qty: 2 }];
+  inventory: InventoryEntry[] = [{ itemId: "seed:parsnip", qty: STARTING_SEEDS }];
   goal: string | null = null;
   lastAction: { action: string; ok: boolean; reason?: string } | null = null;
   lastThought: string | null = null;

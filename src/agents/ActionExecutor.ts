@@ -4,18 +4,21 @@
  * reasons, never throws (rule 1).
  *
  * Effects owned here (contracts/README.md cross-cutting assignments):
- * energy (−ENERGY_COST_FIELD per field action, floored at 0), gold/inventory
- * for BUY/SELL, TALK_TO speech + relationship bump, SLEEP energy restore.
- * Tile mutations always go through world.till/plant/water/harvest.
+ * energy (−ENERGY_COSTS[action] per action, floored at 0 — v1.2 kickoff
+ * table: TILL 2 / PLANT 1 / WATER 1 / HARVEST 2, everything else 0),
+ * gold/inventory for BUY/SELL, TALK_TO speech + relationship bump, SLEEP
+ * energy restore. Tile mutations always go through world.till/plant/water/
+ * harvest.
  */
 import type {
   ActionResult,
+  ActionType,
   AgentAction,
   CropKind,
   Vec2,
   WorldApi,
 } from "@contracts/types";
-import { ENERGY_COST_FIELD, ENERGY_START } from "@contracts/types";
+import { ENERGY_COSTS, ENERGY_START } from "@contracts/types";
 import { getRenderApi } from "../world/render";
 import type { Agent } from "./Agent";
 import { chebyshev } from "./Observation";
@@ -68,8 +71,9 @@ function isAgentTarget(v: unknown): v is { agentName: string } {
   );
 }
 
-function spendFieldEnergy(agent: Agent): void {
-  agent.energy = Math.max(0, agent.energy - ENERGY_COST_FIELD);
+/** Charge the v1.2 per-action energy cost (0 for non-field actions). */
+function spendEnergy(agent: Agent, action: ActionType): void {
+  agent.energy = Math.max(0, agent.energy - (ENERGY_COSTS[action] ?? 0));
 }
 
 /** Shared field-action gate: tile target, energy>0, 4-adjacency. */
@@ -154,7 +158,7 @@ export async function executeAction(
         const gate = fieldGate(agent, world, action.target, "TILL");
         if (!gate.ok) return gate.result;
         const r = world.till(gate.pos);
-        if (r.ok) spendFieldEnergy(agent);
+        if (r.ok) spendEnergy(agent, "TILL");
         return r;
       }
 
@@ -169,7 +173,7 @@ export async function executeAction(
         const r = world.plant(gate.pos, kind);
         if (r.ok) {
           agent.removeItem(seed.itemId, 1);
-          spendFieldEnergy(agent);
+          spendEnergy(agent, "PLANT");
         }
         return r;
       }
@@ -178,7 +182,7 @@ export async function executeAction(
         const gate = fieldGate(agent, world, action.target, "WATER");
         if (!gate.ok) return gate.result;
         const r = world.water(gate.pos);
-        if (r.ok) spendFieldEnergy(agent);
+        if (r.ok) spendEnergy(agent, "WATER");
         return r;
       }
 
@@ -188,7 +192,7 @@ export async function executeAction(
         const r = world.harvest(gate.pos);
         if (r.ok && r.itemId) {
           agent.addItem(r.itemId, 1);
-          spendFieldEnergy(agent);
+          spendEnergy(agent, "HARVEST");
         }
         return { ok: r.ok, ...(r.reason ? { reason: r.reason } : {}) };
       }

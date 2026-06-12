@@ -45,13 +45,14 @@ describe("multi-day mock run", () => {
     manager.start(PERSONAS.slice(0, 2)); // Dora + Rusty
 
     // Drive the sim: scheduler/walking via fake timers, phases via the
-    // TimeSystem tick (the WorldScene's job in the browser). Amplified delta
-    // so a phase lasts 10s of scheduler time instead of 40s.
+    // TimeSystem tick (the WorldScene's job in the browser). Real pacing:
+    // v1.2 phases are 8s, so a day is ~24s of tick time plus however long
+    // the night's walk-to-bed takes — ~20 decisions/day at 1s cooldown.
     const world = getWorld();
     const ts = getTimeSystem();
     for (let i = 0; i < 3000 && world.time().day < 4; i++) {
       await vi.advanceTimersByTimeAsync(250);
-      ts.tick(1000);
+      ts.tick(250);
     }
 
     expect(world.time().day).toBeGreaterThanOrEqual(4); // 3 full days passed
