@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "status": "complete",
+  "scores": {
+    "contract_conformance": {
+      "score": 4,
+      "notes": "§4.4 precondition table verified by an exhaustive phase × position × energy matrix (SLEEP gated to bed+night incl. the v1.2 energy-0-at-bed rule; HARVEST rejected at every pre-ready stage for all 3 crops; BUY/SELL shop-tile + gold/holdings gates; TALK_TO Chebyshev-1). Kickoff 9-step mock ladder, v1.2 constants (200g/5 seeds/energy table/prices), turnId event chains (turn_start→llm_call→action_chosen→action_resolved), ring cap 1000, and budget rule 5 (manager ceiling + per-agent 429 fallback) all conform. Docked one point: the executor violates rule 1 ('reject loudly, never crash') for two inputs that shipped routers cannot produce but the public Router seam can — qty:NaN BUY/SELL is ACCEPTED and corrupts gold/inventory to NaN, and a rejecting router propagates out of runDecisionCycle despite its 'never throws' doc."
+    },
+    "test_coverage": {
+      "score": 4,
+      "notes": "Builders shipped 169 honest tests (verified, not vanity assertions). QE added 85 adversarial tests in tests/qe/** covering the previously untested gaps: full SLEEP gate matrix, per-stage HARVEST rejection, BUY/SELL boundary/hostile-qty attacks, 500-op economy fuzz with exact gold/item conservation ledger, 8-agent burst proving in-flight cap == 3, manager UTC-day budget reset + re-arm (badge exactly once per day), pause/step edge semantics, hostile parse battery (100KB garbage, multi-object, fences-in-strings, unicode, prototype pollution, 10K nesting), mockRouter multi-day replay determinism, and the kickoff gate run headlessly (3 agents × mockRouter × ≥5 days). Not covered headlessly (out of scope, browser verifier owns it): WorldScene/UIScene rendering, live Express endpoint integration (unit-level redact/budget/upstream mapping is covered)."
+    },
+    "reliability": {
+      "score": 4,
+      "notes": "Headless gate run: 3 agents survive 5+ in-game days under fake timers with zero exceptions, gold strictly changes, every one of 30+ turnId chains complete, day_advanced ≥ 5, energy/gold/inventory invariants sampled throughout and never violated; all decision paths (parse retry, budget fallback, router error → WAIT) degrade instead of crashing. Two LATENT reliability holes (unreachable via shipped mock/live routers, reachable via the public Router seam): (1) a rejecting router kills that agent's loop forever as an unhandled rejection; (2) mockRouter — the budget-fallback safety net — throws TypeError on a parseable-but-partial observation."
+    },
+    "security": {
+      "score": 5,
+      "notes": "Built bundle (dist/assets/index-*.js, 1.7MB) grep-verified clean: zero hits for 'freellmapi-', 'FREELLMAPI_API_KEY', ':3001', '127.0.0.1', 'Bearer <token>', or sk-/gsk_/AIza key shapes. Key lives only in server/.env (gitignored; only .env.example files tracked, both with empty key). src/ has zero key references; client talks only to the relative /api proxy path. Server error sanitization verified honest under attack: redaction runs BEFORE the 240-char cap (no partial-key survival at the truncation boundary), catches keys inside URLs, JSON blobs, Authorization echoes, and multiple mixed-vendor keys per message; budget 429 path returns the sanitized envelope without calling upstream. Model-output injection is contained by parse.ts (action whitelist, target shape+finiteness checks, no prototype pollution)."
+    },
+    "code_quality": {
+      "score": 4,
+      "notes": "Strict TS clean (tsc --noEmit, noUnusedLocals/Parameters), contracts imported via @contracts alias with no divergent redeclarations, seams honored (world owns tiles, executor owns effects, agents are data), thorough intent comments. Minor dings: stripFences mutates backtick content inside JSON string values (cosmetic damage to thought/say); executor duplicates parse.ts target guards but without the finiteness checks (the NaN gap); 1.7MB single chunk build warning (Phaser, acceptable for now)."
+    }
+  },
+  "test_results": {
+    "total": 254,
+    "passed": 250,
+    "failed": 0,
+    "skipped": 4,
+    "files": 26
+  },
+  "blockers": [],
+  "issues": [
+    {
+      "severity": "MAJOR",
+      "title": "Executor accepts BUY/SELL with qty:NaN and corrupts the economy to NaN",
+      "detail": "src/agents/ActionExecutor.ts:209 (BUY) and :235 (SELL): Math.floor(NaN)=NaN passes the 'qty < 1' gate (false), NaN cost/holdings comparisons pass, then gold -= NaN and inventory qty += NaN. parse.ts:77-85 gates finiteness so the shipped mock/live routers can never deliver this, but the Router seam is public and the executor's own isItemTarget (ActionExecutor.ts:57-64) omits the Number.isFinite check parse.ts has. Repro: tests/qe/executor-matrix.test.ts ('hostile non-finite quantities', 2 tests marked .skip). Fix: mirror parse.ts finiteness checks in the executor's isItemTarget/isVec2."
+    },
+    {
+      "severity": "MAJOR",
+      "title": "A rejecting Router kills that agent's loop forever via an unhandled rejection",
+      "detail": "src/agents/AgentRuntime.ts:140 awaits the router with no try/catch despite the function's 'Never throws' contract (AgentRuntime.ts:79-82); the rejection propagates through AgentManager.runCycle into AgentManager.loop (src/agents/AgentManager.ts:147) whose promise is discarded at start() (AgentManager.ts:78 'void this.loop(agent)') — the agent silently stops deciding for the rest of the session. Shipped mockRouter/liveRouter never reject, so this is latent, but it converts any future router regression into a silent agent death instead of a degraded WAIT turn. Repro: tests/qe/scheduler-adversarial.test.ts ('hostile router that REJECTS'; expectation test .skip, current behavior documented by a passing test). Fix: wrap the call() in try/catch and synthesize an error LlmResponse."
+    },
+    {
+      "severity": "MINOR",
+      "title": "mockRouter throws TypeError on a parseable-but-partial observation",
+      "detail": "src/llm/mock.ts:97 'self.persona.toLowerCase()' (and subsequent field reads) throw when the extracted JSON parses but lacks Observation fields; the documented degrade-to-WAIT path (mock.ts:272-278) only covers JSON that fails to parse. mockRouter is the budget-ceiling safety net, so it should never reject. Unreachable via buildObservation-produced prompts. Repro: tests/qe/mock-determinism.test.ts ('an observation missing fields', .skip; current rejection documented by a passing test). Fix: validate obs shape (or try/catch decide()) before deciding."
+    },
+    {
+      "severity": "MINOR",
+      "title": "stripFences mutates backtick fences inside JSON string values",
+      "detail": "src/llm/parse.ts:26-28 removes ``` sequences globally before brace scanning, so a model response whose thought/say legitimately contains backtick fences gets cosmetically altered (action/target survive intact — verified by tests/qe/parse-hostile.test.ts). Acceptable defensive trade-off; flagging for awareness only."
+    },
+    {
+      "severity": "MINOR",
+      "title": "Client bundle is a single 1.7MB chunk",
+      "detail": "npm run build emits dist/assets/index-*.js at 1,702.91 kB (gzip 391.64 kB) with Rollup's >500kB warning — Phaser is bundled whole. Not a gate concern for a local demo; consider manualChunks if it ever ships."
+    }
+  ],
+  "gate_decision": {
+    "proceed": true,
+    "reason": "The kickoff 'single hard requirement' is proven headlessly: 3 persona agents on mockRouter run till→plant→water→sleep→harvest/sell across ≥5 in-game days with gold strictly changing, zero exceptions, complete turnId event chains, and day_advanced ≥ 5. Full suite 250/250 passing (4 intentional .skip tests documenting known gaps), typecheck clean, no API key or upstream URL in the client bundle, error redaction honest under adversarial input. The two MAJOR issues are defense-in-depth holes on the public Router seam that no shipped code path can trigger — they should be fixed in a follow-up but do not block the demo gate."
+  }
+}
