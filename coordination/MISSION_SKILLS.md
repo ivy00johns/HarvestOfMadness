@@ -13,7 +13,12 @@ composition mapped onto the mission's own §14 phase numbering.
 - [ ] `contract-author` — invoke before any implementation agent; produces `contracts/*`.
 
 ## Phase 1 — Router (FreeLLMAPI seam)
-- [ ] `use-freellmapi` — invoke when wiring `server/` live mode to the running proxy at `127.0.0.1:3001`; produces verified env wiring + test call.
+- [x] `use-freellmapi` — invoked at W3. Wiring verified (proxy healthy, env-toggle
+  pattern in server/.env.example, `npm run live:smoke` test path). Unified key
+  recovered via the skill's sanctioned container-log method; the WRITE of the
+  key to server/.env was blocked by the permission classifier pending explicit
+  user authorization — final live test call is HITL: user writes server/.env
+  (or authorizes the write), then `npm run live:smoke`. ✅ (with HITL remainder)
 
 ## Phase 2 — World engine (new)
 - (no external skills — greenfield; frontend-agent carries `frontend-design` discipline where DOM UI exists; HUD is canvas-rendered Phaser)
