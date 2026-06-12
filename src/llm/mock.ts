@@ -2,11 +2,22 @@
  * mockRouter — deterministic heuristic farmer (§11). $0, model:"mock",
  * latencyMs 0-5. Parses the Observation embedded in req.user (the user
  * prompt is JSON.stringify(observation) + a trailing question) and returns
- * a valid AgentAction that competently plays the farm loop:
- * till -> plant -> water -> sleep -> harvest -> sell, buying seeds when out.
+ * a valid AgentAction.
  *
- * Deterministic: no Math.random — persona flavor uses a hash of
- * (agentName + day) so runs replay identically.
+ * Decision order is the kickoff-fable5 9-step priority ladder (contracts
+ * v1.2, docs/kickoff-fable5.md "Mock farmer decision priority") — first
+ * legal step wins. Pinned resolutions:
+ *  - step 6: SLEEP only fires at night AND on the bed tile (§4.4 night-gate
+ *    wins); energy-0 at bed during the day → WAIT.
+ *  - itemIds stay "seed:<kind>" / "crop:<kind>".
+ *  - step 8: at night or at energy 0 the destination is the bed — without
+ *    this, step 6 is unreachable and the day never advances.
+ * Persona flavor is secondary, AFTER the ladder: reckless skip-water lives
+ * INSIDE step 4 (skip = fall through to step 5); social TALK_TO can only
+ * replace the final WAIT.
+ *
+ * Deterministic: no Math.random — flavor uses a hash of (agentName + day)
+ * so runs replay identically.
  */
 import type {
   ActionType,
@@ -79,7 +90,7 @@ function moveTo(pos: Vec2, thought: string, say: string | null = null): AgentAct
   return act("MOVE_TO", thought, say, { x: pos.x, y: pos.y });
 }
 
-/** Core heuristic — priority-ordered, always respects obs.availableActions. */
+/** Kickoff 9-step ladder — always respects obs.availableActions. */
 function decide(obs: Observation): AgentAction {
   const self = obs.self;
   const pos = self.pos;
@@ -90,6 +101,11 @@ function decide(obs: Observation): AgentAction {
   const bed = findLandmark(obs, "bed");
   const shop = findLandmark(obs, "shop");
   const atShop = shop !== null && isAdjacent(pos, shop);
+  const onBed =
+    (bed !== null && samePos(pos, bed)) ||
+    obs.nearby.tiles.some((t) => t.type === "bedTile" && samePos(t, pos));
+  const night = obs.time.phase === "night";
+  const exhausted = self.energy <= 0;
 
   const seeds = self.inventory.filter((i) => i.itemId.startsWith("seed:") && i.qty > 0);
   const crops = self.inventory.filter((i) => i.itemId.startsWith("crop:") && i.qty > 0);
@@ -101,63 +117,49 @@ function decide(obs: Observation): AgentAction {
   const tillable = tiles.filter(
     (t) => (t.type === "soil" || t.type === "grass") && !t.crop && !samePos(t, pos),
   );
-  const tilledCount = tiles.filter((t) => t.type === "tilled").length;
 
-  // 1-2. Night: sleep at the bed, or head there.
-  if (obs.time.phase === "night") {
-    if (bed && isAdjacent(pos, bed) && can("SLEEP")) {
-      return act("SLEEP", "It is night and I am at my bed. Time to sleep.", "Good night.");
-    }
-    if (bed && can("MOVE_TO") && !samePos(pos, bed)) {
-      return moveTo(bed, "It is night — heading to bed.");
-    }
-  }
-
-  // 3. Critically low energy: retreat to bed (or just wait it out).
-  if (self.energy <= 2) {
-    if (bed && can("MOVE_TO") && !samePos(pos, bed)) {
-      return moveTo(bed, "I am exhausted — walking to bed.", "So tired...");
-    }
-    if (can("WAIT")) {
-      return act("WAIT", "Too exhausted to work. Resting in place.", null);
-    }
-  }
-
-  // Persona flavor: social agents sometimes chat with whoever is beside them.
-  if (persona.includes("social") && can("TALK_TO") && seed % 3 === 0) {
-    const neighbor = obs.nearby.agents.find((a) => cheb(pos, a.pos) <= 1);
-    if (neighbor) {
-      return act(
-        "TALK_TO",
-        `${neighbor.name} is right here — a chat beats chores.`,
-        `Hey ${neighbor.name}! How's the farm?`,
-        { agentName: neighbor.name },
-      );
-    }
-  }
-
-  // 4. Ready crop: harvest it (adjacent) or walk to it.
-  const ready = nearest(pos, readyCrops);
-  if (ready) {
-    if (isAdjacent(pos, ready) && can("HARVEST")) {
-      return act(
-        "HARVEST",
-        `The ${ready.crop?.kind ?? "crop"} at (${ready.x},${ready.y}) is ready.`,
-        "Harvest time!",
-        { x: ready.x, y: ready.y },
-      );
-    }
-    if (can("MOVE_TO") && !samePos(pos, ready)) {
-      return moveTo(ready, `Heading to the ready crop at (${ready.x},${ready.y}).`);
-    }
-  }
-
-  // 5. Unwatered crop: water it — unless a reckless mood strikes (30%,
-  // deterministic by name+day).
+  // Reckless flavor lives INSIDE step 4: skipping means fall through to step 5.
   const recklessSkip = persona.includes("reckless") && seed % 10 < 3;
-  const thirsty = nearest(pos, thirstyCrops);
-  if (thirsty && !recklessSkip) {
-    if (isAdjacent(pos, thirsty) && can("WATER")) {
+
+  // 1. ready crop adjacent → HARVEST
+  const ready = nearest(pos, readyCrops.filter((t) => isAdjacent(pos, t)));
+  if (ready && can("HARVEST")) {
+    return act(
+      "HARVEST",
+      `The ${ready.crop?.kind ?? "crop"} at (${ready.x},${ready.y}) is ready.`,
+      "Harvest time!",
+      { x: ready.x, y: ready.y },
+    );
+  }
+
+  // 2. holding a harvestable crop and at/adjacent to shop → SELL
+  if (crops.length > 0 && atShop && can("SELL")) {
+    const lot = crops[0];
+    return act(
+      "SELL",
+      `Selling all ${lot.qty} ${lot.itemId} at the shop.`,
+      "Fresh produce, straight from the field!",
+      { itemId: lot.itemId, qty: lot.qty },
+    );
+  }
+
+  // 3. tilled & empty tile adjacent and has a seed → PLANT
+  if (seeds.length > 0 && can("PLANT")) {
+    const plot = nearest(pos, tilledEmpty.filter((t) => isAdjacent(pos, t)));
+    if (plot) {
+      return act(
+        "PLANT",
+        `Planting ${seeds[0].itemId} in the tilled plot at (${plot.x},${plot.y}).`,
+        null,
+        { x: plot.x, y: plot.y },
+      );
+    }
+  }
+
+  // 4. unwatered crop adjacent and energy > 0 → WATER (reckless may skip)
+  if (self.energy > 0 && !recklessSkip && can("WATER")) {
+    const thirsty = nearest(pos, thirstyCrops.filter((t) => isAdjacent(pos, t)));
+    if (thirsty) {
       return act(
         "WATER",
         `The ${thirsty.crop?.kind ?? "crop"} at (${thirsty.x},${thirsty.y}) needs water.`,
@@ -165,65 +167,35 @@ function decide(obs: Observation): AgentAction {
         { x: thirsty.x, y: thirsty.y },
       );
     }
-    if (can("MOVE_TO") && !samePos(pos, thirsty)) {
-      return moveTo(thirsty, `Going to water the crop at (${thirsty.x},${thirsty.y}).`);
-    }
   }
 
-  // 6. Seeds in pocket + tilled empty soil: plant (or walk to the plot).
-  if (seeds.length > 0) {
-    const plot = nearest(pos, tilledEmpty);
-    if (plot) {
-      if (isAdjacent(pos, plot) && can("PLANT")) {
-        return act(
-          "PLANT",
-          `Planting ${seeds[0].itemId} in the tilled plot at (${plot.x},${plot.y}).`,
-          null,
-          { x: plot.x, y: plot.y },
-        );
-      }
-      if (can("MOVE_TO") && !samePos(pos, plot)) {
-        return moveTo(plot, `Carrying seeds to the tilled plot at (${plot.x},${plot.y}).`);
-      }
-    }
-  }
-
-  // 7. Expand the field a little: till adjacent soil/grass while plots are few.
-  if (tilledCount < 6 && can("TILL")) {
-    const spot = nearest(
-      pos,
-      tillable.filter((t) => isAdjacent(pos, t)),
-    );
+  // 5. untilled soil adjacent and energy > 0 → TILL
+  if (self.energy > 0 && can("TILL")) {
+    const spot = nearest(pos, tillable.filter((t) => isAdjacent(pos, t)));
     if (spot) {
-      return act(
-        "TILL",
-        `Only ${tilledCount} tilled plots nearby — tilling (${spot.x},${spot.y}).`,
-        null,
-        { x: spot.x, y: spot.y },
-      );
+      return act("TILL", `Tilling the ground at (${spot.x},${spot.y}).`, null, {
+        x: spot.x,
+        y: spot.y,
+      });
     }
   }
 
-  // 8-9. Harvested goods: sell at the shop, or carry them there.
-  if (crops.length > 0) {
-    if (atShop && can("SELL")) {
-      const lot = crops[0];
-      return act(
-        "SELL",
-        `Selling all ${lot.qty} ${lot.itemId} at the shop.`,
-        "Fresh produce, straight from the field!",
-        { itemId: lot.itemId, qty: lot.qty },
-      );
+  // 6. (energy 0 or night) and at bed → SLEEP — night-gated per §4.4:
+  //    SLEEP only at night; energy-0 at bed during the day → WAIT.
+  if (onBed && (night || exhausted)) {
+    if (night && can("SLEEP")) {
+      return act("SLEEP", "In bed at night. Time to sleep.", "Good night.");
     }
-    if (shop && can("MOVE_TO") && !samePos(pos, shop)) {
-      return moveTo(shop, "Hauling my harvest to the shop to sell.");
+    if (can("WAIT")) {
+      return act("WAIT", "Spent, but it is not night yet — resting at bed.", "So tired...");
     }
   }
 
-  // 10-11. Out of seeds: buy parsnips at the shop, or walk to the shop.
-  if (seeds.length === 0) {
+  // 7. out of seeds and gold >= a seed cost → MOVE_TO(shop) then BUY.
+  //    Skipped at energy 0: kickoff energy rule allows only MOVE_TO(bed)/WAIT.
+  if (!exhausted && seeds.length === 0 && self.gold >= CROPS.parsnip.seedCost) {
     const cost = CROPS.parsnip.seedCost;
-    if (self.gold >= cost && atShop && can("BUY")) {
+    if (atShop && can("BUY")) {
       const qty = Math.max(1, Math.min(3, Math.floor(self.gold / cost)));
       return act(
         "BUY",
@@ -237,7 +209,50 @@ function decide(obs: Observation): AgentAction {
     }
   }
 
-  // 12. Nothing useful to do.
+  // 8. otherwise → MOVE_TO the nearest actionable destination. At night or
+  //    at energy 0 the destination is the bed (so step 6 becomes reachable);
+  //    otherwise: untilled soil → tilled empty → unwatered crop → ready crop,
+  //    whichever is closest (category order breaks distance ties).
+  if (can("MOVE_TO")) {
+    if ((night || exhausted) && bed && !samePos(pos, bed)) {
+      return moveTo(
+        bed,
+        night ? "It is night — heading to bed." : "Exhausted — walking to bed.",
+        exhausted ? "So tired..." : null,
+      );
+    }
+    type Candidate = { x: number; y: number; cat: number };
+    const candidates: Candidate[] = [
+      ...(self.energy > 0 ? tillable.map((t) => ({ x: t.x, y: t.y, cat: 0 })) : []),
+      ...(seeds.length > 0 ? tilledEmpty.map((t) => ({ x: t.x, y: t.y, cat: 1 })) : []),
+      ...(self.energy > 0 && !recklessSkip
+        ? thirstyCrops.map((t) => ({ x: t.x, y: t.y, cat: 2 }))
+        : []),
+      ...readyCrops.map((t) => ({ x: t.x, y: t.y, cat: 3 })),
+    ].filter((t) => !isAdjacent(pos, t)); // adjacent+actionable was handled in steps 1-5
+    if (candidates.length > 0) {
+      const dest = [...candidates].sort(
+        (p, q) => cheb(pos, p) - cheb(pos, q) || p.cat - q.cat || p.y - q.y || p.x - q.x,
+      )[0];
+      return moveTo(dest, `Heading to the field work at (${dest.x},${dest.y}).`);
+    }
+  }
+
+  // Persona flavor (secondary, after the ladder): social agents may chat
+  // instead of idling when someone is within 1 tile.
+  if (persona.includes("social") && can("TALK_TO") && seed % 3 === 0) {
+    const neighbor = obs.nearby.agents.find((a) => cheb(pos, a.pos) <= 1);
+    if (neighbor) {
+      return act(
+        "TALK_TO",
+        `Nothing pressing, and ${neighbor.name} is right here — chat time.`,
+        `Hey ${neighbor.name}! How's the farm?`,
+        { agentName: neighbor.name },
+      );
+    }
+  }
+
+  // 9. otherwise → WAIT
   return act("WAIT", "Nothing pressing right now. Taking a breather.", null);
 }
 

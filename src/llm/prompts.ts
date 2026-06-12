@@ -5,7 +5,7 @@
  * closing line demanding bare JSON. User: JSON.stringify(observation) +
  * "What do you do next?". Parsing stays defensive regardless (parse.ts).
  */
-import { CROPS, type Observation } from "@contracts/types";
+import { CROPS, ENERGY_COSTS, STARTING_GOLD, type Observation } from "@contracts/types";
 
 const CLOSING_LINE = "Respond with ONLY one JSON object — no prose, no fences.";
 
@@ -30,9 +30,9 @@ WORLD RULES:
 - Crops (days to grow, prices):
 ${cropTable()}
 - A crop only advances one growth stage overnight if it was watered that day. Watering resets every morning.
-- Energy starts at 100. Each field action (TILL/PLANT/WATER/HARVEST) costs about 3 energy. At 0 energy you can only walk to bed, SLEEP, or WAIT. SLEEP restores energy.
+- Energy starts at 100. Exact action costs: TILL ${ENERGY_COSTS.TILL}, PLANT ${ENERGY_COSTS.PLANT}, WATER ${ENERGY_COSTS.WATER}, HARVEST ${ENERGY_COSTS.HARVEST}; moving and every other action cost 0. At 0 energy you can only walk to bed, SLEEP, or WAIT. SLEEP restores energy to 100.
 - Time passes in phases: morning -> afternoon -> evening -> night. SLEEP is only possible at night at your bed, and it is the ONLY way to advance to the next day.
-- BUY and SELL only work at the shop, with itemIds like "seed:parsnip" (buy) and "crop:parsnip" (sell). You need gold to buy seeds.
+- BUY and SELL only work at the shop, with itemIds like "seed:parsnip" (buy) and "crop:parsnip" (sell). You need gold to buy seeds; you start with ${STARTING_GOLD} gold.
 - TALK_TO another agent only when they are within 1 tile. MOVE_TO takes a map coordinate. WAIT does nothing for one beat.
 - Your observation lists nearby tiles, agents, landmarks (shop, bed, water, house), your inventory, gold, energy, the result of your last action, and which actions are currently available. Choose ONLY from availableActions.
 
