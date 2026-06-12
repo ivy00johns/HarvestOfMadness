@@ -1,10 +1,14 @@
 /**
- * Harvest of Madness — shared contract types (v1)
+ * Harvest of Madness — shared contract types (v2.0; history in contracts/README.md)
  *
  * Single source of truth for every seam in the build. Implementation agents
  * import these shapes (copy or path-alias) and MUST NOT redeclare divergent
  * versions. Mission interfaces (docs/deep-research-v1.md §4, §6, §11) are
- * reproduced verbatim where noted.
+ * reproduced verbatim where noted; the "v2 cognition + assets" section at the
+ * bottom implements docs/deep-research-v2.md (generative-agents loop + LPC
+ * asset pipeline). v2 changes are ADDITIVE: new ActionTypes GIVE_GIFT/EMOTE,
+ * optional fields on Observation/AgentAction/AgentCardModel, TILE_SIZE 16→32
+ * (LPC art), and the new cognition seams.
  */
 
 // ---------------------------------------------------------------------------
@@ -86,6 +90,8 @@ export const ENERGY_COSTS: Record<ActionType, number> = {
   BUY: 0,
   SELL: 0,
   TALK_TO: 0,
+  GIVE_GIFT: 0,
+  EMOTE: 0,
   SLEEP: 0,
   WAIT: 0,
 };
@@ -100,7 +106,8 @@ export const PHASE_DURATION_MS = 8_000;
 
 export const MAP_WIDTH = 24;
 export const MAP_HEIGHT = 18;
-export const TILE_SIZE = 16;
+/** v2: LPC art is 32×32; world logic is tile-indexed and never uses pixels */
+export const TILE_SIZE = 32;
 export const OBSERVATION_RADIUS = 4;
 
 // ---------------------------------------------------------------------------
@@ -117,6 +124,10 @@ export interface Observation {
     gold: number;
     inventory: InventoryEntry[];
     goal: string | null;
+    /** v2 — current DailyPlan step text, when the planner is active */
+    currentPlanStep?: string | null;
+    /** v2 — affinity snapshot for nearby/known agents, newest-first, cap 5 */
+    relationships?: { name: string; affinity: number }[];
   };
   time: TimeState;
   nearby: {
@@ -132,6 +143,8 @@ export interface Observation {
   lastAction: { action: string; ok: boolean; reason?: string } | null;
   availableActions: ActionType[];
   economy: { sells: Record<string, number>; buys: Record<string, number> };
+  /** v2 — top-k retrieved memories injected into the decision prompt */
+  memories?: { text: string; type: MemoryType; importance: number }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -147,15 +160,26 @@ export type ActionType =
   | "BUY"
   | "SELL"
   | "TALK_TO"
+  | "GIVE_GIFT" // v2 — target {agentName, itemId, qty:1}; adjacency + ownership required
+  | "EMOTE" // v2 — always legal; renders a transient emote above the sprite
   | "SLEEP"
   | "WAIT";
+
+/** v2 — surfaced on speech bubbles and emotes */
+export type Emotion = "neutral" | "happy" | "annoyed" | "sad" | "excited";
 
 export interface AgentAction {
   thought: string;
   say: string | null;
   action: ActionType;
-  target?: Vec2 | { itemId: string; qty: number } | { agentName: string };
+  target?:
+    | Vec2
+    | { itemId: string; qty: number }
+    | { agentName: string }
+    | { agentName: string; itemId: string; qty: number }; // GIVE_GIFT
   goal?: string;
+  /** v2 — optional; defaults to "neutral" */
+  emotion?: Emotion;
 }
 
 /** Result of validating/applying an action. Reject loudly, never crash. */
@@ -173,6 +197,8 @@ export interface LlmRequest {
   system: string;
   user: string;
   jsonSchema?: object;
+  /** v2 — tiered routing; forwarded as CompleteRequest.tier (mock ignores) */
+  tier?: "fast" | "smart";
 }
 
 export interface LlmResponse {
@@ -251,12 +277,22 @@ export interface WorldApi {
 // ---------------------------------------------------------------------------
 
 export interface RenderApi {
-  /** idempotent; labeled circle placeholder when no art is present */
+  /**
+   * v2: binds the agent to an LPC character sheet from AssetManifest by
+   * round-robin/name; labeled-circle placeholder remains the no-assets
+   * fallback (the game must still boot with public/assets/ empty).
+   */
   registerAgentSprite(name: string, color: number, pos: Vec2): void;
-  /** tween/walk the sprite toward tile pos; instant when speed multiplier high */
+  /**
+   * tween/walk the sprite toward tile pos; instant when speed multiplier
+   * high. v2: plays the directional LPC walk animation inferred from the
+   * movement vector; idles (animation stop) on arrival.
+   */
   setAgentPos(name: string, pos: Vec2): void;
   /** transient speech bubble above the sprite (~4s, truncate ~60 chars) */
-  showSpeech(name: string, text: string): void;
+  showSpeech(name: string, text: string, emotion?: Emotion): void;
+  /** v2 — transient emote icon/tint above the sprite (~2s) */
+  playEmote(name: string, emotion: Emotion): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +351,13 @@ export interface AgentCardModel {
   fsm: AgentFsmState;
   /** expandable decision trace: newest-first, cap ~20 per agent */
   trace: DecisionTraceEntry[];
+  /** v2 — current plan step text shown on the card */
+  planStep?: string | null;
+  /** v2 — affinity rows for the card's relationship meter */
+  relationships?: { name: string; affinity: number; summary: string }[];
+  /** v2 — memory stream stats for the card */
+  memoryCount?: number;
+  reflectionCount?: number;
 }
 
 export interface DecisionTraceEntry {
@@ -341,6 +384,12 @@ export interface CompleteRequest {
   system: string;
   user: string;
   jsonSchema?: object;
+  /**
+   * v2 — tiered routing (deep-research-v2 §4). "fast" = routine decisions +
+   * importance scoring; "smart" = dialogue/reflection/planning. Server maps
+   * tiers to FREELLMAPI_MODEL_FAST / FREELLMAPI_MODEL_SMART (default "auto").
+   */
+  tier?: "fast" | "smart";
 }
 
 /** POST /api/agent/complete 200 body (mirrors LlmResponse minus `parsed`) */
@@ -365,3 +414,209 @@ export interface ApiError {
       | "server_error";
   };
 }
+
+/** v2 — POST /api/embeddings request body (proxy → FreeLLMAPI /v1/embeddings) */
+export interface EmbedRequest {
+  texts: string[]; // 1..32 per call; batch aggressively
+}
+
+/** v2 — POST /api/embeddings 200 body */
+export interface EmbedResponse {
+  embeddings: number[][]; // same order as texts
+  model: string;
+}
+
+// ===========================================================================
+// v2 — Generative-agents cognition (docs/deep-research-v2.md §3)
+// Memory stream → retrieval → reflection → daily planning. All stores are
+// client-side in-memory (4–6 NPCs); embeddings come via POST /api/embeddings.
+// Everything here degrades gracefully: with the server down or in mock mode,
+// embedding-relevance is 0 and importance uses the heuristic table — the
+// game must keep running ($0 mock-first rule stands).
+// ===========================================================================
+
+export type MemoryType = "observation" | "reflection" | "plan";
+
+/** game-time stamp; 1 phase = 6 game hours (day = 24h, 4 phases) */
+export interface GameStamp {
+  day: number;
+  phase: Phase;
+}
+
+export const PHASE_HOURS: Record<Phase, number> = {
+  morning: 0,
+  afternoon: 6,
+  evening: 12,
+  night: 18,
+};
+
+/** absolute game-hours since day 1 morning — recency decay input */
+export function gameHours(t: GameStamp): number {
+  return (t.day - 1) * 24 + PHASE_HOURS[t.phase];
+}
+
+export interface MemoryEntry {
+  id: string; // `${agentName}-m${counter}`
+  agentName: string;
+  type: MemoryType;
+  text: string;
+  /** 1–10 poignancy; live: fast-tier LLM rating at write time; mock: heuristic */
+  importance: number;
+  createdAt: GameStamp;
+  /** bumped on every retrieval hit (Park recency semantics) */
+  lastAccess: GameStamp;
+  /** absent when the embeddings endpoint is unavailable (mock / offline) */
+  embedding?: number[];
+  /** reflections cite the memory ids they were inferred from */
+  sourceIds?: string[];
+}
+
+export interface RetrievalConfig {
+  /** Park et al. decay factor per game-hour since lastAccess */
+  decay: number; // 0.995
+  topK: number; // 5
+  /** normalized-term weights; equal by default */
+  weights: { recency: number; importance: number; relevance: number };
+}
+
+export const RETRIEVAL_DEFAULTS: RetrievalConfig = {
+  decay: 0.995,
+  topK: 5,
+  weights: { recency: 1, importance: 1, relevance: 1 },
+};
+
+/**
+ * score = w_rec·decay^hoursSince(lastAccess) + w_imp·(importance/10)
+ *       + w_rel·cosine(queryEmb, memEmb)   (rel term 0 when either emb missing)
+ */
+export interface MemoryStore {
+  /** assigns id + lastAccess, requests embedding (best-effort, async-safe) */
+  append(
+    e: Omit<MemoryEntry, "id" | "lastAccess" | "embedding">
+  ): Promise<MemoryEntry>;
+  /** top-k by score; bumps lastAccess on returned entries */
+  retrieve(agentName: string, query: string, k?: number): Promise<MemoryEntry[]>;
+  all(agentName: string): MemoryEntry[];
+  /** importance sum of observations since the last reflection (trigger input) */
+  importanceSinceReflection(agentName: string): number;
+}
+
+/** reflection fires when summed importance crosses this (≈2–3×/game-day) */
+export const REFLECTION_IMPORTANCE_THRESHOLD = 30;
+
+export interface ReflectionEngine {
+  /**
+   * No-op below threshold. Above it (smart tier): salient questions →
+   * retrieve → insights with sourceIds; stores and returns the new
+   * reflection memories. Mock mode: templated summary reflection.
+   */
+  maybeReflect(agentName: string): Promise<MemoryEntry[]>;
+}
+
+export interface PlanStep {
+  phase: Phase;
+  goal: string; // "water the crops on the east plot"
+  targetLandmark?: Landmark["kind"];
+  done: boolean;
+}
+
+export interface DailyPlan {
+  agentName: string;
+  day: number;
+  steps: PlanStep[]; // exactly 4, one per phase
+  rawText: string; // verbatim model output for the inspector
+}
+
+export interface Planner {
+  /** each morning (smart tier); stored as a `plan` memory. Mock: persona-templated */
+  planDay(agentName: string, day: number): Promise<DailyPlan>;
+  current(agentName: string): DailyPlan | null;
+  /** mark progress; the current step feeds Observation.self.currentPlanStep */
+  advance(agentName: string, phase: Phase): void;
+}
+
+// ---------------------------------------------------------------------------
+// v2 — Social relationship memory (AGA pattern, deep-research-v2 §3b)
+// ---------------------------------------------------------------------------
+
+export interface RelationshipSummary {
+  agentName: string; // owner of this view (relationships are asymmetric)
+  otherName: string;
+  affinity: number; // -100..100, starts 0
+  summary: string; // one-liner in the owner's voice ("she helped fix my fence")
+  interactions: number;
+  updatedDay: number;
+}
+
+export const AFFINITY_DELTAS = {
+  TALK_TO: 2,
+  GIVE_GIFT: 10,
+} as const;
+
+export interface RelationshipStore {
+  get(agentName: string, otherName: string): RelationshipSummary | null;
+  allFor(agentName: string): RelationshipSummary[];
+  /**
+   * applies the affinity delta immediately (table above); summary text is
+   * refreshed lazily via the smart tier at most once per day per pair.
+   */
+  recordInteraction(
+    agentName: string,
+    otherName: string,
+    kind: "TALK_TO" | "GIVE_GIFT",
+    eventText: string
+  ): void;
+}
+
+// ---------------------------------------------------------------------------
+// v2 — Asset manifest (produced by asset-agent at public/assets/manifest.json;
+// consumed by BootScene/WorldScene. The render layer must boot with the
+// manifest MISSING — placeholder graphics remain the fallback.)
+// ---------------------------------------------------------------------------
+
+export interface CharacterAsset {
+  name: string;
+  key: string; // Phaser texture key
+  path: string; // relative to public/
+  frameWidth: number; // 64
+  frameHeight: number; // 64
+  rows: { walkUp: number; walkLeft: number; walkDown: number; walkRight: number };
+  framesPerRow: number; // LPC walk = 9 (frame 0 idle + 8 cycle)
+}
+
+export interface CropAsset {
+  kind: string; // matches CropKind
+  path: string;
+  frameWidth: number;
+  frameHeight: number;
+  /** frame index per growth stage, seed→ready (5 entries) */
+  stageFrames: number[];
+}
+
+export interface TilesetAsset {
+  key: string;
+  path: string;
+  tileWidth: number;
+  tileHeight: number;
+  purpose: "terrain" | "water" | "farming" | "buildings" | "trees";
+  notes: string;
+}
+
+export interface AssetManifest {
+  version: 1;
+  tileSize: number; // 32
+  characters: CharacterAsset[];
+  crops: CropAsset[];
+  tilesets: TilesetAsset[];
+  water: { key: string; path: string; animFrames: number; notes: string };
+}
+
+// v2 EventKind additions (open union — documented, not enforced):
+//   "memory_written"        payload { memoryId, type, importance }
+//   "reflection"            payload { questions?: string[], insightIds: string[] }
+//   "plan_created"          payload { day, steps: string[] }
+//   "relationship_updated"  payload { otherName, affinity, delta }
+//   "gift_given"            payload { from, to, itemId }
+//   "agent_emote"           payload { emotion }
+//   "llm_offline"           payload { reason }   → HUD shows kill-switch badge
+//   "llm_recovered"

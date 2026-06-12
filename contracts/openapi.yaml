@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Harvest of Madness — agent proxy API
-  version: 1.0.0
+  version: 2.0.0
   description: >
     Thin Express proxy. Holds the FreeLLMAPI unified key server-side and
     forwards agent decision requests to the running FreeLLMAPI instance.
@@ -48,6 +48,13 @@ paths:
                 system: { type: string }
                 user: { type: string }
                 jsonSchema: { type: object }
+                tier:
+                  type: string
+                  enum: [fast, smart]
+                  description: >
+                    v2 tiered routing. fast → FREELLMAPI_MODEL_FAST,
+                    smart → FREELLMAPI_MODEL_SMART; both default to "auto"
+                    when unset. Omitted tier behaves exactly like v1.
       responses:
         "200":
           description: Completion
@@ -66,6 +73,47 @@ paths:
         "401": { $ref: "#/components/responses/Err" } # authentication_error (bad/missing FREELLMAPI_API_KEY)
         "429": { $ref: "#/components/responses/Err" } # rate_limit_error | budget_exceeded
         "502": { $ref: "#/components/responses/Err" } # upstream_error
+  /api/embeddings:
+    post:
+      summary: Batch text embeddings via FreeLLMAPI (v2 — memory retrieval)
+      description: >
+        Forwards to POST {FREELLMAPI_BASE_URL}/v1/embeddings with
+        model=$FREELLMAPI_EMBED_MODEL (default "auto"), input=texts.
+        Embedding calls do NOT count toward the decision daily ceiling but
+        share the same key secrecy rules. Order of embeddings matches the
+        order of texts. Max 32 texts per call (400 above that).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [texts]
+              properties:
+                texts:
+                  type: array
+                  minItems: 1
+                  maxItems: 32
+                  items: { type: string, maxLength: 2000 }
+      responses:
+        "200":
+          description: Embeddings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [embeddings, model]
+                properties:
+                  embeddings:
+                    type: array
+                    items:
+                      type: array
+                      items: { type: number }
+                  model: { type: string }
+        "400": { $ref: "#/components/responses/Err" }
+        "401": { $ref: "#/components/responses/Err" }
+        "429": { $ref: "#/components/responses/Err" }
+        "502": { $ref: "#/components/responses/Err" }
 components:
   responses:
     Err:

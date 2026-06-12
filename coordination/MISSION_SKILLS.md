@@ -1,4 +1,36 @@
 # Mission skill manifest — Harvest of Madness
+
+## === v2 mission (docs/deep-research-v2.md · Scanned 2026-06-12) ===
+User decisions: evolve v1 branch · full LPC asset stack · Stages 1–2 cognition
+(memory+retrieval+reflection+planning+dialogue, 4–6 NPCs, live default).
+Branch: feat/harvest-of-madness-v2. The v2 doc names no slash-skills; it names
+tools/patterns (Tiled, LPC, AI Town, function-calling) mapped below onto its
+own Stage numbering.
+
+### vW0 — Contracts + assets
+- [x] `contract-author` — contracts bumped to v2.0 (types.ts cognition/asset
+  seams, openapi 2.0.0 /api/embeddings + tier, README v2 rules 8–16). ✅
+- [ ] asset acquisition (replaces `nano-banana` — mission mandates real
+  CC-BY-SA/CC0 LPC art, not generated imagery) — asset-agent dispatched;
+  produces public/assets/**, manifest.json, CREDITS.txt.
+
+### vW1 — Server tier/embeddings + LPC rendering
+- (role agents; no external skills)
+
+### vW2 — Cognition + observability UI
+- (role agents; no external skills)
+
+### vW3 — QA + outcome gates
+- [ ] `qe-agent` (role) — mandatory; updates coordination/qa-report.json.
+- [ ] `render-sanity` — via haiku Playwright subagent (token policy); MUST
+  verify rule 14 (no sub-12px text) and real art rendering.
+- [ ] `ux-review` — via sonnet subagent; v1 top-5 findings are the regression
+  checklist (blurry fonts, card↔sprite link, label overlap, trace scrim,
+  event-log flood).
+- [ ] `design-token-guard` — re-check at gate; expected N/A (canvas-rendered)
+  unless DOM UI appears in vW2.
+
+## === v1 mission (historical) ===
 Source: docs/deep-research-v1.md · Scanned: 2026-06-11
 
 Every box must end the build either ✅ (invoked, with the artifact path)

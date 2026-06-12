@@ -1,4 +1,14 @@
-# Harvest of Madness — Contracts (v1.2)
+# Harvest of Madness — Contracts (v2.0)
+
+> **v2.0 (deep-research-v2: cognition + real art):** implements
+> docs/deep-research-v2.md Stages 1–2 on top of the v1 harness. ADDITIVE:
+> new ActionTypes `GIVE_GIFT`/`EMOTE` (+energy rows, +§4.4 rows below); new
+> cognition seams (MemoryStore / retrieval / ReflectionEngine / Planner /
+> RelationshipStore); `POST /api/embeddings`; optional `tier` on complete;
+> optional fields on Observation/AgentAction/AgentCardModel/RenderApi.
+> CHANGED: `TILE_SIZE` 16→32 (LPC art). Asset truth is
+> `public/assets/manifest.json` (AssetManifest type); placeholder graphics
+> remain the mandatory no-assets fallback. v1.2 note kept below for history.
 
 > **v1.2 (kickoff constants):** docs/kickoff-fable5.md "Simulation constants
 > (authoritative)" incorporated: STARTING_GOLD 200, STARTING_SEEDS 5 (parsnip),
@@ -36,7 +46,8 @@ pause → update → bump version → notify affected agents → confirm.
 | Method | Path | Purpose |
 |---|---|---|
 | GET | /api/health | liveness + upstream status + budget counters |
-| POST | /api/agent/complete | one decision completion via FreeLLMAPI |
+| POST | /api/agent/complete | one decision completion via FreeLLMAPI (v2: optional `tier`) |
+| POST | /api/embeddings | v2: batch embeddings for memory retrieval (≤32 texts) |
 
 Upstream: running FreeLLMAPI at `http://127.0.0.1:3001` (Docker), OpenAI-compatible
 `POST /v1/chat/completions`, auth `Authorization: Bearer $FREELLMAPI_API_KEY`,
@@ -68,9 +79,56 @@ Upstream: running FreeLLMAPI at `http://127.0.0.1:3001` (Docker), OpenAI-compati
    `VITE_MODEL_MODE=live`. The game must be fully playable with the server
    down and zero image assets.
 
-## File ownership
+### v2 domain rules (cognition + art)
+
+8. **§4.4 additions** — `GIVE_GIFT`: target agent must be 4-adjacent, itemId
+   in giver's inventory with qty ≥ 1; transfers 1 item giver→receiver,
+   records a high-importance memory for BOTH and a `recordInteraction` for
+   each direction. `EMOTE`: always legal, no world mutation, renders only.
+9. **Memory write discipline** — every resolved action, received utterance,
+   gift, and observation of another agent's activity becomes an
+   `observation` memory. Importance: live = fast-tier 1–10 rating; mock =
+   heuristic (gift/harvest-fail 7, talk 5, routine farm action 2).
+10. **Retrieval scoring is the contract formula** — equal weights, decay
+    0.995/game-hour, top-5; relevance term is 0 when embeddings are missing
+    (offline/mock). NEVER block a decision on the embeddings endpoint:
+    embedding writes are fire-and-forget, retrieval uses what's there.
+11. **Reflection cadence** — threshold 30 summed importance (≈2–3×/day),
+    smart tier, insights must cite `sourceIds`. Mock mode produces a
+    templated reflection so the pipeline is testable at $0.
+12. **Morning planning** — at each `day_advanced`, every agent gets a 4-step
+    DailyPlan (one step/phase) before its first decision of the day; the
+    current step rides in `Observation.self.currentPlanStep`.
+13. **Kill-switch visibility (the demo's thesis)** — when live routing fails
+    or mode=mock, the HUD must show an explicit "LLM OFFLINE — canned
+    behavior" state and agents visibly degrade to the heuristic. Dialogue,
+    planning, reflection, and relationship summaries ALL route through the
+    LLM in live mode so the difference is undeniable.
+14. **Readable text** — minimum effective font size 12px at zoom 1, integer
+    pixel positions, `roundPixels: true`. The v1 6px-HUD failure must not
+    recur; render-sanity checks this explicitly.
+15. **Asset fallback** — BootScene tries `assets/manifest.json`; on 404 or
+    parse error it logs ONE warning and uses v1 placeholder graphics. No
+    code path may hard-require an image file.
+16. **License hygiene** — every shipped asset is enumerated in CREDITS.txt
+    (author, license, URL, modifications). No Sprout Lands / Cute Fantasy /
+    non-redistributable files in the repo, ever.
+
+## File ownership — v2 build (supersedes the v1 table for new work)
 
 | Agent (role) | Owns |
+|---|---|
+| asset-agent (vW0) | `public/assets/**`, `CREDITS.txt`, `scripts/assets/**` |
+| server-llm-agent (vW1) | `server/**`, `src/llm/**` (embeddings proxy, tier mapping, v2 prompts: importance/reflection/planning/dialogue + mock equivalents) |
+| render-agent (vW1) | `src/scenes/**` (Boot/World — NOT UIScene), `src/world/render.ts`, `src/world/map.ts` (decor layers only; logical layout is contract-frozen), `scripts/map/**`, `src/config.ts` |
+| cognition-agent (vW2) | `src/agents/**` (memory/, reflection, planner, relationships, executor + runtime v2) |
+| obs-agent (vW2) | `src/obs/**`, `src/scenes/UIScene.ts` |
+| qe-agent (vW3) | `tests/**`, `coordination/qa-report.json` |
+| nobody | `contracts/**` (read-only), `docs/**` |
+
+### v1 ownership (historical)
+
+| Agent (role) | Owned |
 |---|---|
 | scaffold-agent (W0) | repo root: package.json, tsconfig*, vite.config.ts, index.html, .env.example, README.md skeleton, PROVENANCE.md skeleton, vitest.config.ts |
 | llm-agent (W1) | `server/**`, `src/llm/**` (router seam, mockRouter heuristic, prompts) |
