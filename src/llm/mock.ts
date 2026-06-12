@@ -18,6 +18,11 @@
  *
  * Deterministic: no Math.random — flavor uses a hash of (agentName + day)
  * so runs replay identically.
+ *
+ * THROW-PROOF (QE hardening): mockRouter is the budget-ceiling fallback
+ * safety net, so it must never reject. Any object input is normalized into
+ * a safe Observation (missing fields default to empty/zero), decide() is
+ * belt-and-braces wrapped, and unreadable input degrades to WAIT.
  */
 import type {
   ActionType,
@@ -29,6 +34,140 @@ import type {
 } from "@contracts/types";
 import { CROPS } from "@contracts/types";
 import { extractFirstJsonObject } from "./parse";
+
+const ACTION_TYPES: readonly ActionType[] = [
+  "MOVE_TO",
+  "TILL",
+  "PLANT",
+  "WATER",
+  "HARVEST",
+  "BUY",
+  "SELL",
+  "TALK_TO",
+  "SLEEP",
+  "WAIT",
+];
+
+const PHASES = ["morning", "afternoon", "evening", "night"] as const;
+
+function asString(v: unknown, dflt: string): string {
+  return typeof v === "string" ? v : dflt;
+}
+
+function asFiniteNumber(v: unknown, dflt: number): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : dflt;
+}
+
+function asArray(v: unknown): unknown[] {
+  return Array.isArray(v) ? v : [];
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : {};
+}
+
+function asVec2(v: unknown): Vec2 | null {
+  const r = asRecord(v);
+  return typeof r.x === "number" &&
+    Number.isFinite(r.x) &&
+    typeof r.y === "number" &&
+    Number.isFinite(r.y)
+    ? { x: r.x, y: r.y }
+    : null;
+}
+
+/**
+ * Coerce ANY parsed JSON value into a safe Observation, defaulting missing
+ * or malformed fields (QE finding: a parseable-but-partial observation made
+ * decide() throw). Missing energy defaults to 0 and missing availableActions
+ * to [] — both conservative: the ladder then bottoms out at WAIT. Returns
+ * null only when the input is not a plain object at all.
+ */
+function normalizeObservation(raw: unknown): Observation | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const self = asRecord(o.self);
+  const time = asRecord(o.time);
+  const nearby = asRecord(o.nearby);
+
+  const inventory = asArray(self.inventory).flatMap((e) => {
+    const it = asRecord(e);
+    return typeof it.itemId === "string" && typeof it.qty === "number" && Number.isFinite(it.qty)
+      ? [{ itemId: it.itemId, qty: it.qty }]
+      : [];
+  });
+
+  const tiles = asArray(nearby.tiles).flatMap((e) => {
+    const t = asRecord(e);
+    if (
+      typeof t.x !== "number" ||
+      !Number.isFinite(t.x) ||
+      typeof t.y !== "number" ||
+      !Number.isFinite(t.y)
+    ) {
+      return [];
+    }
+    const cropRec = typeof t.crop === "object" && t.crop !== null ? asRecord(t.crop) : null;
+    const crop = cropRec
+      ? {
+          kind: asString(cropRec.kind, "parsnip"),
+          stage: asFiniteNumber(cropRec.stage, 0),
+          watered: Boolean(cropRec.watered),
+          ready: Boolean(cropRec.ready),
+        }
+      : undefined;
+    const tile: Observation["nearby"]["tiles"][number] = {
+      x: t.x,
+      y: t.y,
+      type: asString(t.type, "grass") as Observation["nearby"]["tiles"][number]["type"],
+    };
+    if (crop) tile.crop = crop;
+    return [tile];
+  });
+
+  const agents = asArray(nearby.agents).flatMap((e) => {
+    const a = asRecord(e);
+    const pos = asVec2(a.pos);
+    return typeof a.name === "string" && pos
+      ? [{ name: a.name, pos, lastSeenDoing: asString(a.lastSeenDoing, "") }]
+      : [];
+  });
+
+  const landmarks = asArray(nearby.landmarks).flatMap((e) => {
+    const l = asRecord(e);
+    const pos = asVec2(l.pos);
+    const kind = l.kind;
+    return pos && (kind === "shop" || kind === "bed" || kind === "water" || kind === "house")
+      ? [{ kind: kind as "shop" | "bed" | "water" | "house", pos }]
+      : [];
+  });
+
+  const phase = (PHASES as readonly string[]).includes(time.phase as string)
+    ? (time.phase as Observation["time"]["phase"])
+    : "morning";
+
+  return {
+    self: {
+      name: asString(self.name, "unknown"),
+      persona: asString(self.persona, ""),
+      role: asString(self.role, "farmer"),
+      pos: asVec2(self.pos) ?? { x: 0, y: 0 },
+      energy: asFiniteNumber(self.energy, 0),
+      gold: asFiniteNumber(self.gold, 0),
+      inventory,
+      goal: typeof self.goal === "string" ? self.goal : null,
+    },
+    time: { day: asFiniteNumber(time.day, 1), phase },
+    nearby: { tiles, agents, landmarks },
+    lastAction: null, // unused by the heuristic
+    availableActions: asArray(o.availableActions).filter((a): a is ActionType =>
+      (ACTION_TYPES as readonly unknown[]).includes(a),
+    ),
+    economy: { sells: {}, buys: {} }, // unused by the heuristic (CROPS is authoritative)
+  };
+}
 
 /** djb2 — small deterministic string hash, always non-negative. */
 function hash(s: string): number {
@@ -256,26 +395,37 @@ function decide(obs: Observation): AgentAction {
   return act("WAIT", "Nothing pressing right now. Taking a breather.", null);
 }
 
+const UNREADABLE_WAIT: AgentAction = {
+  thought: "observation unreadable",
+  say: null,
+  action: "WAIT",
+};
+
 export const mockRouter: Router = async (req): Promise<LlmResponse> => {
   const latencyMs = hash(req.user) % 6; // deterministic 0-5
 
   let obs: Observation | null = null;
-  const json = extractFirstJsonObject(req.user);
-  if (json !== null) {
-    try {
-      obs = JSON.parse(json) as Observation;
-    } catch {
-      obs = null;
+  try {
+    const json = extractFirstJsonObject(req.user);
+    if (json !== null) {
+      obs = normalizeObservation(JSON.parse(json));
     }
+  } catch {
+    obs = null;
   }
 
-  const action: AgentAction = obs
-    ? decide(obs)
-    : {
-        thought: "Could not read the observation — waiting.",
-        say: null,
-        action: "WAIT",
-      };
+  let action: AgentAction;
+  if (obs) {
+    try {
+      action = decide(obs);
+    } catch {
+      // Belt-and-braces: the normalizer should make this unreachable, but
+      // the budget-fallback net must never reject (QE hardening).
+      action = UNREADABLE_WAIT;
+    }
+  } else {
+    action = UNREADABLE_WAIT;
+  }
 
   return {
     raw: JSON.stringify(action),

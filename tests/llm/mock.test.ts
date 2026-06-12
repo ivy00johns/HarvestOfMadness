@@ -86,10 +86,53 @@ describe("mockRouter — response shape", () => {
     expect(a).toEqual(b);
   });
 
-  it("falls back to WAIT when the observation cannot be parsed", async () => {
+  it("falls back to WAIT with thought 'observation unreadable' on garbage input", async () => {
     const res = await mockRouter({ agentId: "x", system: "s", user: "not json at all" });
     expect(res.parsed?.action).toBe("WAIT");
+    expect(res.parsed?.thought).toBe("observation unreadable");
     expect(res.model).toBe("mock");
+  });
+});
+
+describe("mockRouter — throw-proofing (QE hardening: the budget-fallback net never rejects)", () => {
+  it("a parseable-but-partial observation resolves with a valid action", async () => {
+    const res = await mockRouter({
+      agentId: "X",
+      system: "s",
+      user: '{"self":{"name":"X"}} What do you do next?',
+    });
+    expect(res.parsed).toBeDefined();
+    expect(parseAgentAction(res.raw)).toEqual(res.parsed);
+    expect(res.model).toBe("mock");
+  });
+
+  it("an empty object observation resolves to WAIT", async () => {
+    const res = await mockRouter({ agentId: "X", system: "s", user: "{}" });
+    expect(res.parsed?.action).toBe("WAIT");
+  });
+
+  it("hostile field types never throw and always yield a valid action", async () => {
+    const hostiles = [
+      '{"self":42,"time":"night","nearby":[],"availableActions":"all"}',
+      '{"self":{"pos":{"x":"a","y":null},"energy":"full","inventory":"nope"},"nearby":{"tiles":[{"x":1},{"x":2,"y":3,"crop":"weird"},null,7]}}',
+      '{"self":{"name":"X","pos":{"x":1e400,"y":0}},"availableActions":["WAIT","DANCE",42]}',
+      '{"time":{"day":{},"phase":"midnight"},"nearby":{"landmarks":[{"kind":"volcano","pos":{"x":1,"y":1}},{"kind":"bed"}]}}',
+      '[{"self":null}] trailing prose {"also":"ignored"}',
+    ];
+    for (const user of hostiles) {
+      const res = await mockRouter({ agentId: "X", system: "s", user });
+      expect(res.parsed, user).toBeDefined();
+      expect(parseAgentAction(res.raw), user).toEqual(res.parsed);
+    }
+  });
+
+  it("a normalized full observation still plays the ladder (no behavior regression)", async () => {
+    // Same as ladder step 1, routed through normalization untouched.
+    const obs = makeObs({
+      nearby: { tiles: [{ x: 5, y: 6, type: "tilled", crop: READY_CROP }] },
+    });
+    const res = await decideFor(obs);
+    expect(res.parsed?.action).toBe("HARVEST");
   });
 });
 

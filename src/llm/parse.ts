@@ -1,7 +1,7 @@
 /**
- * Defensive AgentAction extraction (§4.2: always parse defensively — strip
- * fences, take the first balanced `{...}` block — regardless of how well the
- * model behaved).
+ * Defensive AgentAction extraction (§4.2: always parse defensively —
+ * tolerate fences/prose, take the first balanced `{...}` block — regardless
+ * of how well the model behaved).
  */
 import type { ActionType, AgentAction, Vec2 } from "@contracts/types";
 
@@ -22,25 +22,25 @@ function isActionType(v: unknown): v is ActionType {
   return typeof v === "string" && (ACTION_TYPES as readonly string[]).includes(v);
 }
 
-/** Strip markdown code fences (``` / ```json) so the brace scan sees raw JSON. */
-function stripFences(raw: string): string {
-  return raw.replace(/```[a-zA-Z0-9_-]*\r?\n?/g, "").replace(/```/g, "");
-}
-
 /**
  * Return the first balanced top-level `{...}` substring, string-aware
  * (braces inside JSON strings don't count), or null when none closes.
+ *
+ * Markdown fences (``` / ```json) need no pre-stripping: the scan starts at
+ * the first `{` and fence markers live OUTSIDE the object, so they are
+ * skipped naturally — and, critically, backtick sequences INSIDE JSON string
+ * values are preserved verbatim instead of being mutated (QE finding:
+ * a global fence-strip damaged thought/say content).
  */
 export function extractFirstJsonObject(raw: string): string | null {
-  const text = stripFences(raw);
-  const start = text.indexOf("{");
+  const start = raw.indexOf("{");
   if (start === -1) return null;
 
   let depth = 0;
   let inString = false;
   let escaped = false;
-  for (let i = start; i < text.length; i++) {
-    const ch = text[i];
+  for (let i = start; i < raw.length; i++) {
+    const ch = raw[i];
     if (inString) {
       if (escaped) {
         escaped = false;
@@ -57,7 +57,7 @@ export function extractFirstJsonObject(raw: string): string | null {
       depth += 1;
     } else if (ch === "}") {
       depth -= 1;
-      if (depth === 0) return text.slice(start, i + 1);
+      if (depth === 0) return raw.slice(start, i + 1);
     }
   }
   return null;

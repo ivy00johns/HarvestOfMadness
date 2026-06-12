@@ -21,6 +21,11 @@ describe("extractFirstJsonObject", () => {
     expect(extractFirstJsonObject(raw)).toBe('{"thought":"use {x,y} coords"}');
   });
 
+  it("preserves backtick fences inside JSON string values (QE hardening)", () => {
+    const raw = '{"thought":"wrap it in ```json fences```","say":null,"action":"WAIT"}';
+    expect(extractFirstJsonObject(raw)).toBe(raw);
+  });
+
   it("returns null when no object opens or closes", () => {
     expect(extractFirstJsonObject("no json here")).toBeNull();
     expect(extractFirstJsonObject('{"unclosed":')).toBeNull();
@@ -41,6 +46,16 @@ describe("parseAgentAction", () => {
     const a = parseAgentAction(raw);
     expect(a?.action).toBe("SLEEP");
     expect(a?.say).toBe("gn");
+  });
+
+  it("keeps thought/say verbatim when they contain fence markers (QE hardening)", () => {
+    const a = parseAgentAction(
+      '{"thought":"wrap it in ```json fences","say":"```","action":"TILL","target":{"x":3,"y":4}}',
+    );
+    expect(a?.thought).toBe("wrap it in ```json fences");
+    expect(a?.say).toBe("```");
+    expect(a?.action).toBe("TILL");
+    expect(a?.target).toEqual({ x: 3, y: 4 });
   });
 
   it("defaults thought to empty string and say to null", () => {
