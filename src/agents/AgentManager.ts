@@ -26,6 +26,21 @@ import { runDecisionCycle } from "./AgentRuntime";
 /** Scheduler poll granularity (NOT the decision pace — that's the cooldown). */
 const POLL_MS = 100;
 
+/**
+ * §6 cooldown guidance: ~2500ms mock (SCHEDULER_DEFAULTS), ~6000ms+ live —
+ * live round-trips through FreeLLMAPI run ~5s, so the mock default would
+ * queue-pile. Applied as a manager-level default only; SCHEDULER_DEFAULTS
+ * (contracts) stays untouched and an explicit config override always wins.
+ */
+export const LIVE_DECISION_COOLDOWN_MS = 6000;
+
+/** VITE_MODEL_MODE, read defensively (absent under plain node). */
+function detectModelMode(): string | undefined {
+  return typeof import.meta !== "undefined" && import.meta.env
+    ? (import.meta.env.VITE_MODEL_MODE as string | undefined)
+    : undefined;
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -39,6 +54,8 @@ export interface AgentManagerOpts {
   /** Base router override (tests). Default: getRouter() per decision. */
   router?: Router;
   bus?: EventBus;
+  /** Model-mode override (tests). Default: import.meta.env.VITE_MODEL_MODE. */
+  modelMode?: string;
 }
 
 export class AgentManager {
@@ -57,7 +74,12 @@ export class AgentManager {
   private ceilingReached = false;
 
   constructor(opts: AgentManagerOpts = {}) {
-    this.config = { ...SCHEDULER_DEFAULTS, ...opts.config };
+    const mode = opts.modelMode ?? detectModelMode();
+    const defaults: SchedulerConfig =
+      mode === "live"
+        ? { ...SCHEDULER_DEFAULTS, decisionCooldownMs: LIVE_DECISION_COOLDOWN_MS }
+        : { ...SCHEDULER_DEFAULTS };
+    this.config = { ...defaults, ...opts.config };
     this.baseRouter = opts.router ?? null;
     this.bus = opts.bus ?? getEventBus();
   }

@@ -5,9 +5,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlmResponse, Router } from "@contracts/types";
+import { SCHEDULER_DEFAULTS } from "@contracts/types";
 import { resetWorldForTests } from "../../src/world/instance";
 import type { Persona } from "../../src/agents/Agent";
-import { AgentManager } from "../../src/agents/AgentManager";
+import {
+  AgentManager,
+  LIVE_DECISION_COOLDOWN_MS,
+} from "../../src/agents/AgentManager";
 import { getEventBus, resetEventBusForTests } from "../../src/agents/events";
 
 function waitResponse(model = "stub"): LlmResponse {
@@ -170,6 +174,39 @@ describe("pause / resume / step", () => {
     // still paused: time passing does not add decisions
     await vi.advanceTimersByTimeAsync(3_000);
     expect(totalDecisions(manager)).toBe(2);
+  });
+});
+
+describe("mode-aware cooldown default (§6: ~2500ms mock / ~6000ms live)", () => {
+  it("live mode defaults the cooldown to 6000ms", () => {
+    manager = new AgentManager({ modelMode: "live" });
+    expect(manager.config.decisionCooldownMs).toBe(LIVE_DECISION_COOLDOWN_MS);
+    expect(manager.config.decisionCooldownMs).toBe(6000);
+    // the other defaults are untouched
+    expect(manager.config.maxConcurrentDecisions).toBe(
+      SCHEDULER_DEFAULTS.maxConcurrentDecisions,
+    );
+    expect(manager.config.maxDecisionsPerDay).toBe(
+      SCHEDULER_DEFAULTS.maxDecisionsPerDay,
+    );
+  });
+
+  it("mock/unset mode keeps the contract default (2500ms); contracts never mutated", () => {
+    manager = new AgentManager({ modelMode: "mock" });
+    expect(manager.config.decisionCooldownMs).toBe(
+      SCHEDULER_DEFAULTS.decisionCooldownMs,
+    );
+    manager = new AgentManager(); // VITE_MODEL_MODE unset under vitest
+    expect(manager.config.decisionCooldownMs).toBe(2500);
+    expect(SCHEDULER_DEFAULTS.decisionCooldownMs).toBe(2500);
+  });
+
+  it("an explicit config override beats the live default", () => {
+    manager = new AgentManager({
+      modelMode: "live",
+      config: { decisionCooldownMs: 1234 },
+    });
+    expect(manager.config.decisionCooldownMs).toBe(1234);
   });
 });
 
