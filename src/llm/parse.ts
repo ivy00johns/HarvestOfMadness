@@ -3,7 +3,7 @@
  * tolerate fences/prose, take the first balanced `{...}` block — regardless
  * of how well the model behaved).
  */
-import type { ActionType, AgentAction, Vec2 } from "@contracts/types";
+import type { ActionType, AgentAction, Emotion, Vec2 } from "@contracts/types";
 
 const ACTION_TYPES: readonly ActionType[] = [
   "MOVE_TO",
@@ -14,12 +14,20 @@ const ACTION_TYPES: readonly ActionType[] = [
   "BUY",
   "SELL",
   "TALK_TO",
+  "GIVE_GIFT",
+  "EMOTE",
   "SLEEP",
   "WAIT",
 ];
 
+const EMOTIONS: readonly Emotion[] = ["neutral", "happy", "annoyed", "sad", "excited"];
+
 function isActionType(v: unknown): v is ActionType {
   return typeof v === "string" && (ACTION_TYPES as readonly string[]).includes(v);
+}
+
+function isEmotion(v: unknown): v is Emotion {
+  return typeof v === "string" && (EMOTIONS as readonly string[]).includes(v);
 }
 
 /**
@@ -92,9 +100,21 @@ function isAgentTarget(v: unknown): v is { agentName: string } {
   );
 }
 
+function isGiftTarget(v: unknown): v is { agentName: string; itemId: string; qty: number } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { agentName?: unknown }).agentName === "string" &&
+    typeof (v as { itemId?: unknown }).itemId === "string" &&
+    typeof (v as { qty?: unknown }).qty === "number" &&
+    Number.isFinite((v as { qty: number }).qty)
+  );
+}
+
 /**
  * Shape-check `target` per action. Position actions require Vec2; BUY/SELL
- * require {itemId, qty}; TALK_TO requires {agentName}; SLEEP/WAIT ignore it.
+ * require {itemId, qty}; TALK_TO requires {agentName}; GIVE_GIFT (v2)
+ * requires {agentName, itemId, qty}; SLEEP/WAIT/EMOTE ignore it.
  * Returns the normalized target, `undefined` for target-less actions, or
  * the sentinel `false` when the shape is wrong for the action.
  */
@@ -114,8 +134,13 @@ function validateTarget(
       return isItemTarget(target) ? { itemId: target.itemId, qty: target.qty } : false;
     case "TALK_TO":
       return isAgentTarget(target) ? { agentName: target.agentName } : false;
+    case "GIVE_GIFT":
+      return isGiftTarget(target)
+        ? { agentName: target.agentName, itemId: target.itemId, qty: target.qty }
+        : false;
     case "SLEEP":
     case "WAIT":
+    case "EMOTE":
       return undefined; // target ignored
   }
 }
@@ -142,6 +167,11 @@ export function parseAgentAction(raw: string): AgentAction | null {
   const target = validateTarget(obj.action, obj.target);
   if (target === false) return null;
 
+  // v2 — optional emotion enum: absent is fine (defaults to "neutral"
+  // downstream), but a present-yet-invalid value is a contract violation and
+  // rejects the whole action (same loud-rejection policy as bad targets).
+  if (obj.emotion !== undefined && !isEmotion(obj.emotion)) return null;
+
   const action: AgentAction = {
     thought: typeof obj.thought === "string" ? obj.thought : "",
     say: typeof obj.say === "string" ? obj.say : null,
@@ -149,5 +179,6 @@ export function parseAgentAction(raw: string): AgentAction | null {
   };
   if (target !== undefined) action.target = target;
   if (typeof obj.goal === "string") action.goal = obj.goal;
+  if (obj.emotion !== undefined && isEmotion(obj.emotion)) action.emotion = obj.emotion;
   return action;
 }

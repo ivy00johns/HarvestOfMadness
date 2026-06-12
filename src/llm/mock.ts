@@ -29,6 +29,7 @@ import type {
   AgentAction,
   LlmResponse,
   Observation,
+  PlanStep,
   Router,
   Vec2,
 } from "@contracts/types";
@@ -44,6 +45,8 @@ const ACTION_TYPES: readonly ActionType[] = [
   "BUY",
   "SELL",
   "TALK_TO",
+  "GIVE_GIFT", // v2 — accepted in availableActions; the heuristic never emits it
+  "EMOTE", // v2 — accepted in availableActions; the heuristic never emits it
   "SLEEP",
   "WAIT",
 ];
@@ -434,3 +437,110 @@ export const mockRouter: Router = async (req): Promise<LlmResponse> => {
     latencyMs,
   };
 };
+
+// ---------------------------------------------------------------------------
+// v2 — mock cognition counterparts (deterministic, $0). The cognition-agent
+// uses these whenever the live route is unavailable (contracts rules 9/11/12:
+// the whole pipeline must be testable with the server down).
+// ---------------------------------------------------------------------------
+
+/**
+ * Heuristic 1–10 poignancy rating per contracts/README.md rule 9:
+ * gift/harvest-fail 7, talk 5, routine farm action 2. Unclassified memory
+ * text defaults to 3 (rule 9 only pins those three classes; 3 keeps unknown
+ * events slightly above confirmed routine without ever triggering
+ * reflection storms). Deterministic, never throws.
+ */
+export function rateImportanceMock(text: string): number {
+  const t = typeof text === "string" ? text.toLowerCase() : "";
+  if (t.includes("gift") || t.includes("gave") || t.includes("received")) return 7;
+  if (t.includes("harvest") && (t.includes("fail") || t.includes("reject") || t.includes("ruin"))) {
+    return 7;
+  }
+  if (t.includes("talk") || t.includes("said") || t.includes("chat") || t.includes("told")) {
+    return 5;
+  }
+  if (/\b(till|tilled|plant|planted|water|watered|harvest|harvested|buy|bought|sell|sold|sleep|slept|moved|walk)\b/.test(t)) {
+    return 2;
+  }
+  return 3;
+}
+
+/**
+ * Templated reflection (rule 11 mock path): one insight memory text citing
+ * the source memory ids it was "inferred" from (cap 5, like the live
+ * insights prompt). Deterministic — same inputs, same reflection.
+ */
+export function mockReflection(
+  agentName: string,
+  memories: { id: string; text: string }[],
+): { text: string; sourceIds: string[] } {
+  const cited = memories.slice(0, 5);
+  if (cited.length === 0) {
+    return {
+      text: `${agentName} reflects: the days have been quiet, with nothing standing out.`,
+      sourceIds: [],
+    };
+  }
+  const gist = cited[hash(agentName + cited[0].id) % cited.length].text.replace(/[.\s]+$/, "");
+  return {
+    text: `${agentName} reflects: looking back over ${cited.length} recent moments, what stands out is "${gist}" — it is shaping how the days are going.`,
+    sourceIds: cited.map((m) => m.id),
+  };
+}
+
+/**
+ * Sensible deterministic 4-step farm plan (rule 12 mock path): one step per
+ * phase, night always ends at the bed. Persona keywords add light flavor
+ * (social → evening chat at the shop; reckless → looser morning). rawText
+ * mirrors what a live model would have returned, for the inspector.
+ */
+export function mockDailyPlan(
+  persona: string,
+  day: number,
+): { steps: PlanStep[]; rawText: string } {
+  const p = (persona ?? "").toLowerCase();
+  const social = p.includes("social");
+  const reckless = p.includes("reckless");
+
+  const steps: PlanStep[] = [
+    {
+      phase: "morning",
+      goal: reckless
+        ? `day ${day}: charge into the field — till and plant whatever looks promising`
+        : `day ${day}: water every planted crop, then till and plant free plots`,
+      done: false,
+    },
+    {
+      phase: "afternoon",
+      goal:
+        day % 2 === 0
+          ? "harvest anything ready and keep the plots tended"
+          : "tend the crops and till new ground for the next planting",
+      done: false,
+    },
+    {
+      phase: "evening",
+      goal: social
+        ? "swing by the shop to sell, and catch up with whoever is around"
+        : "sell harvested crops and restock seeds at the shop",
+      targetLandmark: "shop",
+      done: false,
+    },
+    {
+      phase: "night",
+      goal: "head home to bed and sleep",
+      targetLandmark: "bed",
+      done: false,
+    },
+  ];
+
+  return {
+    steps,
+    rawText: JSON.stringify({
+      steps: steps.map(({ phase, goal, targetLandmark }) =>
+        targetLandmark ? { phase, goal, targetLandmark } : { phase, goal },
+      ),
+    }),
+  };
+}

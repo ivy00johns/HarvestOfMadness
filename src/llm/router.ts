@@ -26,6 +26,8 @@ export const liveRouter: Router = async (req): Promise<LlmResponse> => {
         system: req.system,
         user: req.user,
         ...(req.jsonSchema !== undefined ? { jsonSchema: req.jsonSchema } : {}),
+        // v2 — tiered routing; the proxy maps fast/smart to env models.
+        ...(req.tier !== undefined ? { tier: req.tier } : {}),
       }),
     });
 
