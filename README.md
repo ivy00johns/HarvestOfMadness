@@ -36,6 +36,24 @@ Copy `.env.example` to `.env` (client) and `server/.env` (server). The FreeLLMAP
 | `FREELLMAPI_MODEL` | `auto` | server | Model id; `auto` lets FreeLLMAPI route |
 | `DAILY_CEILING` | `200` | server | Hard daily decision budget (429 past it) |
 
+## Going live
+
+Mock mode needs nothing. To route real decisions through FreeLLMAPI:
+
+1. **Get the unified key** from the FreeLLMAPI dashboard at http://localhost:3001 (the Docker instance must be running).
+2. **Write `server/.env`** (copy `server/.env.example`) with `FREELLMAPI_API_KEY=<your key>`.
+3. **Run live:** `VITE_MODEL_MODE=live npm run dev` — or put `VITE_MODEL_MODE=live` in `.env` and just `npm run dev`.
+
+Self-verify with `GET http://localhost:8787/api/health` (`curl -s localhost:8787/api/health`):
+
+| `upstream` value | Meaning |
+|---|---|
+| `unreachable` | FreeLLMAPI itself is down — start the Docker instance |
+| `unauthorized` | reachable, but the key is missing/invalid — finish step 2, restart the proxy |
+| `ok` | ready — live decisions will flow |
+
+Expected progression: `unauthorized` (fresh checkout, no key) → `ok` (after steps 1–2). Then `npm run live:smoke` (with the proxy running) sends one real canned-observation decision through the proxy and prints model / latency / tokens and the parsed action; it exits non-zero with a pointed message if the key is still missing. Past `DAILY_CEILING` decisions in a UTC day the proxy returns 429 `budget_exceeded` and agents fall back to the mock heuristic.
+
 ## Repo map
 
 ```

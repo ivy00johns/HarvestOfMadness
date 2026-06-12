@@ -10,7 +10,8 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "live:smoke": "tsx server/scripts/live-smoke.ts"
   },
   "dependencies": {
     "cors": "^2.8.5",
