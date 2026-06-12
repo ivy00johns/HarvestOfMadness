@@ -19,11 +19,11 @@ describe("Economy price tables (§7)", () => {
     expect(Object.keys(sells)).toHaveLength(Object.keys(CROPS).length);
   });
 
-  it("matches the mission §7 authoritative numbers", () => {
+  it("matches the contract v1.2 authoritative numbers", () => {
     const w = new World();
     expect(w.buyPrices()).toEqual({
       "seed:parsnip": 20,
-      "seed:potato": 50,
+      "seed:potato": 40,
       "seed:cauliflower": 80,
     });
     expect(w.sellPrices()).toEqual({

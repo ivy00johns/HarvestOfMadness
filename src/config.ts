@@ -7,10 +7,14 @@
  */
 import type { TileType } from "@contracts/types";
 
-export { MAP_WIDTH, MAP_HEIGHT, TILE_SIZE, CROPS } from "@contracts/types";
-
-/** Real-time length of one phase (morning/afternoon/evening) at speed 1. */
-export const PHASE_DURATION_MS = 40_000;
+export {
+  MAP_WIDTH,
+  MAP_HEIGHT,
+  TILE_SIZE,
+  CROPS,
+  /** Contract v1.2: real-time length of one phase at speed 1 (8s). */
+  PHASE_DURATION_MS,
+} from "@contracts/types";
 
 /** Render zoom: logical 384x288 shown at x2. */
 export const GAME_ZOOM = 2;
