@@ -62,7 +62,8 @@ export interface Landmark {
 }
 
 // ---------------------------------------------------------------------------
-// §7 World constants (authoritative values)
+// §7 World constants — v1.2: values pinned by docs/kickoff-fable5.md
+// "Simulation constants (authoritative)" (anti-deadlock tuning)
 // ---------------------------------------------------------------------------
 
 export const CROPS: Record<
@@ -70,14 +71,32 @@ export const CROPS: Record<
   { days: number; seedCost: number; sellPrice: number }
 > = {
   parsnip: { days: 4, seedCost: 20, sellPrice: 35 },
-  potato: { days: 6, seedCost: 50, sellPrice: 80 },
+  potato: { days: 6, seedCost: 40, sellPrice: 80 },
   cauliflower: { days: 8, seedCost: 80, sellPrice: 175 },
 };
 
 export const ENERGY_START = 100;
-/** energy cost per field action (till/plant/water/harvest) */
-export const ENERGY_COST_FIELD = 3;
-export const STARTING_GOLD = 100;
+/** per-action energy costs (kickoff table; MOVE_TO and non-field actions are free) */
+export const ENERGY_COSTS: Record<ActionType, number> = {
+  TILL: 2,
+  PLANT: 1,
+  WATER: 1,
+  HARVEST: 2,
+  MOVE_TO: 0,
+  BUY: 0,
+  SELL: 0,
+  TALK_TO: 0,
+  SLEEP: 0,
+  WAIT: 0,
+};
+export const STARTING_GOLD = 200;
+/** starting inventory: 5× "seed:parsnip" */
+export const STARTING_SEEDS = 5;
+/**
+ * One in-game day (4 phases) must be ~20–40s in mock mode (kickoff clock rule).
+ * 8s/phase = 32s/day at speed 1.
+ */
+export const PHASE_DURATION_MS = 8_000;
 
 export const MAP_WIDTH = 24;
 export const MAP_HEIGHT = 18;

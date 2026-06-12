@@ -1,4 +1,15 @@
-# Harvest of Madness — Contracts (v1)
+# Harvest of Madness — Contracts (v1.2)
+
+> **v1.2 (kickoff constants):** docs/kickoff-fable5.md "Simulation constants
+> (authoritative)" incorporated: STARTING_GOLD 200, STARTING_SEEDS 5 (parsnip),
+> potato seedCost 40, per-action ENERGY_COSTS (TILL 2 / PLANT 1 / WATER 1 /
+> HARVEST 2 / others 0, replaces ENERGY_COST_FIELD), PHASE_DURATION_MS 8000
+> (~32s in-game day), mock farmer follows the kickoff 9-step priority ladder.
+> Interface precedence per that doc: §4.4 stands, so SLEEP stays night-gated
+> (mock emits SLEEP only at night) and energy-0 keeps SLEEP legal at bed
+> (else an exhausted agent at bed deadlocks). itemId format stays
+> `seed:<kind>`/`crop:<kind>` (contract-pinned before the kickoff landed;
+> kickoff's `parsnip_seed` is the same semantics, different spelling).
 
 Authoritative seams for the multi-agent build. `contracts/types.ts` is the
 single shared types file; `contracts/openapi.yaml` is the proxy wire contract.
