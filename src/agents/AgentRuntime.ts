@@ -121,7 +121,21 @@ export async function runDecisionCycle(
     agent.budgetFallback ? mockRouter : (ctx.router ?? getRouter());
 
   const call = async (r: Router, userPrompt: string): Promise<LlmResponse> => {
-    const res = await r({ agentId: agent.name, system, user: userPrompt });
+    let res: LlmResponse;
+    const started = Date.now();
+    try {
+      res = await r({ agentId: agent.name, system, user: userPrompt });
+    } catch (err) {
+      // Routers are documented never to throw — but a custom/buggy one can
+      // (QE finding). Convert the rejection to error-LlmResponse semantics:
+      // failed turn -> WAIT below, no retry storm, loop survives.
+      res = {
+        raw: "",
+        model: "unknown",
+        latencyMs: Date.now() - started,
+        error: `router_threw: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
     emit(
       "llm_call",
       `${agent.name} <- ${res.model} (${res.latencyMs}ms)` +

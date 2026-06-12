@@ -172,3 +172,52 @@ describe("pause / resume / step", () => {
     expect(totalDecisions(manager)).toBe(2);
   });
 });
+
+describe("loop immortality (QE hardening)", () => {
+  it("an agent loop survives a rejecting router and keeps deciding", async () => {
+    const explosive: Router = async () => {
+      throw new Error("upstream meltdown");
+    };
+    manager = new AgentManager({
+      config: { decisionCooldownMs: 200, maxConcurrentDecisions: 3, maxDecisionsPerDay: 10_000 },
+      router: explosive,
+    });
+    manager.start(personas(2));
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    // every turn degraded to WAIT, but the loops never died
+    for (const a of manager.agents()) {
+      expect(a.decisionsTotal).toBeGreaterThanOrEqual(3);
+      expect(a.fsm).toBe("IDLE");
+      expect(a.lastAction).toMatchObject({ action: "WAIT", ok: true });
+    }
+    const errors = getEventBus()
+      .recent()
+      .filter((e) => e.kind === "llm_call" && e.payload?.error);
+    expect(errors.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("an agent loop survives even a bus whose emit throws", async () => {
+    let emits = 0;
+    const bombBus = {
+      emit: () => {
+        emits++;
+        throw new Error("bus on fire");
+      },
+      on: () => () => {},
+      recent: () => [],
+    };
+    manager = new AgentManager({
+      config: { decisionCooldownMs: 200, maxConcurrentDecisions: 3, maxDecisionsPerDay: 10_000 },
+      router: instantWaitRouter,
+      bus: bombBus,
+    });
+    manager.start(personas(1));
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    // decisions kept being attempted turn after turn despite every emit throwing
+    expect(totalDecisions(manager)).toBeGreaterThanOrEqual(3);
+    expect(emits).toBeGreaterThanOrEqual(3);
+    expect(manager.agents()[0].fsm).toBe("IDLE");
+  });
+});

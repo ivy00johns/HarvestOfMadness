@@ -126,7 +126,11 @@ export class AgentManager {
         (this.lastDecisionAt.get(a.name) ?? 0) -
         (this.lastDecisionAt.get(b.name) ?? 0),
     );
-    await this.runCycle(idle[0], { ignorePause: true });
+    try {
+      await this.runCycle(idle[0], { ignorePause: true });
+    } catch (err) {
+      this.emitAgentError(idle[0], err); // HUD's await must never reject
+    }
   }
 
   // -- internals -----------------------------------------------------------
@@ -144,7 +148,35 @@ export class AgentManager {
       const last = this.lastDecisionAt.get(agent.name);
       if (last !== undefined && Date.now() - last < this.cooldownMs()) continue;
       if (this.inFlight >= this.config.maxConcurrentDecisions) continue;
-      await this.runCycle(agent, {});
+      // Catch-all (QE finding): an agent loop must NEVER die. runCycle is
+      // already defended end to end, so this only fires on a truly novel
+      // failure; the turn is logged as agent_error and the FSM is back at
+      // IDLE (runCycle's finally), so the agent retries after its cooldown.
+      try {
+        await this.runCycle(agent, {});
+      } catch (err) {
+        this.emitAgentError(agent, err);
+      }
+    }
+  }
+
+  /** Best-effort agent_error event — must itself never throw. */
+  private emitAgentError(agent: Agent, err: unknown): void {
+    try {
+      const t = getWorld().time();
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "agent_error",
+        agentName: agent.name,
+        turnId: `${agent.name}-${agent.turnCounter}`,
+        text: `${agent.name}'s decision cycle failed: ${
+          err instanceof Error ? err.message : String(err)
+        } — recovering after cooldown`,
+        payload: { error: err instanceof Error ? err.message : String(err) },
+      });
+    } catch {
+      /* a broken bus must not take the loop down with it */
     }
   }
 

@@ -150,6 +150,44 @@ describe("budget fallback (domain rule 5)", () => {
   });
 });
 
+describe("rejecting router resilience (QE hardening)", () => {
+  it("a router that THROWS degrades the turn to WAIT instead of escaping", async () => {
+    const agent = makeAgent();
+    let calls = 0;
+    const explosive: Router = async () => {
+      calls++;
+      throw new Error("upstream meltdown");
+    };
+
+    await expect(run(agent, explosive)).resolves.toBeUndefined();
+
+    expect(calls).toBe(1); // failed turn, no retry storm
+    expect(agent.lastAction).toMatchObject({ action: "WAIT", ok: true });
+    const kinds = events().map((e) => e.kind);
+    expect(kinds).toEqual([
+      "turn_start",
+      "llm_call",
+      "action_chosen",
+      "action_resolved",
+    ]); // chain stays complete; no parse_failure
+    const llm = events().find((e) => e.kind === "llm_call");
+    expect(llm?.payload?.error).toMatch(/router_threw: upstream meltdown/);
+    expect(agent.trace[0]).toMatchObject({ parsedOk: false, action: null });
+    expect(agent.budgetFallback).toBe(false); // not mistaken for budget_exceeded
+  });
+
+  it("a router that throws a non-Error value is still contained", async () => {
+    const agent = makeAgent();
+    const hostile: Router = async () => {
+      throw "string bomb"; // eslint-disable-line no-throw-literal
+    };
+    await expect(run(agent, hostile)).resolves.toBeUndefined();
+    expect(agent.lastAction).toMatchObject({ action: "WAIT", ok: true });
+    const llm = events().find((e) => e.kind === "llm_call");
+    expect(llm?.payload?.error).toMatch(/router_threw: string bomb/);
+  });
+});
+
 describe("event chain + trace", () => {
   it("emits turn_start -> llm_call -> action_chosen -> action_resolved under one turnId", async () => {
     const agent = makeAgent();

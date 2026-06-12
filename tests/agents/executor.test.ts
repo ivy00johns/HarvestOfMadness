@@ -247,6 +247,43 @@ describe("BUY / SELL", () => {
   });
 });
 
+describe("BUY / SELL hostile quantities (defense-in-depth vs a bypassing router)", () => {
+  const hostileQtys = [Number.NaN, Infinity, -Infinity, -3, 0, 2.5];
+
+  it("BUY rejects NaN/Infinity/fractional/negative qty and never corrupts gold or inventory", async () => {
+    for (const qty of hostileQtys) {
+      const a = makeAgent({ ...SHOP_POS });
+      const r = await exec(a, act("BUY", { itemId: "seed:parsnip", qty }));
+      expect(r.ok, `qty=${qty}`).toBe(false);
+      expect(r.reason, `qty=${qty}`).toBeTruthy();
+      expect(a.gold, `qty=${qty}`).toBe(200);
+      expect(Number.isFinite(a.gold), `qty=${qty}`).toBe(true);
+      expect(a.countItem("seed:parsnip"), `qty=${qty}`).toBe(5);
+      expect(Number.isFinite(a.countItem("seed:parsnip")), `qty=${qty}`).toBe(true);
+    }
+  });
+
+  it("SELL rejects NaN/Infinity/fractional/negative qty and never corrupts gold or inventory", async () => {
+    for (const qty of hostileQtys) {
+      const a = makeAgent({ ...SHOP_POS });
+      a.addItem("crop:parsnip", 2);
+      const r = await exec(a, act("SELL", { itemId: "crop:parsnip", qty }));
+      expect(r.ok, `qty=${qty}`).toBe(false);
+      expect(a.gold, `qty=${qty}`).toBe(200);
+      expect(Number.isFinite(a.gold), `qty=${qty}`).toBe(true);
+      expect(a.countItem("crop:parsnip"), `qty=${qty}`).toBe(2);
+    }
+  });
+
+  it("MOVE_TO/field actions reject non-finite coordinates", async () => {
+    const a = makeAgent({ x: 9, y: 9 });
+    expect((await exec(a, act("MOVE_TO", { x: Number.NaN, y: 9 }))).ok).toBe(false);
+    expect((await exec(a, act("TILL", { x: 9, y: Infinity }))).ok).toBe(false);
+    expect(a.pos).toEqual({ x: 9, y: 9 });
+    expect(a.energy).toBe(100);
+  });
+});
+
 describe("TALK_TO", () => {
   it("succeeds within 1 tile (Chebyshev) and bumps the relationship", async () => {
     const a = makeAgent({ x: 9, y: 9 }, "Alice");

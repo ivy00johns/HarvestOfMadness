@@ -50,7 +50,9 @@ function isVec2(v: unknown): v is Vec2 {
     typeof v === "object" &&
     v !== null &&
     typeof (v as Vec2).x === "number" &&
-    typeof (v as Vec2).y === "number"
+    Number.isFinite((v as Vec2).x) &&
+    typeof (v as Vec2).y === "number" &&
+    Number.isFinite((v as Vec2).y)
   );
 }
 
@@ -59,8 +61,21 @@ function isItemTarget(v: unknown): v is { itemId: string; qty: number } {
     typeof v === "object" &&
     v !== null &&
     typeof (v as { itemId?: unknown }).itemId === "string" &&
-    typeof (v as { qty?: unknown }).qty === "number"
+    typeof (v as { qty?: unknown }).qty === "number" &&
+    Number.isFinite((v as { qty: number }).qty)
   );
+}
+
+/**
+ * Defense-in-depth qty gate (QE finding: a non-conforming router can bypass
+ * parse.ts, and NaN/Infinity/fractional/negative qty would corrupt the
+ * economy). Mirrors parse.ts finiteness + adds the whole-number >= 1 rule;
+ * returns null when hostile.
+ */
+function gateQty(raw: number): number | null {
+  return Number.isFinite(raw) && Number.isInteger(raw) && raw >= 1
+    ? raw
+    : null;
 }
 
 function isAgentTarget(v: unknown): v is { agentName: string } {
@@ -206,8 +221,10 @@ export async function executeAction(
         if (here?.type !== "shopTile") {
           return reject("you must stand on the shop tile to BUY");
         }
-        const qty = Math.floor(target.qty);
-        if (qty < 1) return reject(`BUY qty must be at least 1 (got ${target.qty})`);
+        const qty = gateQty(target.qty);
+        if (qty === null) {
+          return reject(`BUY qty must be a whole number >= 1 (got ${target.qty})`);
+        }
         const price = world.buyPrices()[target.itemId];
         if (price === undefined) {
           return reject(`the shop does not sell "${target.itemId}"`);
@@ -232,8 +249,10 @@ export async function executeAction(
         if (here?.type !== "shopTile") {
           return reject("you must stand on the shop tile to SELL");
         }
-        const qty = Math.floor(target.qty);
-        if (qty < 1) return reject(`SELL qty must be at least 1 (got ${target.qty})`);
+        const qty = gateQty(target.qty);
+        if (qty === null) {
+          return reject(`SELL qty must be a whole number >= 1 (got ${target.qty})`);
+        }
         const price = world.sellPrices()[target.itemId];
         if (price === undefined) {
           return reject(`the shop does not buy "${target.itemId}"`);
