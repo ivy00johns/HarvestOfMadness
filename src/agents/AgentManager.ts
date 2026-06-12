@@ -1,0 +1,233 @@
+/**
+ * AgentManager — THE async scheduler (mission §6, no global tick).
+ *
+ * Per-agent loop: IDLE -> (cooldown elapsed + not paused + global in-flight
+ * < maxConcurrentDecisions) -> THINKING (router call, semaphore slot) ->
+ * EXECUTING (multi-frame action) -> IDLE.
+ *
+ * Daily ceiling (domain rule 5, manager side): a manager-level counter of
+ * decisions for the current UTC date; past maxDecisionsPerDay ALL agents are
+ * routed via mockRouter and ONE budget_reached event is emitted. The counter,
+ * per-agent decisionsToday, and the ceiling latch reset on UTC date change.
+ *
+ * HUD API (consumed by obs-agent): pause/resume/step/setSpeed/agents/isPaused.
+ */
+import type { EventBus, Router, SchedulerConfig } from "@contracts/types";
+import { SCHEDULER_DEFAULTS } from "@contracts/types";
+import { getRouter, mockRouter } from "../llm/router";
+import { getTimeSystem, getWorld } from "../world/instance";
+import { getRenderApi } from "../world/render";
+import type { Speed } from "../world/TimeSystem";
+import { Agent, type Persona } from "./Agent";
+import { PERSONAS } from "./personas";
+import { getEventBus } from "./events";
+import { runDecisionCycle } from "./AgentRuntime";
+
+/** Scheduler poll granularity (NOT the decision pace — that's the cooldown). */
+const POLL_MS = 100;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function currentUtcDayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export interface AgentManagerOpts {
+  config?: Partial<SchedulerConfig>;
+  /** Base router override (tests). Default: getRouter() per decision. */
+  router?: Router;
+  bus?: EventBus;
+}
+
+export class AgentManager {
+  readonly config: SchedulerConfig;
+  private readonly baseRouter: Router | null;
+  private readonly bus: EventBus;
+
+  private agentList: Agent[] = [];
+  private running = false;
+  private paused = false;
+  private speed = 1;
+  private inFlight = 0;
+  private readonly lastDecisionAt = new Map<string, number>();
+  private decisionsThisUtcDay = 0;
+  private utcDayKey = currentUtcDayKey();
+  private ceilingReached = false;
+
+  constructor(opts: AgentManagerOpts = {}) {
+    this.config = { ...SCHEDULER_DEFAULTS, ...opts.config };
+    this.baseRouter = opts.router ?? null;
+    this.bus = opts.bus ?? getEventBus();
+  }
+
+  // -- lifecycle -----------------------------------------------------------
+
+  /** Create agents from personas, register sprites, start the loops. */
+  start(personas: Persona[] = PERSONAS): void {
+    if (this.running) return;
+    this.running = true;
+    const api = getRenderApi();
+    for (const p of personas) {
+      const agent = new Agent(p);
+      this.agentList.push(agent);
+      api?.registerAgentSprite(agent.name, agent.color, agent.pos);
+    }
+    for (const agent of this.agentList) {
+      void this.loop(agent);
+    }
+  }
+
+  /** Stop all loops (tests / teardown). Idempotent. */
+  stop(): void {
+    this.running = false;
+  }
+
+  // -- HUD API --------------------------------------------------------------
+
+  pause(): void {
+    this.paused = true;
+    getTimeSystem().pause();
+  }
+
+  resume(): void {
+    this.paused = false;
+    getTimeSystem().resume();
+  }
+
+  isPaused(): boolean {
+    return this.paused;
+  }
+
+  setSpeed(multiplier: Speed): void {
+    this.speed = multiplier;
+    getTimeSystem().setSpeed(multiplier);
+  }
+
+  getSpeed(): number {
+    return this.speed;
+  }
+
+  agents(): Agent[] {
+    return [...this.agentList];
+  }
+
+  /**
+   * Step: run exactly ONE full decision cycle (think + execute) for the
+   * IDLE agent that has waited the longest. Works while paused; ignores the
+   * cooldown. Resolves when the cycle completes. No-op when no agent is IDLE.
+   */
+  async step(): Promise<void> {
+    const idle = this.agentList.filter((a) => a.fsm === "IDLE");
+    if (idle.length === 0) return;
+    idle.sort(
+      (a, b) =>
+        (this.lastDecisionAt.get(a.name) ?? 0) -
+        (this.lastDecisionAt.get(b.name) ?? 0),
+    );
+    await this.runCycle(idle[0], { ignorePause: true });
+  }
+
+  // -- internals -----------------------------------------------------------
+
+  private cooldownMs(): number {
+    return this.config.decisionCooldownMs / Math.max(0.0001, this.speed);
+  }
+
+  private async loop(agent: Agent): Promise<void> {
+    while (this.running) {
+      await sleep(POLL_MS);
+      if (!this.running) break;
+      if (this.paused) continue;
+      if (agent.fsm !== "IDLE") continue; // step() may have it busy
+      const last = this.lastDecisionAt.get(agent.name);
+      if (last !== undefined && Date.now() - last < this.cooldownMs()) continue;
+      if (this.inFlight >= this.config.maxConcurrentDecisions) continue;
+      await this.runCycle(agent, {});
+    }
+  }
+
+  private rolloverUtcDay(): void {
+    const key = currentUtcDayKey();
+    if (key === this.utcDayKey) return;
+    this.utcDayKey = key;
+    this.decisionsThisUtcDay = 0;
+    this.ceilingReached = false;
+    for (const a of this.agentList) a.decisionsToday = 0;
+  }
+
+  private routerForDecision(): Router {
+    if (this.ceilingReached) return mockRouter;
+    return this.baseRouter ?? getRouter();
+  }
+
+  private async runCycle(
+    agent: Agent,
+    opts: { ignorePause?: boolean },
+  ): Promise<void> {
+    this.rolloverUtcDay();
+    this.decisionsThisUtcDay++;
+    if (
+      !this.ceilingReached &&
+      this.decisionsThisUtcDay > this.config.maxDecisionsPerDay
+    ) {
+      this.ceilingReached = true;
+      const t = getWorld().time();
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "budget_reached",
+        text: `Daily decision ceiling (${this.config.maxDecisionsPerDay}) reached — all agents fall back to the mock heuristic`,
+        payload: { scope: "manager", ceiling: this.config.maxDecisionsPerDay },
+      });
+    }
+
+    // Semaphore slot covers THINKING only; released when EXECUTING begins.
+    this.inFlight++;
+    let released = false;
+    const release = (): void => {
+      if (!released) {
+        released = true;
+        this.inFlight--;
+      }
+    };
+
+    agent.fsm = "THINKING";
+    try {
+      await runDecisionCycle(agent, {
+        world: getWorld(),
+        agents: this.agentList,
+        bus: this.bus,
+        router: this.routerForDecision(),
+        onExecuting: () => {
+          release();
+          agent.fsm = "EXECUTING";
+        },
+        executorOpts: {
+          isPaused: () => (opts.ignorePause ? false : this.paused),
+          speed: () => this.speed,
+        },
+      });
+    } finally {
+      release();
+      agent.fsm = "IDLE";
+      this.lastDecisionAt.set(agent.name, Date.now());
+    }
+  }
+}
+
+// -- singleton (consumed by bootstrap + obs-agent's UIScene) ----------------
+
+let manager: AgentManager | null = null;
+
+export function getAgentManager(): AgentManager {
+  if (!manager) manager = new AgentManager();
+  return manager;
+}
+
+/** Test-only escape hatch. */
+export function resetAgentManagerForTests(): void {
+  manager?.stop();
+  manager = null;
+}
