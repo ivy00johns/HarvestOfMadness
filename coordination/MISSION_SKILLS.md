@@ -33,6 +33,18 @@ composition mapped onto the mission's own §14 phase numbering.
 - [ ] `qe-agent` (role) — mandatory; produces `coordination/qa-report.json`.
 
 ## Recorded deviations
+0. **docs/kickoff-fable5.md incorporated mid-build (2026-06-11, contracts v1.2).**
+   Adopted in full: the authoritative simulation constants (gold 200, 5 seeds,
+   potato 40g, per-action energy costs, ~32s day), the 9-step mock priority
+   ladder, clock pacing. NOT adopted (with reasons): Phaser 3 downgrade (Phaser
+   4.1 already installed, browser-verified, W1-gate green — the kickoff's
+   rationale was API-drift risk in a *blind* one-shot); dropping PROVENANCE/
+   vendoring (already done and costless; user's original instruction was
+   vendor-and-refactor with both source repos available); live-mode-as-stub
+   (real FreeLLMAPI wiring exists per user's explicit "FreeLLMAPI is running
+   now" and already degrades to a graceful 401 stub without a key). Interface
+   conflicts resolved per the kickoff's own precedence rule (research doc wins
+   on interfaces): SLEEP stays night-gated; energy-0 keeps SLEEP legal at bed.
 1. **Vendor → proxy-to-running-instance (FreeLLMAPI).** Mission §3 says vendor
    FreeLLMAPI's pool/route/fallback into `server/llm/*`. The real FreeLLMAPI is a
    full product (encrypted key DB, dashboard, auth) already running in Docker at
