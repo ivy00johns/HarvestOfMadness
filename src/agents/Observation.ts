@@ -26,6 +26,10 @@ export function chebyshev(a: Vec2, b: Vec2): number {
  * - BUY/SELL: standing on a shopTile, with gold (cheapest seed) / a sellable
  *   item respectively.
  * - TALK_TO: another agent within 1 tile (Chebyshev).
+ * - GIVE_GIFT (v2): another agent 4-adjacent AND at least one held item.
+ * - EMOTE (v2): always legal per rule 8 — but the rule-3 energy floor is
+ *   explicit ("only MOVE_TO/SLEEP/WAIT"), so at energy 0 it is not OFFERED
+ *   here; the executor still accepts it (rule 8 wins at execution time).
  */
 export function computeAvailableActions(
   agent: Agent,
@@ -78,6 +82,19 @@ export function computeAvailableActions(
     ) {
       out.push("TALK_TO");
     }
+
+    // v2 — gift needs a 4-adjacent receiver and something to give.
+    if (
+      agent.inventory.some((i) => i.qty > 0) &&
+      others.some(
+        (o) => o.name !== agent.name && world.isAdjacent(agent.pos, o.pos),
+      )
+    ) {
+      out.push("GIVE_GIFT");
+    }
+
+    // v2 — EMOTE rides inside the energy>0 block (see doc comment above).
+    out.push("EMOTE");
   }
 
   if (sleepOk) out.push("SLEEP");

@@ -24,6 +24,7 @@ import { getRenderApi } from "../world/render";
 import type { Agent } from "./Agent";
 import { buildObservation } from "./Observation";
 import { executeAction, type ExecutorOpts } from "./ActionExecutor";
+import type { CognitionSystem } from "./Cognition";
 
 export interface RuntimeCtx {
   world: WorldApi;
@@ -38,6 +39,17 @@ export interface RuntimeCtx {
   executorOpts?: ExecutorOpts;
   /** Called when THINKING ends and EXECUTING begins (semaphore release). */
   onExecuting?: () => void;
+  /**
+   * v2 — generative-agents layer. When present: observation enrichment
+   * (plan step / memories / relationships), rule-9 memory writes, and the
+   * executor's gift/talk hooks. Absent = exact v1 behavior.
+   */
+  cognition?: CognitionSystem;
+  /**
+   * v2 — per-LLM-call health signal for the manager's llm_offline /
+   * llm_recovered tracking (fired after every router call, ok or not).
+   */
+  onLlmResult?: (r: { ok: boolean; model: string; error?: string }) => void;
 }
 
 const RETRY_INSTRUCTION =
@@ -67,6 +79,10 @@ export function describeAction(a: AgentAction): string {
       return `selling ${t?.qty}x ${t?.itemId}`;
     case "TALK_TO":
       return `talking to ${t?.agentName}`;
+    case "GIVE_GIFT":
+      return `giving ${t?.itemId} to ${t?.agentName}`;
+    case "EMOTE":
+      return `showing a ${a.emotion ?? "neutral"} face`;
     case "SLEEP":
       return "sleeping";
     case "WAIT":
@@ -113,6 +129,13 @@ export async function runDecisionCycle(
 
   const decisionTime = world.time();
   const observation = buildObservation(agent, world, others);
+  // v2 — cognition enrichment BEFORE serializing: plan step, top-5 memories,
+  // relationships land in both the prompt and the decision trace. Also
+  // guarantees the DailyPlan exists before the first decision of the day
+  // (rule 12). Defensive inside; a cognition failure yields a v1 obs.
+  if (ctx.cognition) {
+    await ctx.cognition.enrichObservation(observation, agent);
+  }
   const observationJson = JSON.stringify(observation);
   const system = buildSystemPrompt(agent.persona.description);
   const user = buildUserPrompt(observation);
@@ -148,6 +171,12 @@ export async function runDecisionCycle(
         ...(res.error ? { error: res.error } : {}),
       },
     );
+    // v2 — health signal for the manager's llm_offline/llm_recovered logic.
+    ctx.onLlmResult?.({
+      ok: !res.error,
+      model: res.model,
+      ...(res.error ? { error: res.error } : {}),
+    });
     return res;
   };
 
@@ -213,20 +242,24 @@ export async function runDecisionCycle(
   });
 
   if (action.say) {
-    getRenderApi()?.showSpeech(agent.name, action.say);
+    getRenderApi()?.showSpeech(agent.name, action.say, action.emotion ?? "neutral");
     emit("agent_speech", `${agent.name}: ${action.say}`, { say: action.say });
+    // Rule 9: everyone in earshot remembers what they heard.
+    ctx.cognition?.recordSpeech(agent, action.say, others);
   }
 
   // THINKING -> EXECUTING (the manager releases its semaphore slot here).
   ctx.onExecuting?.();
 
-  const result = await executeAction(
-    agent,
-    action,
-    world,
-    others,
-    ctx.executorOpts,
-  );
+  // The executor reports gift/talk side-effects to the cognition layer.
+  const execOpts: ExecutorOpts = {
+    ...ctx.executorOpts,
+    ...(ctx.executorOpts?.cognition || !ctx.cognition
+      ? {}
+      : { cognition: ctx.cognition }),
+  };
+
+  const result = await executeAction(agent, action, world, others, execOpts);
 
   agent.lastAction = {
     action: action.action,
@@ -271,8 +304,21 @@ export async function runDecisionCycle(
         `${agent.name} slept — day ${world.time().day} begins`,
         { day: world.time().day },
       );
+    } else if (action.action === "GIVE_GIFT") {
+      const t = action.target as { agentName: string; itemId: string };
+      emit("gift_given", `${agent.name} gave ${t.agentName} 1x ${t.itemId}`, {
+        from: agent.name,
+        to: t.agentName,
+        itemId: t.itemId,
+      });
+    } else if (action.action === "EMOTE") {
+      const emotion = action.emotion ?? "neutral";
+      emit("agent_emote", `${agent.name} emotes: ${emotion}`, { emotion });
     }
   }
+
+  // Rule 9: every resolved action becomes a memory (fire-and-forget inside).
+  ctx.cognition?.recordOutcome(agent, action, result);
 
   agent.pushTrace({
     turnId,

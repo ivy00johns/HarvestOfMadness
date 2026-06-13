@@ -25,6 +25,7 @@ import { Agent, type Persona } from "./Agent";
 import { PERSONAS } from "./personas";
 import { getEventBus } from "./events";
 import { runDecisionCycle } from "./AgentRuntime";
+import { CognitionSystem } from "./Cognition";
 
 /** Scheduler poll granularity (NOT the decision pace — that's the cooldown). */
 const POLL_MS = 100;
@@ -59,12 +60,21 @@ export interface AgentManagerOpts {
   bus?: EventBus;
   /** Model-mode override (tests). Default: import.meta.env.VITE_MODEL_MODE. */
   modelMode?: string;
+  /**
+   * v2 — cognition override (tests); `null` disables cognition entirely.
+   * Default: a fresh CognitionSystem sharing this manager's bus + mode.
+   * NOTE: an injected `router` does NOT make cognition live — cognition's
+   * live/mock split follows VITE_MODEL_MODE (or `modelMode`) only, so
+   * router-stub tests keep exact call counts.
+   */
+  cognition?: CognitionSystem | null;
 }
 
 export class AgentManager {
   readonly config: SchedulerConfig;
   private readonly baseRouter: Router | null;
   private readonly bus: EventBus;
+  private readonly cognitionSystem: CognitionSystem | null;
 
   private agentList: Agent[] = [];
   private running = false;
@@ -76,6 +86,9 @@ export class AgentManager {
   private decisionsThisUtcDay = 0;
   private utcDayKey = currentUtcDayKey();
   private ceilingReached = false;
+  /** llm_offline latch (v2 kill-switch visibility, domain rule 13) */
+  private llmOffline = false;
+  private unsubscribeBus: (() => void) | null = null;
 
   constructor(opts: AgentManagerOpts = {}) {
     const mode = opts.modelMode ?? detectModelMode();
@@ -86,6 +99,13 @@ export class AgentManager {
     this.config = { ...defaults, ...opts.config };
     this.baseRouter = opts.router ?? null;
     this.bus = opts.bus ?? getEventBus();
+    this.cognitionSystem =
+      opts.cognition !== undefined
+        ? opts.cognition
+        : new CognitionSystem({
+            bus: this.bus,
+            ...(mode !== undefined ? { modelMode: mode } : {}),
+          });
   }
 
   // -- lifecycle -----------------------------------------------------------
@@ -99,6 +119,16 @@ export class AgentManager {
       const agent = new Agent(p);
       this.agentList.push(agent);
       api?.registerAgentSprite(agent.name, agent.color, agent.pos);
+      this.cognitionSystem?.registerAgent(agent);
+    }
+    // v2 rule 12 — pre-warm plans on every day_advanced (and day 1 now);
+    // ensurePlan() inside observation enrichment is the hard guarantee.
+    if (this.cognitionSystem) {
+      const cognition = this.cognitionSystem;
+      this.unsubscribeBus = this.bus.on((e) => {
+        if (e.kind === "day_advanced") cognition.onDayAdvanced();
+      });
+      cognition.onDayAdvanced();
     }
     for (const agent of this.agentList) {
       void this.loop(agent);
@@ -108,6 +138,13 @@ export class AgentManager {
   /** Stop all loops (tests / teardown). Idempotent. */
   stop(): void {
     this.running = false;
+    this.unsubscribeBus?.();
+    this.unsubscribeBus = null;
+  }
+
+  /** v2 — cognition layer (inspector/obs access); null when disabled. */
+  cognition(): CognitionSystem | null {
+    return this.cognitionSystem;
   }
 
   // -- HUD API --------------------------------------------------------------
@@ -239,7 +276,8 @@ export class AgentManager {
     // CEILING math counts live (costed) decisions ONLY — mock turns are $0
     // and must never trip the kill-switch (W4 finding). agent.decisionsToday/
     // decisionsTotal keep counting EVERY cycle for the HUD (AgentRuntime).
-    if (this.nextDecisionIsLive(agent)) {
+    const liveDecision = this.nextDecisionIsLive(agent);
+    if (liveDecision) {
       this.decisionsThisUtcDay++;
       if (this.decisionsThisUtcDay > this.config.maxDecisionsPerDay) {
         this.ceilingReached = true;
@@ -271,6 +309,8 @@ export class AgentManager {
         agents: this.agentList,
         bus: this.bus,
         router: this.routerForDecision(agent),
+        ...(this.cognitionSystem ? { cognition: this.cognitionSystem } : {}),
+        onLlmResult: (r) => this.trackLlmHealth(liveDecision, r),
         onExecuting: () => {
           release();
           agent.fsm = "EXECUTING";
@@ -284,6 +324,42 @@ export class AgentManager {
       release();
       agent.fsm = "IDLE";
       this.lastDecisionAt.set(agent.name, Date.now());
+    }
+  }
+
+  /**
+   * v2 kill-switch visibility (rule 13): the FIRST failing live decision
+   * emits llm_offline {reason}; the next succeeding live decision emits
+   * llm_recovered. budget_exceeded is excluded — that path already emits
+   * budget_reached (domain rule 5) and is a deliberate, not broken, state.
+   * Mock decisions (model "mock") never touch the latch.
+   */
+  private trackLlmHealth(
+    liveDecision: boolean,
+    r: { ok: boolean; model: string; error?: string },
+  ): void {
+    if (!liveDecision || r.model === "mock") return;
+    const t = getWorld().time();
+    if (!r.ok) {
+      if (r.error?.startsWith("budget_exceeded")) return;
+      if (this.llmOffline) return;
+      this.llmOffline = true;
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "llm_offline",
+        text: `Live LLM routing is failing (${r.error ?? "unknown error"}) — agents degrade to the heuristic`,
+        payload: { reason: r.error ?? "unknown error" },
+      });
+    } else if (this.llmOffline) {
+      this.llmOffline = false;
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "llm_recovered",
+        text: "Live LLM routing recovered — full cognition restored",
+        payload: {},
+      });
     }
   }
 }

@@ -23,6 +23,17 @@ import { getRenderApi } from "../world/render";
 import type { Agent } from "./Agent";
 import { chebyshev } from "./Observation";
 
+/**
+ * v2 cognition hooks (rule 8/9): the executor reports social side-effects
+ * (gift transfers, conversations) so the cognition layer can write the
+ * both-sides memories and affinity updates. Structural — CognitionSystem
+ * satisfies it; absent in v1-style/unit-test calls.
+ */
+export interface ExecutorCognitionHooks {
+  onGift(giver: Agent, receiver: Agent, itemId: string): void;
+  onTalk(speaker: Agent, listener: Agent, say: string | null): void;
+}
+
 export interface ExecutorOpts {
   /** scheduler pause hook — walking halts while true */
   isPaused?: () => boolean;
@@ -32,6 +43,8 @@ export interface ExecutorOpts {
   msPerTile?: number;
   /** poll interval while paused mid-walk (default 50ms) */
   pausePollMs?: number;
+  /** v2 — cognition side-effect hooks (gift/talk memories + affinity) */
+  cognition?: ExecutorCognitionHooks;
 }
 
 const DEFAULT_MS_PER_TILE = 250;
@@ -83,6 +96,19 @@ function isAgentTarget(v: unknown): v is { agentName: string } {
     typeof v === "object" &&
     v !== null &&
     typeof (v as { agentName?: unknown }).agentName === "string"
+  );
+}
+
+function isGiftTarget(
+  v: unknown,
+): v is { agentName: string; itemId: string; qty: number } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { agentName?: unknown }).agentName === "string" &&
+    typeof (v as { itemId?: unknown }).itemId === "string" &&
+    typeof (v as { qty?: unknown }).qty === "number" &&
+    Number.isFinite((v as { qty: number }).qty)
   );
 }
 
@@ -293,6 +319,49 @@ export async function executeAction(
         }
         agent.relationships[other.name] =
           (agent.relationships[other.name] ?? 0) + 1;
+        // v2 — affinity both ways + listener memory (rule 9).
+        opts.cognition?.onTalk(agent, other, action.say);
+        return { ok: true };
+      }
+
+      case "GIVE_GIFT": {
+        // §4.4 v2 row: receiver exists + 4-adjacent, giver holds itemId
+        // qty >= 1; transfers EXACTLY 1 regardless of requested qty.
+        const target = action.target;
+        if (!isGiftTarget(target)) {
+          return reject("GIVE_GIFT needs an {agentName, itemId, qty} target");
+        }
+        const other = others.find(
+          (o) => o.name === target.agentName && o.name !== agent.name,
+        );
+        if (!other) {
+          return reject(`there is no agent named "${target.agentName}" here`);
+        }
+        if (!world.isAdjacent(agent.pos, other.pos)) {
+          return reject(
+            `${other.name} is too far away — stand right next to them to give a gift`,
+          );
+        }
+        const qty = gateQty(target.qty);
+        if (qty === null) {
+          return reject(
+            `GIVE_GIFT qty must be a whole number >= 1 (got ${target.qty})`,
+          );
+        }
+        if (agent.countItem(target.itemId) < 1) {
+          return reject(`you do not have any "${target.itemId}" to give`);
+        }
+        agent.removeItem(target.itemId, 1);
+        other.addItem(target.itemId, 1);
+        spendEnergy(agent, "GIVE_GIFT"); // 0 by table — kept for uniformity
+        // v2 — importance-7 memories + affinity, BOTH directions (rule 8).
+        opts.cognition?.onGift(agent, other, target.itemId);
+        return { ok: true };
+      }
+
+      case "EMOTE": {
+        // Always legal (rule 8): renders only, mutates nothing.
+        getRenderApi()?.playEmote(agent.name, action.emotion ?? "neutral");
         return { ok: true };
       }
 

@@ -52,6 +52,16 @@ export class Agent {
   lastSeenDoing = "just arrived";
   /** TALK_TO relationship counter: other agent name -> count. */
   relationships: Record<string, number> = {};
+  // -- v2 cognition card fields (AgentCardModel optional v2 contract) --------
+  // Maintained by CognitionSystem; the obs layer reads them off the agent.
+  /** current DailyPlan step text (AgentCardModel.planStep) */
+  planStep: string | null = null;
+  /** top-5 affinity rows incl. summaries (AgentCardModel.relationships) */
+  relationshipRows: { name: string; affinity: number; summary: string }[] = [];
+  /** memory stream size (AgentCardModel.memoryCount) */
+  memoryCount = 0;
+  /** reflections stored so far (AgentCardModel.reflectionCount) */
+  reflectionCount = 0;
   /** Newest-first decision trace, cap TRACE_CAP. */
   trace: DecisionTraceEntry[] = [];
   /** Monotonic per-agent counter for turnId = `${name}-${counter}`. */
