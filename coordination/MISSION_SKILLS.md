@@ -10,25 +10,29 @@ own Stage numbering.
 ### vW0 — Contracts + assets
 - [x] `contract-author` — contracts bumped to v2.0 (types.ts cognition/asset
   seams, openapi 2.0.0 /api/embeddings + tier, README v2 rules 8–16). ✅
-- [ ] asset acquisition (replaces `nano-banana` — mission mandates real
-  CC-BY-SA/CC0 LPC art, not generated imagery) — asset-agent dispatched;
-  produces public/assets/**, manifest.json, CREDITS.txt.
+- [x] asset acquisition (replaces `nano-banana` — mission mandates real
+  CC-BY-SA/CC0 LPC art, not generated imagery) — ✅ public/assets/** (976KB:
+  5 walk-cycle characters, 9 tilesets, 4 crop strips), manifest.json
+  (21 paths verified), CREDITS.txt (full attribution chain). Commit c94c400.
 
 ### vW1 — Server tier/embeddings + LPC rendering
-- (role agents; no external skills)
+- [x] role agents ✅ — commits cea3e87 (server/llm) + 5b9e8bf (render).
 
 ### vW2 — Cognition + observability UI
-- (role agents; no external skills)
+- [x] role agents ✅ — commits 12e263a (cognition) + 21409ca (obs HUD).
 
 ### vW3 — QA + outcome gates
-- [ ] `qe-agent` (role) — mandatory; updates coordination/qa-report.json.
-- [ ] `render-sanity` — via haiku Playwright subagent (token policy); MUST
-  verify rule 14 (no sub-12px text) and real art rendering.
-- [ ] `ux-review` — via sonnet subagent; v1 top-5 findings are the regression
-  checklist (blurry fonts, card↔sprite link, label overlap, trace scrim,
-  event-log flood).
-- [ ] `design-token-guard` — re-check at gate; expected N/A (canvas-rendered)
-  unless DOM UI appears in vW2.
+- [x] `qe-agent` (role) — ✅ coordination/qa-report.json: proceed=true,
+  scores 5/5/5/5/4, 0 blockers, 543/543 tests, dist/ secret-free. 5ebc2d0.
+- [x] `render-sanity` — ✅ haiku Playwright subagent (token policy): overall
+  PASS, all 7 checks incl. real-art regression, rule-14 text, rule-15
+  fallback round-trip (one warn, placeholder, restored).
+- [x] `ux-review` — ✅ sonnet subagent on LIVE instance: all 5 v1 defects
+  fixed; live verified (6 real models, quoted thoughts/dialogue, graceful
+  429→LLM OFFLINE degradation). New top-5 polish issues RECORDED in
+  BUILD_RESULTS.md (not fixed — post-build backlog).
+- [x] `design-token-guard` — N/A re-verified at gate: vW2 added zero DOM/CSS
+  (all canvas; obs colors are TS constants in src/obs). ✅
 
 ## === v1 mission (historical) ===
 Source: docs/deep-research-v1.md · Scanned: 2026-06-11
