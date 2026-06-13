@@ -1,9 +1,10 @@
 /**
  * Harvest of Madness — game bootstrap.
  *
- * Logical resolution is the tilemap (24*16 x 18*16 = 384x288), zoomed x2 and
- * letterboxed/fit to the window. World + TimeSystem singletons live in
- * src/world/instance.ts (getWorld()) — import from there, never construct.
+ * Logical resolution is the tilemap (24*32 x 18*32 = 768x576, contract v2
+ * TILE_SIZE 32), letterboxed/fit to the window; the whole map fits one
+ * screen so no camera scroll is needed. World + TimeSystem singletons live
+ * in src/world/instance.ts (getWorld()) — import from there, never construct.
  *
  * W2 carve-out: obs-agent adds `import { UIScene } ...` and appends it to
  * the SCENES array below. Keep that the only edit this file needs.
@@ -21,6 +22,7 @@ new Phaser.Game({
   type: Phaser.AUTO,
   parent: "game",
   pixelArt: true,
+  roundPixels: true,
   backgroundColor: BACKGROUND_COLOR,
   scale: {
     mode: Phaser.Scale.FIT,
@@ -29,8 +31,8 @@ new Phaser.Game({
     height: MAP_HEIGHT * TILE_SIZE,
     zoom: GAME_ZOOM,
     max: {
-      width: MAP_WIDTH * TILE_SIZE * 4,
-      height: MAP_HEIGHT * TILE_SIZE * 4,
+      width: MAP_WIDTH * TILE_SIZE * 2,
+      height: MAP_HEIGHT * TILE_SIZE * 2,
     },
   },
   scene: SCENES,

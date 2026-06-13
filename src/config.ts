@@ -5,7 +5,7 @@
  * Contract-authoritative values (map size, tile size, crop tables) live in
  * @contracts/types — re-exported here for convenience.
  */
-import type { TileType } from "@contracts/types";
+import type { Emotion, TileType } from "@contracts/types";
 
 export {
   MAP_WIDTH,
@@ -16,8 +16,11 @@ export {
   PHASE_DURATION_MS,
 } from "@contracts/types";
 
-/** Render zoom: logical 384x288 shown at x2. */
-export const GAME_ZOOM = 2;
+/**
+ * Render zoom (integer). v2: TILE_SIZE is 32 so the logical canvas is already
+ * 768x576 (24*32 x 18*32) — shown at x1 and FIT-scaled to the window.
+ */
+export const GAME_ZOOM = 1;
 
 /** Page / letterbox background. */
 export const BACKGROUND_COLOR = "#101014";
@@ -54,3 +57,36 @@ export const SPEECH_MAX_CHARS = 60;
 
 /** Agent walk tween: ms per tile at speed 1 (divided by speed multiplier). */
 export const WALK_MS_PER_TILE = 200;
+
+// ---------------------------------------------------------------------------
+// v2 — LPC asset rendering (BootScene/WorldScene)
+// ---------------------------------------------------------------------------
+
+/** Phaser registry keys set by BootScene, read by WorldScene. */
+export const REG_ASSETS_ON = "assetsOn";
+export const REG_ASSET_MANIFEST = "assetManifest";
+
+/** Animated open-water frame cycle period (~600ms/frame, 3 frames). */
+export const WATER_ANIM_MS = 600;
+
+/** Multiplicative tint that visibly darkens a watered tilled tile. */
+export const WATERED_SOIL_TINT = 0x9a8068;
+
+/** Contract rule 14: minimum effective 12px text at zoom 1. */
+export const LABEL_FONT_SIZE = 12;
+export const SPEECH_FONT_SIZE = 12;
+
+/** RenderApi.playEmote lifetime. */
+export const EMOTE_DURATION_MS = 2_000;
+
+/** Per-emotion emote symbol + color (playEmote) / bubble border (showSpeech). */
+export const EMOTION_STYLE: Record<
+  Emotion,
+  { symbol: string; color: number; cssColor: string }
+> = {
+  happy: { symbol: "♪", color: 0xffd54f, cssColor: "#ffd54f" },
+  annoyed: { symbol: "!", color: 0xff5252, cssColor: "#ff5252" },
+  sad: { symbol: "…", color: 0x64b5f6, cssColor: "#64b5f6" },
+  excited: { symbol: "★", color: 0xffa726, cssColor: "#ffa726" },
+  neutral: { symbol: "·", color: 0xe0e0e0, cssColor: "#e0e0e0" },
+};
