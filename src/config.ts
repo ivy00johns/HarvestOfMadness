@@ -17,10 +17,23 @@ export {
 } from "@contracts/types";
 
 /**
- * Render zoom (integer). v2: TILE_SIZE is 32 so the logical canvas is already
- * 768x576 (24*32 x 18*32) — shown at x1 and FIT-scaled to the window.
+ * Default spectator camera zoom. The map is small (768x576) so on a large
+ * fullscreen canvas we frame the farm at >1x by default; the spectator can
+ * mouse-wheel between CAMERA_ZOOM_MIN and CAMERA_ZOOM_MAX.
  */
-export const GAME_ZOOM = 1;
+export const GAME_ZOOM = 1.75;
+
+/** Spectator camera zoom clamp (mouse wheel). */
+export const CAMERA_ZOOM_MIN = 0.5;
+export const CAMERA_ZOOM_MAX = 3;
+/** Multiplicative wheel zoom step. */
+export const CAMERA_ZOOM_STEP = 1.1;
+
+/** Keyboard pan speed (world px/sec at zoom 1, scaled by 1/zoom). */
+export const CAMERA_PAN_SPEED = 480;
+
+/** Camera follow lerp (per-axis) when tracking a clicked agent. */
+export const CAMERA_FOLLOW_LERP = 0.12;
 
 /** Page / letterbox background. */
 export const BACKGROUND_COLOR = "#101014";

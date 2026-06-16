@@ -37,6 +37,44 @@ export type UpstreamHealth = "ok" | "unreachable" | "unauthorized";
 const PROBE_TIMEOUT_MS = 3_000;
 const COMPLETE_TIMEOUT_MS = 30_000;
 
+/** Default completion token cap when a request omits maxTokens. */
+export const DEFAULT_MAX_TOKENS = 1024;
+/** Output-variety temperature (deep-research-v3 pattern 10). */
+const COMPLETION_TEMPERATURE = 0.75;
+
+/**
+ * JSON-mode sticky degrade (pattern 5): we send response_format json_object by
+ * default. The FIRST time a provider rejects it (a 400/404/422 whose message
+ * mentions response_format / json), we flip this off for the rest of the
+ * PROCESS lifetime so we stop paying a wasted round-trip on every call.
+ */
+let jsonModeEnabled = true;
+
+/** Test-only reset for the process-lifetime json-mode latch. */
+export function __resetJsonModeForTests(): void {
+  jsonModeEnabled = true;
+}
+
+/** Heuristic: does this upstream error look like a json-mode rejection? */
+function looksLikeJsonModeRejection(status: number, message: string): boolean {
+  if (status !== 400 && status !== 404 && status !== 422) return false;
+  const m = message.toLowerCase();
+  return m.includes("response_format") || m.includes("json_object") || m.includes("json mode");
+}
+
+/** Heuristic: does this upstream error mean "the pinned model is unknown"? */
+function looksLikeModelNotFound(status: number, message: string): boolean {
+  if (status !== 400 && status !== 404) return false;
+  const m = message.toLowerCase();
+  return (
+    m.includes("model not found") ||
+    m.includes("unknown model") ||
+    m.includes("does not exist") ||
+    m.includes("no such model") ||
+    (m.includes("model") && (m.includes("not found") || m.includes("invalid")))
+  );
+}
+
 /**
  * GET /api/ping (unauthenticated) → "unreachable" on failure; then
  * "unauthorized" when the key is missing or a GET /v1/models probe with the
@@ -100,76 +138,192 @@ async function upstreamErrorMessage(res: Response): Promise<string> {
   return `upstream HTTP ${res.status}`;
 }
 
+/** Outcome of ONE chat-completion attempt against a single model. */
+type AttemptOk = {
+  ok: true;
+  body: CompleteResponse;
+};
+type AttemptFail = {
+  ok: false;
+  status: number;
+  type: ApiError["error"]["type"];
+  message: string;
+  /** retryable on the `auto` backup lane (network/5xx/429/model-not-found) */
+  bounceable: boolean;
+};
+type Attempt = AttemptOk | AttemptFail;
+
 /**
- * Forward one decision to POST /v1/chat/completions. Maps upstream
- * 401→401 authentication_error, 429→429 rate_limit_error, network/5xx/other
- * →502 upstream_error. All messages sanitized.
+ * One chat-completion POST against `model`. Returns a structured Attempt so
+ * the orchestrator (forwardCompletion) can decide whether to bounce to the
+ * `auto` backup, retry without json-mode, or propagate.
  */
-export async function forwardCompletion(
+async function attemptCompletion(
   cfg: UpstreamConfig,
+  model: string,
   system: string,
   user: string,
-  tier?: "fast" | "smart",
-): Promise<ForwardResult> {
+  maxTokens: number,
+  useJsonMode: boolean,
+): Promise<Attempt> {
   const started = Date.now();
+
+  // Pattern 6: only set Authorization when the trimmed key is non-empty —
+  // an empty header value throws "Illegal header value" on some fetch impls.
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const key = cfg.apiKey?.trim();
+  if (key) headers.Authorization = `Bearer ${key}`;
+
+  const payload: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+    stream: false,
+    max_tokens: maxTokens,
+    temperature: COMPLETION_TEMPERATURE,
+  };
+  if (useJsonMode) payload.response_format = { type: "json_object" };
+
   let res: Response;
   try {
     res = await fetch(`${cfg.baseUrl}/v1/chat/completions`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${cfg.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: modelForTier(cfg, tier),
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-        stream: false,
-      }),
+      headers,
+      body: JSON.stringify(payload),
       signal: AbortSignal.timeout(COMPLETE_TIMEOUT_MS),
     });
   } catch (err) {
-    return apiError(502, "upstream_error", err instanceof Error ? err.message : err);
+    // Network/timeout — bounceable.
+    return {
+      ok: false,
+      status: 502,
+      type: "upstream_error",
+      message: err instanceof Error ? err.message : String(err),
+      bounceable: true,
+    };
   }
 
-  if (res.status === 401) {
-    return apiError(401, "authentication_error", await upstreamErrorMessage(res));
-  }
-  if (res.status === 429) {
-    return apiError(429, "rate_limit_error", await upstreamErrorMessage(res));
-  }
   if (!res.ok) {
-    return apiError(502, "upstream_error", await upstreamErrorMessage(res));
+    const message = await upstreamErrorMessage(res);
+    if (res.status === 401) {
+      // Auth is never bounceable — the same key fails on every lane.
+      return { ok: false, status: 401, type: "authentication_error", message, bounceable: false };
+    }
+    if (res.status === 429) {
+      return { ok: false, status: 429, type: "rate_limit_error", message, bounceable: true };
+    }
+    // 5xx and model-not-found 400/404 bounce; other 4xx propagate as 502.
+    const bounceable = res.status >= 500 || looksLikeModelNotFound(res.status, message);
+    return { ok: false, status: 502, type: "upstream_error", message, bounceable };
   }
 
   let body: {
     model?: unknown;
-    choices?: Array<{ message?: { content?: unknown } }>;
+    choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }>;
     usage?: { prompt_tokens?: unknown; completion_tokens?: unknown };
   };
   try {
     body = (await res.json()) as typeof body;
   } catch (err) {
-    return apiError(502, "upstream_error", err instanceof Error ? err.message : err);
+    return {
+      ok: false,
+      status: 502,
+      type: "upstream_error",
+      message: err instanceof Error ? err.message : String(err),
+      bounceable: true,
+    };
   }
 
   const raw = contentToString(body?.choices?.[0]?.message?.content);
   const routedVia = res.headers.get("x-routed-via");
-  const model =
+  const routedModel =
     routedVia || (typeof body?.model === "string" && body.model ? body.model : "unknown");
 
   const out: CompleteResponse = {
     raw,
-    model,
+    model: routedModel,
     latencyMs: Date.now() - started,
   };
   const tokensIn = body?.usage?.prompt_tokens;
   const tokensOut = body?.usage?.completion_tokens;
   if (typeof tokensIn === "number") out.tokensIn = tokensIn;
   if (typeof tokensOut === "number") out.tokensOut = tokensOut;
+  const finishReason = body?.choices?.[0]?.finish_reason;
+  if (typeof finishReason === "string") out.finishReason = finishReason;
   return { ok: true, body: out };
+}
+
+/**
+ * Forward one decision to POST /v1/chat/completions, with battle-tested
+ * resilience (deep-research-v3 port). Maps upstream 401→401
+ * authentication_error, 429→429 rate_limit_error, network/5xx/other →502
+ * upstream_error. All messages sanitized.
+ *
+ * Resilience layers, applied to the HOME call (modelForTier):
+ *  - max_tokens (request value or DEFAULT_MAX_TOKENS), temperature, and
+ *    response_format json_object (pattern 4/10/5).
+ *  - JSON-mode STICKY DEGRADE (pattern 5): a json-mode rejection retries the
+ *    SAME model once without response_format AND latches json-mode off for the
+ *    process. This does NOT consume the auto backup.
+ *  - SINGLE-SHOT `auto` BACKUP (pattern 1): on a bounceable failure
+ *    (network/5xx/429/model-not-found) we retry exactly ONCE with model:"auto"
+ *    — never a fan-out. Skipped when the home model already IS "auto" (then we
+ *    propagate). 401 auth never bounces. On a successful backup, bouncedFrom =
+ *    home model, bouncedTo = the auto call's routed model.
+ */
+export async function forwardCompletion(
+  cfg: UpstreamConfig,
+  system: string,
+  user: string,
+  tier?: "fast" | "smart",
+  maxTokens?: number,
+): Promise<ForwardResult> {
+  const homeModel = modelForTier(cfg, tier);
+  const cap = typeof maxTokens === "number" && maxTokens > 0 ? maxTokens : DEFAULT_MAX_TOKENS;
+
+  // --- HOME call (with json-mode sticky degrade) -------------------------
+  let home = await attemptCompletion(cfg, homeModel, system, user, cap, jsonModeEnabled);
+
+  // JSON-mode sticky degrade: attemptCompletion collapses the raw upstream
+  // status (a 4xx response_format rejection becomes a mapped 502/upstream_error
+  // here), so we re-derive intent from the message. On a json-mode rejection,
+  // latch json-mode OFF for the process and retry the SAME model once without
+  // it — this does NOT consume the auto backup.
+  if (
+    !home.ok &&
+    jsonModeEnabled &&
+    home.type === "upstream_error" &&
+    looksLikeJsonModeRejection(400, home.message)
+  ) {
+    jsonModeEnabled = false;
+    home = await attemptCompletion(cfg, homeModel, system, user, cap, false);
+  }
+
+  if (home.ok) return { ok: true, body: home.body };
+
+  // --- SINGLE-SHOT auto backup (no fan-out) ------------------------------
+  // Skip when not bounceable (401 auth, or a non-model 4xx) OR when the home
+  // model already IS "auto" (the backup would be the identical call).
+  if (!home.bounceable || homeModel === "auto") {
+    return { ok: false, status: home.status, body: errBody(home.type, home.message) };
+  }
+
+  const backup = await attemptCompletion(cfg, "auto", system, user, cap, jsonModeEnabled);
+  if (backup.ok) {
+    backup.body.bouncedFrom = homeModel;
+    backup.body.bouncedTo = backup.body.model;
+    return { ok: true, body: backup.body };
+  }
+
+  // Backup also failed — propagate the BACKUP's error (it's the freshest, and
+  // a 401 here means the key itself is bad).
+  return { ok: false, status: backup.status, body: errBody(backup.type, backup.message) };
+}
+
+function errBody(type: ApiError["error"]["type"], message: string): ApiError {
+  return { error: { message: sanitizeErrorMessage(message), type } };
 }
 
 export type EmbedForwardResult =

@@ -1,4 +1,12 @@
-# Harvest of Madness — Contracts (v2.0)
+# Harvest of Madness — Contracts (v2.1)
+
+> **v2.1 (M0 — LLM resilience, additive):** prep for the Smallville-scale build
+> (plans/cozy-toasting-russell.md). ADDITIVE only: `maxTokens` on
+> LlmRequest/CompleteRequest (decision retry boosts it on length/truncation);
+> `bouncedFrom`/`bouncedTo`/`finishReason` on LlmResponse/CompleteResponse
+> (records a single-shot `model:auto` backup + drives client truncation
+> handling). No breaking changes. The full world-model/hierarchical-plan
+> overhaul lands as v3.0 in M1.
 
 > **v2.0 (deep-research-v2: cognition + real art):** implements
 > docs/deep-research-v2.md Stages 1–2 on top of the v1 harness. ADDITIVE:

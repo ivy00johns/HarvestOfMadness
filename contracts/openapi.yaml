@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Harvest of Madness — agent proxy API
-  version: 2.0.0
+  version: 2.1.0
   description: >
     Thin Express proxy. Holds the FreeLLMAPI unified key server-side and
     forwards agent decision requests to the running FreeLLMAPI instance.
@@ -55,6 +55,12 @@ paths:
                     v2 tiered routing. fast → FREELLMAPI_MODEL_FAST,
                     smart → FREELLMAPI_MODEL_SMART; both default to "auto"
                     when unset. Omitted tier behaves exactly like v1.
+                maxTokens:
+                  type: integer
+                  description: >
+                    v3 completion token cap; absent = server default. The
+                    decision retry boosts this on length/truncation so a
+                    reasoning-model reroute can't starve the JSON.
       responses:
         "200":
           description: Completion
@@ -69,6 +75,9 @@ paths:
                   latencyMs: { type: number }
                   tokensIn: { type: integer }
                   tokensOut: { type: integer }
+                  bouncedFrom: { type: string, description: "v3 — home model when the call bounced to the auto router" }
+                  bouncedTo: { type: string, description: "v3 — model the auto router actually served" }
+                  finishReason: { type: string, description: "v3 — upstream finish_reason when present" }
         "400": { $ref: "#/components/responses/Err" } # invalid_request_error
         "401": { $ref: "#/components/responses/Err" } # authentication_error (bad/missing FREELLMAPI_API_KEY)
         "429": { $ref: "#/components/responses/Err" } # rate_limit_error | budget_exceeded

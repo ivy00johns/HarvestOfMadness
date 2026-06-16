@@ -159,14 +159,14 @@ const COMPLETION_OK = {
 // Spec text ↔ implementation constants
 // ---------------------------------------------------------------------------
 
-describe("openapi.yaml 2.0.0 ↔ implementation constants", () => {
+describe("openapi.yaml 2.1.0 ↔ implementation constants", () => {
   const spec = fs.readFileSync(
     fileURLToPath(new URL("../../contracts/openapi.yaml", import.meta.url)),
     "utf8",
   );
 
-  it("spec is version 2.0.0 and declares exactly the three contract paths", () => {
-    expect(spec).toContain("version: 2.0.0");
+  it("spec is version 2.1.0 and declares exactly the three contract paths", () => {
+    expect(spec).toContain("version: 2.1.0");
     for (const p of ["/api/health:", "/api/agent/complete:", "/api/embeddings:"]) {
       expect(spec, p).toContain(p);
     }

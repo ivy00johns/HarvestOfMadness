@@ -199,6 +199,12 @@ export interface LlmRequest {
   jsonSchema?: object;
   /** v2 — tiered routing; forwarded as CompleteRequest.tier (mock ignores) */
   tier?: "fast" | "smart";
+  /**
+   * v3 — completion token cap. Absent = server default. The decision retry
+   * boosts this (max(base*4, 2048)) when attempt 1 died of length/truncation,
+   * so a reasoning-model reroute can't starve the JSON. Mock ignores.
+   */
+  maxTokens?: number;
 }
 
 export interface LlmResponse {
@@ -209,6 +215,15 @@ export interface LlmResponse {
   tokensIn?: number;
   tokensOut?: number;
   error?: string;
+  /**
+   * v3 — when the pinned model failed and the call was retried once on the
+   * proxy's `auto` router, these record the swap (home → auto's real model)
+   * so the inspector shows which model actually answered.
+   */
+  bouncedFrom?: string;
+  bouncedTo?: string;
+  /** v3 — upstream finish_reason (e.g. "length"); drives truncation handling */
+  finishReason?: string;
 }
 
 export type Router = (req: LlmRequest) => Promise<LlmResponse>;
@@ -390,6 +405,8 @@ export interface CompleteRequest {
    * tiers to FREELLMAPI_MODEL_FAST / FREELLMAPI_MODEL_SMART (default "auto").
    */
   tier?: "fast" | "smart";
+  /** v3 — completion token cap; absent = server default (see LlmRequest.maxTokens) */
+  maxTokens?: number;
 }
 
 /** POST /api/agent/complete 200 body (mirrors LlmResponse minus `parsed`) */
@@ -399,6 +416,11 @@ export interface CompleteResponse {
   latencyMs: number; // measured server-side
   tokensIn?: number;
   tokensOut?: number;
+  /** v3 — set when the request bounced to the `auto` router (home → auto model) */
+  bouncedFrom?: string;
+  bouncedTo?: string;
+  /** v3 — upstream finish_reason when present (drives client truncation handling) */
+  finishReason?: string;
 }
 
 /** Any non-200 from the proxy */

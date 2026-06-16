@@ -52,6 +52,12 @@ function validateCompleteBody(body: unknown): string | null {
   if (b.tier !== undefined && b.tier !== "fast" && b.tier !== "smart") {
     return '"tier" must be "fast" or "smart" when provided';
   }
+  if (
+    b.maxTokens !== undefined &&
+    (typeof b.maxTokens !== "number" || !Number.isFinite(b.maxTokens) || b.maxTokens < 1)
+  ) {
+    return '"maxTokens" must be a positive number when provided';
+  }
   return null;
 }
 
