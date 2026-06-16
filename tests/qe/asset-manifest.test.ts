@@ -37,6 +37,38 @@ function loadManifest(): AssetManifest {
   return JSON.parse(raw) as AssetManifest;
 }
 
+const PNG_SIG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+/**
+ * Walk a PNG's chunks and report whether it can carry transparency. LPC sprite
+ * sheets MUST be transparent — an alpha-less sheet renders its background as an
+ * opaque box around every character (the "white square" defect). Truecolour-
+ * alpha (6) and greyscale-alpha (4) carry alpha per-pixel; palette (3) needs a
+ * tRNS chunk; RGB (2) / greyscale (0) carry none.
+ */
+function pngTransparency(file: string): { colorType: number; hasTRNS: boolean } {
+  const buf = fs.readFileSync(file);
+  if (!buf.subarray(0, 8).equals(PNG_SIG)) throw new Error(`${file} is not a PNG`);
+  const colorType = buf[25]; // 8 sig + 4 len + 4 "IHDR" + 4 w + 4 h + 1 bitDepth
+  let hasTRNS = false;
+  let off = 8;
+  while (off + 8 <= buf.length) {
+    const len = buf.readUInt32BE(off);
+    const type = buf.toString("ascii", off + 4, off + 8);
+    if (type === "tRNS") hasTRNS = true;
+    if (type === "IEND") break;
+    off += 12 + len; // length(4) + type(4) + data(len) + crc(4)
+  }
+  return { colorType, hasTRNS };
+}
+
+function pngCarriesAlpha(file: string): boolean {
+  const { colorType, hasTRNS } = pngTransparency(file);
+  if (colorType === 6 || colorType === 4) return true; // RGBA / grey+alpha
+  if (colorType === 3) return hasTRNS; // palette is transparent only via tRNS
+  return false; // RGB (2) / greyscale (0): opaque, no alpha
+}
+
 function listAssetFiles(): string[] {
   const out: string[] = [];
   const walk = (dir: string): void => {
@@ -76,6 +108,18 @@ describe("AssetManifest contract conformance (public/assets/manifest.json)", () 
       }
       expect(keys.has(c.key), `duplicate key ${c.key}`).toBe(false);
       keys.add(c.key);
+    }
+  });
+
+  it("every character sheet ships with transparency (no opaque background box)", () => {
+    for (const c of manifest.characters) {
+      const file = path.join(PUBLIC_DIR, c.path);
+      expect(
+        pngCarriesAlpha(file),
+        `${c.path} has no alpha (colorType ${pngTransparency(file).colorType}, ` +
+          `tRNS ${pngTransparency(file).hasTRNS}) — its background renders as an ` +
+          `opaque box around the character`,
+      ).toBe(true);
     }
   });
 
