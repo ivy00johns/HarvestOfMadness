@@ -24,10 +24,16 @@ import type {
 } from "@contracts/types";
 import { CROPS, MAP_HEIGHT, MAP_WIDTH, TILE_SIZE } from "@contracts/types";
 import {
+  CAMERA_FOLLOW_LERP,
+  CAMERA_PAN_SPEED,
+  CAMERA_ZOOM_MAX,
+  CAMERA_ZOOM_MIN,
+  CAMERA_ZOOM_STEP,
   CROP_COLORS,
   CROP_READY_COLOR,
   EMOTE_DURATION_MS,
   EMOTION_STYLE,
+  GAME_ZOOM,
   LABEL_FONT_SIZE,
   REG_ASSETS_ON,
   REG_ASSET_MANIFEST,
@@ -40,6 +46,8 @@ import {
   WATERED_TINT,
   WATER_ANIM_MS,
 } from "../config";
+import { computeHud, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
+import type { Rect } from "../obs/layout";
 import { getWorld } from "../world/instance";
 import { BED_POS, SHOP_POS } from "../world/map";
 import {
@@ -148,6 +156,15 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   private readonly agentNames: string[] = [];
   private unsubscribeWorld: (() => void) | null = null;
 
+  // -- spectator camera (pan / wheel-zoom / click-to-follow) -----------------
+  private cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
+  private wasd: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key> | null = null;
+  private dragging = false;
+  private dragMoved = false;
+  private readonly dragStart = { px: 0, py: 0, scrollX: 0, scrollY: 0 };
+  /** agent the camera is currently tracking, or null for free-pan */
+  private following: string | null = null;
+
   constructor() {
     super("world");
   }
@@ -161,12 +178,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       ? (this.registry.get(REG_ASSET_MANIFEST) as AssetManifest)
       : null;
 
-    this.cameras.main.setBounds(
-      0,
-      0,
-      MAP_WIDTH * TILE_SIZE,
-      MAP_HEIGHT * TILE_SIZE,
-    );
+    this.setupCamera();
 
     if (this.useAssets) {
       this.buildBaseLayer();
@@ -205,8 +217,132 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     }
   }
 
+  // -- spectator camera -------------------------------------------------------
+
+  /**
+   * Frame the map on a fullscreen canvas and wire pan/zoom/follow. The canvas
+   * fills the window (Scale.RESIZE), so the camera (not the canvas) does all
+   * framing: default zoom GAME_ZOOM centered on the map; mouse-wheel zoom
+   * toward the cursor; click-drag or arrow/WASD to pan; click an agent to
+   * follow them, click empty ground to stop following.
+   */
+  private setupCamera(): void {
+    const cam = this.cameras.main;
+    cam.setBounds(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE);
+    cam.setZoom(GAME_ZOOM);
+    cam.centerOn((MAP_WIDTH * TILE_SIZE) / 2, (MAP_HEIGHT * TILE_SIZE) / 2);
+
+    this.cursors = this.input.keyboard?.createCursorKeys() ?? null;
+    // Map WASD onto the directional names the pan code reads (up/down/left/
+    // right). The comma-string form returns {W,A,S,D}, so `wasd.left` would be
+    // undefined and `.isDown` would throw every frame — use the object form.
+    this.wasd =
+      (this.input.keyboard?.addKeys({
+        up: Phaser.Input.Keyboard.KeyCodes.W,
+        left: Phaser.Input.Keyboard.KeyCodes.A,
+        down: Phaser.Input.Keyboard.KeyCodes.S,
+        right: Phaser.Input.Keyboard.KeyCodes.D,
+      }) as typeof this.wasd) ?? null;
+
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onWorldPointerDown, this);
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, this.onWorldPointerMove, this);
+    this.input.on(Phaser.Input.Events.POINTER_UP, this.onWorldPointerUp, this);
+    this.input.on(Phaser.Input.Events.POINTER_WHEEL, this.onWorldWheel, this);
+  }
+
+  /** True when a pointer position sits on HUD chrome (don't pan/select there). */
+  private pointerOverHud(px: number, py: number): boolean {
+    const hud = computeHud(this.scale.width, this.scale.height);
+    if (isPointOverHud(hud, px, py)) return true;
+    const panel = this.registry.get(REG_HUD) as Rect | null | undefined;
+    return panel ? pointInRect(px, py, panel) : false;
+  }
+
+  private onWorldPointerDown(p: Phaser.Input.Pointer): void {
+    if (this.pointerOverHud(p.x, p.y)) return;
+    this.dragging = true;
+    this.dragMoved = false;
+    this.dragStart.px = p.x;
+    this.dragStart.py = p.y;
+    this.dragStart.scrollX = this.cameras.main.scrollX;
+    this.dragStart.scrollY = this.cameras.main.scrollY;
+  }
+
+  private onWorldPointerMove(p: Phaser.Input.Pointer): void {
+    if (!this.dragging || !p.isDown) return;
+    const dx = p.x - this.dragStart.px;
+    const dy = p.y - this.dragStart.py;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      this.dragMoved = true;
+      this.following = null; // dragging takes over from follow
+      this.cameras.main.stopFollow();
+    }
+    const z = this.cameras.main.zoom;
+    this.cameras.main.setScroll(
+      this.dragStart.scrollX - dx / z,
+      this.dragStart.scrollY - dy / z,
+    );
+  }
+
+  private onWorldPointerUp(p: Phaser.Input.Pointer): void {
+    const wasDrag = this.dragMoved;
+    this.dragging = false;
+    this.dragMoved = false;
+    if (wasDrag || this.pointerOverHud(p.x, p.y)) return;
+    // A clean click (no drag) on the world: follow the agent under it, else
+    // clear any active follow.
+    const wp = this.cameras.main.getWorldPoint(p.x, p.y);
+    const hit = this.agentAt(wp.x, wp.y);
+    if (hit) {
+      this.following = hit;
+      const agent = this.agents.get(hit);
+      if (agent) {
+        this.cameras.main.startFollow(
+          agent.container,
+          false,
+          CAMERA_FOLLOW_LERP,
+          CAMERA_FOLLOW_LERP,
+        );
+      }
+    } else if (this.following) {
+      this.following = null;
+      this.cameras.main.stopFollow();
+    }
+  }
+
+  private onWorldWheel(p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number): void {
+    if (this.pointerOverHud(p.x, p.y)) return;
+    const cam = this.cameras.main;
+    const before = cam.getWorldPoint(p.x, p.y);
+    const factor = dy > 0 ? 1 / CAMERA_ZOOM_STEP : CAMERA_ZOOM_STEP;
+    const z = Phaser.Math.Clamp(cam.zoom * factor, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    cam.setZoom(z);
+    const after = cam.getWorldPoint(p.x, p.y);
+    cam.setScroll(cam.scrollX + (before.x - after.x), cam.scrollY + (before.y - after.y));
+  }
+
+  /** Topmost agent whose ~1-tile body box contains the world point, or null. */
+  private agentAt(wx: number, wy: number): string | null {
+    let best: string | null = null;
+    let bestY = -Infinity;
+    const half = TILE_SIZE * 0.5;
+    for (const [name, a] of this.agents) {
+      const cx = a.container.x;
+      const cy = a.container.y;
+      // body box: roughly the tile under the feet up through the head sprite
+      if (wx >= cx - half && wx <= cx + half && wy >= cy - TILE_SIZE * 1.6 && wy <= cy + half) {
+        if (cy > bestY) {
+          bestY = cy;
+          best = name;
+        }
+      }
+    }
+    return best;
+  }
+
   override update(_time: number, delta: number): void {
     getWorld().timeSystem.tick(delta);
+    this.panFromKeyboard(delta);
     for (const agent of this.agents.values()) {
       // y-sort walking agents (feet position decides paint order).
       agent.container.setDepth(agent.container.y + TILE_SIZE / 2);
@@ -218,6 +354,59 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
           Math.round(agent.container.y - this.bubbleLift()),
         );
       }
+    }
+    this.restackLabels();
+  }
+
+  /** Arrow / WASD keyboard panning (stops any active follow). */
+  private panFromKeyboard(delta: number): void {
+    const c = this.cursors;
+    const k = this.wasd;
+    let dx = 0;
+    let dy = 0;
+    if (c?.left.isDown || k?.left.isDown) dx -= 1;
+    if (c?.right.isDown || k?.right.isDown) dx += 1;
+    if (c?.up.isDown || k?.up.isDown) dy -= 1;
+    if (c?.down.isDown || k?.down.isDown) dy += 1;
+    if (dx === 0 && dy === 0) return;
+    if (this.following) {
+      this.following = null;
+      this.cameras.main.stopFollow();
+    }
+    const cam = this.cameras.main;
+    const step = (CAMERA_PAN_SPEED * delta) / 1000 / cam.zoom;
+    cam.setScroll(cam.scrollX + dx * step, cam.scrollY + dy * step);
+  }
+
+  /**
+   * Rule-14 readability: keep name labels from overlapping when agents cluster.
+   * Greedy top-down de-collision in world space — each label lifts above any
+   * already-placed label it would collide with (generalizes the old 2-row
+   * stagger to any number of stacked agents).
+   */
+  private restackLabels(): void {
+    const list = [...this.agents.values()].sort((a, b) => a.container.y - b.container.y);
+    const placed: Rect[] = [];
+    const lineH = LABEL_FONT_SIZE + 5;
+    const base = this.labelLift();
+    for (const a of list) {
+      const w = (a.label.width || a.label.text.length * 7) + 4;
+      let lift = base;
+      for (let guard = 0; guard < 12; guard++) {
+        const cx = a.container.x;
+        const top = a.container.y + lift - lineH;
+        const box: Rect = { x: cx - w / 2, y: top, w, h: lineH };
+        const hit = placed.some(
+          (p) =>
+            !(box.x + box.w < p.x || box.x > p.x + p.w || box.y + box.h < p.y || box.y > p.y + p.h),
+        );
+        if (!hit) {
+          placed.push(box);
+          break;
+        }
+        lift -= lineH;
+      }
+      a.label.setY(Math.round(lift));
     }
   }
 
@@ -547,7 +736,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     for (const [i, name] of sorted.entries()) {
       const agent = this.agents.get(name);
       if (!agent) continue;
-      agent.label.setY(Math.round(this.labelLift() - (i % 2) * (LABEL_FONT_SIZE + 2)));
+      agent.label.setY(Math.round(this.labelLift())); // base; restackLabels() de-collides per frame
       if (agent.sprite && chars.length > 0) {
         const c = chars[i % chars.length];
         if (agent.charKey !== c.key) {
