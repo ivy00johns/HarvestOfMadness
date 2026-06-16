@@ -1,29 +1,19 @@
 /**
  * UIScene — spectator HUD (§8), pure Phaser (canvas-rendered, DOM-free).
  *
- * Runs as a parallel scene over WorldScene (auto-started via `active: true`;
- * last in main.ts' scene array, so it renders on top). Layout in the logical
- * 768x576 space (24*32 x 18*32 — see src/obs/layout.ts, where the math is
- * pure and unit-tested):
- *   - top row: controls (pause/step/speed) left, Day/phase/speed right
- *   - badge row: the kill-switch badge (rule 13 — LIVE / LLM OFFLINE / MOCK
- *     MODE) centered, PAUSED + BUDGET badges beside it
- *   - agent cards: right column — sprite-color swatch, gold/energy, PLAN
- *     step, goal, thought, last action, affinity meter (top 3), M:/R: stats;
- *     click a card (or a feed turn line) to open its decision trace panel
- *   - event feed: bottom-left — collapsed decision turns (one line per
- *     turnId), "— Day N —" separators, emphasized dialogue lines
+ * Runs as a parallel scene over WorldScene. v3: the canvas is fullscreen
+ * (Phaser.Scale.RESIZE), so the HUD DOCKS to the live viewport via
+ * computeHud(viewW, viewH) (src/obs/layout.ts) and fully rebuilds on the
+ * scale RESIZE event. Docking: top row controls + clock; badge row with the
+ * kill-switch (rule 13 — LIVE / LLM OFFLINE / MOCK) pinned top-left; agent
+ * cards on the right edge; event feed bottom-left; trace panel filling the
+ * left-middle band. The open panel's rect is published to the registry so
+ * WorldScene ignores camera clicks that land on it.
  *
  * Contract rule 14: every font ≥ 12px effective at zoom 1, integer pixel
  * positions. Update discipline (§8): re-render on EventBus events with a
- * ~150ms trailing throttle plus a 500ms live timer for energy/FSM/clock —
- * NEVER per-frame text rebuilds. No nested containers (Phaser 4.1 gotcha).
- *
- * Input: card/feed/panel clicks are resolved by a scene-level pointerdown
- * hit-test against the pure layout rects — per-object setInteractive on
- * freshly (re)created objects missed the first click in v1 (input plugin
- * registers new hit areas a tick late). Only the long-lived top-bar buttons
- * keep per-object handlers.
+ * ~150ms trailing throttle plus a 500ms live timer — NEVER per-frame text
+ * rebuilds. No nested containers (Phaser 4.1 gotcha).
  */
 import Phaser from "phaser";
 import type { DecisionTraceEntry, WorldEvent } from "@contracts/types";
@@ -48,35 +38,14 @@ import {
   type ObsAgentCardModel,
 } from "../obs/Inspector";
 import {
-  BADGE_ROW_Y,
-  CARD_W,
   FONT_SIZE_BASE,
   FONT_SIZE_SMALL,
   FONT_SIZE_TITLE,
   HUD_FONT,
-  HUD_W,
-  LOG_H,
-  LOG_LINES,
-  LOG_LINE_H,
-  LOG_MAX_CHARS,
-  LOG_PAD_X,
-  LOG_PAD_Y,
-  LOG_W,
-  LOG_X,
-  LOG_Y,
-  PANEL_CLOSE_RECT,
-  PANEL_H,
-  PANEL_HEADER_H,
-  PANEL_RECT,
-  PANEL_VISIBLE_TRACE,
-  PANEL_W,
-  PANEL_X,
-  PANEL_Y,
-  TOPBAR_H,
-  cardIndexAt,
-  cardRect,
-  feedLineIndexAt,
+  REG_HUD,
+  computeHud,
   pointInRect,
+  type HudLayout,
 } from "../obs/layout";
 import type { ObsConnection } from "../obs/wiring";
 import { connectObservability } from "../obs/wiring";
@@ -158,6 +127,8 @@ export class UIScene extends Phaser.Scene {
   private readonly killSwitch = new KillSwitchModel(detectModelMode());
   private readonly unsubscribers: Array<() => void> = [];
   private destroyed = false;
+  /** responsive HUD geometry, recomputed on every resize */
+  private hud!: HudLayout;
 
   private budgetReached = false;
   private refreshPending = false;
@@ -195,6 +166,7 @@ export class UIScene extends Phaser.Scene {
 
   create(): void {
     this.scene.bringToTop();
+    this.hud = computeHud(this.scale.width, this.scale.height);
     this.buildTopBar();
     this.buildBadgeRow();
     this.buildFeedChrome();
@@ -210,8 +182,10 @@ export class UIScene extends Phaser.Scene {
         dy: number,
       ) => this.onWheel(pointer, dy),
     );
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.relayout, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.destroyed = true;
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.relayout, this);
       for (const unsub of this.unsubscribers) unsub();
       this.unsubscribers.length = 0;
     });
@@ -219,6 +193,39 @@ export class UIScene extends Phaser.Scene {
     // (us); it self-defers until WorldScene publishes its RenderApi.
     startAgents();
     this.connect();
+  }
+
+  /**
+   * Rebuild the entire HUD against the new viewport size. UIScene contains only
+   * HUD chrome, so removeAll(true) is a safe full teardown; input handlers and
+   * the live timer live on the scene (not children) and persist, reading the
+   * fresh this.hud. Transient panel selection is reopened with new geometry.
+   */
+  private relayout(): void {
+    if (this.destroyed) return;
+    this.hud = computeHud(this.scale.width, this.scale.height);
+    const reopen = this.selectedAgent;
+    this.children.removeAll(true);
+    this.cards.clear();
+    this.cardNames = [];
+    this.cardLayoutKey = "";
+    this.logTexts = [];
+    this.feedLineItems = [];
+    this.panelObjects = [];
+    this.panelEntryTexts = [];
+    this.panelTraceEntries = [];
+    this.selectedAgent = null;
+    this.buildTopBar();
+    this.buildBadgeRow();
+    this.buildFeedChrome();
+    this.refreshAll();
+    if (reopen) this.toggleTracePanel(reopen);
+    this.publishPanelRect();
+  }
+
+  /** WorldScene reads this rect to ignore camera clicks over the open panel. */
+  private publishPanelRect(): void {
+    this.registry.set(REG_HUD, this.selectedAgent ? this.hud.panelRect : null);
   }
 
   // -- wiring -----------------------------------------------------------------
@@ -286,22 +293,22 @@ export class UIScene extends Phaser.Scene {
   private onPointerDown(px: number, py: number): void {
     if (this.destroyed) return;
     if (this.selectedAgent) {
-      if (pointInRect(px, py, PANEL_CLOSE_RECT)) {
+      if (pointInRect(px, py, this.hud.panelCloseRect)) {
         this.closePanel();
         return;
       }
-      if (pointInRect(px, py, PANEL_RECT)) {
+      if (pointInRect(px, py, this.hud.panelRect)) {
         this.onPanelClick(py);
         return; // panel swallows its clicks — nothing leaks to the map
       }
     }
     const count = this.cardNames.length;
-    const cardIdx = cardIndexAt(px, py, count);
+    const cardIdx = this.hud.cardIndexAt(px, py, count);
     if (cardIdx !== null && cardIdx < count) {
       this.toggleTracePanel(this.cardNames[cardIdx]);
       return;
     }
-    const lineIdx = feedLineIndexAt(px, py);
+    const lineIdx = this.hud.feedLineIndexAt(px, py);
     if (lineIdx !== null) {
       const item = this.feedLineItems[lineIdx];
       if (item && item.type === "turn") this.toggleTracePanel(item.agentName);
@@ -324,7 +331,7 @@ export class UIScene extends Phaser.Scene {
 
   private buildTopBar(): void {
     this.add
-      .rectangle(0, 0, HUD_W, TOPBAR_H, COLOR_CHROME, 0.92)
+      .rectangle(0, 0, this.hud.w, this.hud.topbarH, COLOR_CHROME, 0.92)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
 
@@ -352,7 +359,7 @@ export class UIScene extends Phaser.Scene {
     }
 
     this.statusText = this.add
-      .text(HUD_W - 6, 5, "", {
+      .text(this.hud.statusX, 5, "", {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         color: COLOR_TEXT,
@@ -363,14 +370,14 @@ export class UIScene extends Phaser.Scene {
     this.refreshTopBar();
   }
 
-  /** Badge row under the top bar: kill-switch centered, state badges beside. */
+  /** Badge row under the top bar: kill-switch pinned left, state badges beside. */
   private buildBadgeRow(): void {
     this.add
-      .rectangle(0, BADGE_ROW_Y, HUD_W, 20, COLOR_CHROME, 0.92)
+      .rectangle(0, this.hud.badgeRowY, this.hud.w, this.hud.badgeRowH, COLOR_CHROME, 0.92)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
     this.killBadge = this.add
-      .text(0, BADGE_ROW_Y + 2, "", {
+      .text(4, this.hud.badgeRowY + 2, "", {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         fontStyle: "bold",
@@ -379,7 +386,7 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(DEPTH_BADGE);
     this.pausedBadge = this.add
-      .text(0, BADGE_ROW_Y + 2, "PAUSED", {
+      .text(0, this.hud.badgeRowY + 2, "PAUSED", {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         fontStyle: "bold",
@@ -387,11 +394,11 @@ export class UIScene extends Phaser.Scene {
         backgroundColor: "#3a1418",
         padding: { x: 6, y: 2 },
       })
-      .setOrigin(1, 0)
+      .setOrigin(0, 0)
       .setDepth(DEPTH_BADGE)
       .setVisible(false);
     this.budgetBadge = this.add
-      .text(0, BADGE_ROW_Y + 2, "BUDGET REACHED", {
+      .text(0, this.hud.badgeRowY + 2, "BUDGET REACHED", {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         fontStyle: "bold",
@@ -405,6 +412,7 @@ export class UIScene extends Phaser.Scene {
     this.renderBadgeRow();
   }
 
+  /** Kill-switch pinned top-left (rule 13); PAUSED + BUDGET badges follow it. */
   private renderBadgeRow(): void {
     if (this.destroyed || !this.killBadge) return;
     const state = this.killSwitch.state();
@@ -412,14 +420,16 @@ export class UIScene extends Phaser.Scene {
     this.killBadge
       .setText(killSwitchLabel(state))
       .setStyle({ color: style.fg, backgroundColor: style.bg });
-    const left = Math.round((HUD_W - this.killBadge.width) / 2);
+    const left = 4;
     this.killBadge.setX(left);
-    // PAUSED sits left of the kill badge, BUDGET to its right
+    // PAUSED + BUDGET sit to the right of the kill badge.
+    const afterKill = Math.round(left + this.killBadge.width + 8);
     const paused = this.conn?.controls.isPaused() ?? false;
-    this.pausedBadge.setVisible(paused).setX(left - 8);
-    this.budgetBadge
-      .setVisible(this.budgetReached)
-      .setX(Math.round(left + this.killBadge.width + 8));
+    this.pausedBadge.setVisible(paused).setX(afterKill);
+    const afterPaused = paused
+      ? Math.round(afterKill + this.pausedBadge.width + 8)
+      : afterKill;
+    this.budgetBadge.setVisible(this.budgetReached).setX(afterPaused);
   }
 
   private makeButton(
@@ -476,18 +486,23 @@ export class UIScene extends Phaser.Scene {
 
   private buildFeedChrome(): void {
     this.add
-      .rectangle(LOG_X, LOG_Y, LOG_W, LOG_H, COLOR_CHROME, 0.85)
+      .rectangle(this.hud.logX, this.hud.logY, this.hud.logW, this.hud.logH, COLOR_CHROME, 0.85)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD);
-    for (let i = 0; i < LOG_LINES; i++) {
+    for (let i = 0; i < this.hud.logLines; i++) {
       this.logTexts.push(
         this.add
-          .text(LOG_X + LOG_PAD_X, LOG_Y + LOG_PAD_Y + i * LOG_LINE_H, "", {
-            fontFamily: HUD_FONT,
-            fontSize: PX_SMALL,
-            color: COLOR_DIM,
-          })
+          .text(
+            this.hud.logX + this.hud.logPadX,
+            this.hud.logY + this.hud.logPadY + i * this.hud.logLineH,
+            "",
+            {
+              fontFamily: HUD_FONT,
+              fontSize: PX_SMALL,
+              color: COLOR_DIM,
+            },
+          )
           .setDepth(DEPTH_HUD_TEXT),
       );
       this.feedLineItems.push(null);
@@ -495,13 +510,14 @@ export class UIScene extends Phaser.Scene {
   }
 
   private renderFeed(): void {
-    const items = this.feed.list(LOG_LINES); // newest-first
-    for (let i = 0; i < LOG_LINES; i++) {
+    const items = this.feed.list(this.hud.logLines); // newest-first
+    for (let i = 0; i < this.hud.logLines; i++) {
       const line = this.logTexts[i];
+      if (!line) continue;
       const item = items[i] ?? null;
       this.feedLineItems[i] = item;
       if (item) {
-        const view = formatFeedItem(item, LOG_MAX_CHARS);
+        const view = formatFeedItem(item, this.hud.logMaxChars);
         line.setText(view.text);
         line.setColor(toCssColor(view.color));
         line.setFontStyle(view.emphasis ? "bold" : "normal");
@@ -522,7 +538,7 @@ export class UIScene extends Phaser.Scene {
       this.cardLayoutKey = layoutKey;
       this.cardNames = agents.map((a) => a.name);
       agents.forEach((agent, i) => {
-        const rect = cardRect(i, agents.length);
+        const rect = this.hud.cardRect(i, agents.length);
         this.cards.set(
           agent.name,
           this.createCard(rect.x, rect.y, rect.h, compact),
@@ -551,6 +567,7 @@ export class UIScene extends Phaser.Scene {
 
   /** Flat absolute-positioned children — no containers (Phaser 4.1 gotcha). */
   private createCard(x: number, y: number, cardH: number, compact: boolean): CardUi {
+    const cardW = this.hud.cardW;
     const small = { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
     const text = (
       tx: number,
@@ -560,7 +577,7 @@ export class UIScene extends Phaser.Scene {
       this.add.text(tx, ty, "", style).setDepth(DEPTH_HUD_TEXT);
 
     const bg = this.add
-      .rectangle(x, y, CARD_W, cardH, COLOR_CARD_BG, 0.93)
+      .rectangle(x, y, cardW, cardH, COLOR_CARD_BG, 0.93)
       .setOrigin(0, 0)
       .setStrokeStyle(1, 0x2a2f3a, 1)
       .setDepth(DEPTH_HUD);
@@ -595,7 +612,7 @@ export class UIScene extends Phaser.Scene {
         color: "#ffffff",
         fontStyle: "bold",
       }),
-      fsm: text(x + CARD_W - 6, y + 4, { ...small }).setOrigin(1, 0),
+      fsm: text(x + cardW - 6, y + 4, { ...small }).setOrigin(1, 0),
       gold: text(x + 6, rowGold, {
         fontFamily: HUD_FONT,
         fontSize: PX_SMALL,
@@ -609,7 +626,7 @@ export class UIScene extends Phaser.Scene {
         .rectangle(x + 76, rowGold + 3, 90, 8, 0x9ece6a, 1)
         .setOrigin(0, 0)
         .setDepth(DEPTH_HUD_TEXT),
-      energyText: text(x + CARD_W - 6, rowGold, { ...small }).setOrigin(1, 0),
+      energyText: text(x + cardW - 6, rowGold, { ...small }).setOrigin(1, 0),
       plan: text(x + 6, rowPlan, { ...small, color: COLOR_PLAN }),
       goal: text(x + 6, rowGoal, { ...small, color: COLOR_GOAL }),
       thought: compact
@@ -617,7 +634,7 @@ export class UIScene extends Phaser.Scene {
         : text(x + 6, rowThought, {
             ...small,
             color: "#c8ccd4",
-            wordWrap: { width: CARD_W - 12 },
+            wordWrap: { width: cardW - 12 },
           }),
       action: text(x + 6, rowAction, {
         fontFamily: HUD_FONT,
@@ -639,7 +656,7 @@ export class UIScene extends Phaser.Scene {
     // v2: current plan step ("PLAN: water east plot") — hidden when absent
     ui.plan.setText(card.planStep ? this.clip(`PLAN: ${card.planStep}`, 30) : "");
     ui.goal.setText(this.clip(`goal: ${card.goal ?? "—"}`, 30));
-    // ~30 wrapped chars/line at 12px in CARD_W-12 → clip to guarantee ≤2 lines
+    // ~30 wrapped chars/line at 12px in cardW-12 → clip to guarantee ≤2 lines
     ui.thought?.setText(card.lastThought ? this.clip(card.lastThought, 58) : "…");
 
     if (card.lastAction) {
@@ -711,18 +728,25 @@ export class UIScene extends Phaser.Scene {
     this.expandedTurnIds.clear();
     this.buildPanelChrome(name);
     this.rebuildPanelEntries();
+    // Auto-expand the newest entry (obs backlog: panel opened fully collapsed).
+    const first = this.panelTraceEntries[0];
+    if (first) {
+      this.expandedTurnIds.add(first.turnId);
+      this.rebuildPanelEntries();
+    }
+    this.publishPanelRect();
   }
 
   private buildPanelChrome(name: string): void {
     // v1 defect d: text sat directly on the map — the panel now has a
     // near-opaque backing rect plus a visible border.
     const bg = this.add
-      .rectangle(PANEL_X, PANEL_Y, PANEL_W, PANEL_H, 0x0e1016, 0.96)
+      .rectangle(this.hud.panelX, this.hud.panelY, this.hud.panelW, this.hud.panelH, 0x0e1016, 0.96)
       .setOrigin(0, 0)
       .setStrokeStyle(2, COLOR_BORDER, 1)
       .setDepth(DEPTH_PANEL);
     const title = this.add
-      .text(PANEL_X + 8, PANEL_Y + 4, `${name} — decision trace`, {
+      .text(this.hud.panelX + 8, this.hud.panelY + 4, `${name} — decision trace`, {
         fontFamily: HUD_FONT,
         fontSize: PX_TITLE,
         fontStyle: "bold",
@@ -732,8 +756,8 @@ export class UIScene extends Phaser.Scene {
     const agent = (this.conn?.controls.agents() ?? []).find((a) => a.name === name);
     const subtitle = this.add
       .text(
-        PANEL_X + 8,
-        PANEL_Y + 21,
+        this.hud.panelX + 8,
+        this.hud.panelY + 21,
         this.clip(
           `${agent ? personaText(agent.persona) : ""} · click a row to expand · wheel scrolls`,
           70,
@@ -742,7 +766,7 @@ export class UIScene extends Phaser.Scene {
       )
       .setDepth(DEPTH_PANEL + 1);
     const close = this.add
-      .text(PANEL_X + PANEL_W - 8, PANEL_Y + 4, "✕", {
+      .text(this.hud.panelX + this.hud.panelW - 8, this.hud.panelY + 4, "✕", {
         fontFamily: HUD_FONT,
         fontSize: PX_TITLE,
         color: COLOR_BAD,
@@ -760,6 +784,7 @@ export class UIScene extends Phaser.Scene {
     this.panelTraceEntries = [];
     for (const obj of this.panelObjects) obj.destroy();
     this.panelObjects = [];
+    this.publishPanelRect();
   }
 
   /** Rebuild entry texts (content changed); positions set by layoutPanel(). */
@@ -772,7 +797,7 @@ export class UIScene extends Phaser.Scene {
     this.panelTraceEntries = [];
     if (!agent) return;
 
-    const entries = buildAgentCard(agent).trace.slice(0, PANEL_VISIBLE_TRACE);
+    const entries = buildAgentCard(agent).trace.slice(0, this.hud.panelVisibleTrace);
     this.panelTraceEntries = entries;
     for (const entry of entries) {
       const expanded = this.expandedTurnIds.has(entry.turnId);
@@ -780,19 +805,19 @@ export class UIScene extends Phaser.Scene {
         ? `▾ ${formatTraceSummary(entry, 68)}\n${this.indent(formatTraceEntry(entry))}`
         : `▸ ${formatTraceSummary(entry, 68)}`;
       const textObj = this.add
-        .text(PANEL_X + 8, 0, content, {
+        .text(this.hud.panelX + 8, 0, content, {
           fontFamily: HUD_FONT,
           fontSize: PX_SMALL,
           color: expanded ? "#c8ccd4" : COLOR_DIM,
           // advanced wrap: raw JSON has no spaces, must hard-break long runs
-          wordWrap: { width: PANEL_W - 16, useAdvancedWrap: true },
+          wordWrap: { width: this.hud.panelW - 16, useAdvancedWrap: true },
         })
         .setDepth(DEPTH_PANEL + 1);
       this.panelEntryTexts.push(textObj);
     }
     if (entries.length === 0) {
       const empty = this.add
-        .text(PANEL_X + 8, 0, "(no decisions yet)", {
+        .text(this.hud.panelX + 8, 0, "(no decisions yet)", {
           fontFamily: HUD_FONT,
           fontSize: PX_SMALL,
           color: COLOR_FAINT,
@@ -818,8 +843,8 @@ export class UIScene extends Phaser.Scene {
    * by Phaser 4's WebGL renderer.
    */
   private layoutPanel(): void {
-    const top = PANEL_Y + PANEL_HEADER_H;
-    const availH = PANEL_H - PANEL_HEADER_H - 6;
+    const top = this.hud.panelY + this.hud.panelHeaderH;
+    const availH = this.hud.panelH - this.hud.panelHeaderH - 6;
     const bottom = top + availH;
     const contentH = this.panelEntryTexts.reduce((h, t) => h + t.height + 6, 0);
     const minScroll = Math.min(0, availH - contentH);
@@ -853,7 +878,7 @@ export class UIScene extends Phaser.Scene {
 
   private onWheel(pointer: Phaser.Input.Pointer, deltaY: number): void {
     if (!this.selectedAgent) return;
-    if (!pointInRect(pointer.x, pointer.y, PANEL_RECT)) return;
+    if (!pointInRect(pointer.x, pointer.y, this.hud.panelRect)) return;
     this.traceScroll -= deltaY * 0.25;
     this.layoutPanel();
   }
