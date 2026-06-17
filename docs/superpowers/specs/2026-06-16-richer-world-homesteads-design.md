@@ -81,9 +81,9 @@ wheel-zoom, and click-to-follow remain available.
 A paved plaza joining the three shared destinations:
 
 - **Shop** — one `building` with a `shopTile` entrance (`shop` landmark). BUY/SELL.
-- **Village well** — the social hub: a small `path`-paved square with a well at
-  its center, exposed as a **new `Landmark` kind `"well"`**. Personas reference
-  it as the gathering place; TALK_TO / GIVE_GIFT / EMOTE cluster here.
+- **Tavern** — the social hub: a `building` footprint with an entrance tile,
+  exposed as a **new `Landmark` kind `"tavern"`**. It is purely social — trade
+  stays at the one shop — so personas gather here to TALK_TO / GIVE_GIFT / EMOTE.
 - **Pond** — a `water` body, kept as the `water` landmark. It is scenery and
   Moss's spot; `WATER` is a field action that does not require sourcing from it,
   so the pond carries no mechanical dependency.
@@ -108,7 +108,7 @@ match persona flavor:
 | Grumbling Gus | NE corner | old-timer, set in his ways |
 | Frugal Fern | SW corner | walks the long way, off on her own |
 | Reckless Rusty | SE corner | far from the shop he overspends at |
-| Social Sage | beside the commons/well | wants to be where people pass |
+| Social Sage | beside the tavern | wants to be where people pass |
 | Moonstruck Moss | beside the pond | "the pond reflects the sky" |
 
 ### 4. Personas
@@ -116,7 +116,7 @@ match persona flavor:
 - Each `start` moves to its own homestead's door tile (a walkable path tile
   adjacent to its bed and plot).
 - One short **home/plot hint** sentence is appended to each `description`
-  (e.g., Sage: "Your cottage sits beside the village well." Moss: "Your plot
+  (e.g., Sage: "Your cottage sits beside the tavern." Moss: "Your plot
   overlooks the pond."). This grounds live planning. The existing mock keyword
   flavors ("reckless", "social", …) are preserved verbatim.
 
@@ -141,7 +141,7 @@ gameplay risk and is independently testable (count/placement bounds).
 ### 7. Contract changes (minimal)
 
 - `MAP_WIDTH = 48`, `MAP_HEIGHT = 32` (`contracts/types.ts`).
-- `Landmark.kind` gains `"well"` (`contracts/types.ts`).
+- `Landmark.kind` gains `"tavern"` (`contracts/types.ts`).
 - `MapData` gains optional `decor: { kind: string; pos: Vec2 }[]` — the
   `MapData` interface lives in `src/world/map.ts`, so this is a `map.ts` change.
 - **No** structural change to `Observation`, `AgentAction`, `Persona` shape, or
@@ -150,7 +150,7 @@ gameplay risk and is independently testable (count/placement bounds).
 
 ## Affected files
 
-- `contracts/types.ts` — map dims, `Landmark.kind` adds `"well"`.
+- `contracts/types.ts` — map dims, `Landmark.kind` adds `"tavern"`.
 - `src/world/map.ts` — **the bulk**: the town generator (homesteads + commons +
   path network + decor) plus the `MapData.decor` field. `FIELD_RECT`/`BED_POS`/
   etc. exports re-derived or replaced with per-homestead structures.
@@ -164,10 +164,10 @@ gameplay risk and is independently testable (count/placement bounds).
 ## Testing
 
 - **Map invariants** (new): exactly 6 homesteads / 6 `bedTile`s / 6 personal
-  plots; the well, shop, and pond exist; map is 48×32 with an intact wall ring;
-  no overlapping footprints; all features within bounds.
+  plots; the tavern, shop, and pond exist; map is 48×32 with an intact wall
+  ring; no overlapping footprints; all features within bounds.
 - **Connectivity** (new): every homestead door is path-reachable (BFS over
-  walkable tiles) from the well — no agent is stranded.
+  walkable tiles) from the tavern — no agent is stranded.
 - **Per-agent start** (new): each persona's `start` is walkable, sits at its own
   homestead, and resolves to that homestead's bed as the *nearest* bed.
 - **Mock heuristic** (update/extend): with multiple beds, `findLandmark`/the
@@ -192,8 +192,9 @@ gameplay risk and is independently testable (count/placement bounds).
 - **Pathfinding cost on a 4× map.** Mitigation: grid BFS over ~1.5k tiles is
   trivial; observation radius stays 4, so prompt size is unchanged.
 
-## Open questions for review
+## Resolved decisions (review, 2026-06-16)
 
-- Map size 48×32 — comfortable, or prefer smaller (40×28) / larger?
-- Social hub as a **well** vs. a **market/tavern** building?
-- Keep one shared **shop**, or give the commons a second trade spot?
+- **Map size:** `48×32` — confirmed.
+- **Social hub:** a **tavern** building (not a well/square). Purely social;
+  trade is not duplicated there.
+- **Trade:** a single shared **shop** in the commons (no second trade spot).
