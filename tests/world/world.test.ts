@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { World } from "../../src/world/World";
 
-const SOIL = { x: 9, y: 9 }; // inside the 8x6 soil field
-const GRASS = { x: 3, y: 8 };
-const WATER = { x: 8, y: 3 };
-const BUILDING = { x: 2, y: 2 };
+const SOIL = { x: 9, y: 13 }; // inside Dora's homestead plot
+const GRASS = { x: 3, y: 8 }; // open grass
+const WATER = { x: 31, y: 10 }; // the pond
+const BUILDING = { x: 5, y: 12 }; // Dora's house
 const WALL = { x: 0, y: 0 };
 
 describe("World map + queries", () => {
@@ -39,10 +39,10 @@ describe("World map + queries", () => {
   it("isPassable: grass/path/tilled/soil/bedTile/shopTile yes; water/building/wall no", () => {
     const w = new World();
     expect(w.isPassable(GRASS.x, GRASS.y)).toBe(true); // grass
-    expect(w.isPassable(4, 6)).toBe(true); // path
+    expect(w.isPassable(6, 16)).toBe(true); // path (the town road)
     expect(w.isPassable(SOIL.x, SOIL.y)).toBe(true); // soil
-    expect(w.isPassable(3, 4)).toBe(true); // bedTile
-    expect(w.isPassable(19, 4)).toBe(true); // shopTile
+    expect(w.isPassable(6, 14)).toBe(true); // bedTile (Dora's bed)
+    expect(w.isPassable(17, 14)).toBe(true); // shopTile (the commons shop)
     w.till(SOIL);
     expect(w.isPassable(SOIL.x, SOIL.y)).toBe(true); // tilled
     expect(w.isPassable(WATER.x, WATER.y)).toBe(false);

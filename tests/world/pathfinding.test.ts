@@ -26,8 +26,8 @@ describe("Pathfinding (A*, 4-neighbour, Manhattan)", () => {
 
   it("returns null when the target is impassable (water)", () => {
     const world = freshWorld();
-    expect(world.getTile(8, 3)!.type).toBe("water");
-    expect(world.findPath({ x: 4, y: 6 }, { x: 8, y: 3 })).toBeNull();
+    expect(world.getTile(31, 10)!.type).toBe("water"); // inside the pond (x:30-33, y:8-11)
+    expect(world.findPath({ x: 4, y: 6 }, { x: 31, y: 10 })).toBeNull();
   });
 
   it("returns null when the target is walled off (unreachable)", () => {
@@ -43,15 +43,15 @@ describe("Pathfinding (A*, 4-neighbour, Manhattan)", () => {
 
   it("walks around the pond instead of through it", () => {
     const world = freshWorld();
-    // (6,4) and (10,4) are grass either side of the 3x4 pond (x7..9, y2..5).
-    const path = world.findPath({ x: 6, y: 4 }, { x: 10, y: 4 });
+    // (29,10) and (34,10) are grass either side of the 4x4 pond (x30..33, y8..11).
+    const path = world.findPath({ x: 29, y: 10 }, { x: 34, y: 10 });
     expect(path).not.toBeNull();
     for (const p of path!) {
       expect(world.isPassable(p.x, p.y)).toBe(true);
       expect(world.getTile(p.x, p.y)!.type).not.toBe("water");
     }
-    // Detour is forced: longer than the Manhattan distance of 4.
-    expect(path!.length).toBeGreaterThan(5);
+    // Detour is forced: longer than the Manhattan distance of 5.
+    expect(path!.length).toBeGreaterThan(6);
     // Every step is a 4-neighbour move.
     for (let i = 1; i < path!.length; i++) {
       const dx = Math.abs(path![i].x - path![i - 1].x);

@@ -124,18 +124,20 @@ describe("availableActions honesty", () => {
 
 describe("buildObservation", () => {
   it("assembles self, tiles in radius, agents, landmarks, economy", () => {
-    const a = makeAgent({ x: 9, y: 9 });
+    // Agent near Dora's homestead: radius 4 covers x:4..12, y:9..17
+    // Visible landmarks: Dora's bed (6,14) and house/door (6,15).
+    const a = makeAgent({ x: 8, y: 13 });
     a.goal = "get rich";
     a.lastAction = { action: "TILL", ok: false, reason: "nope" };
-    const buddy = makeAgent({ x: 11, y: 9 }, "Bob");
+    const buddy = makeAgent({ x: 11, y: 9 }, "Bob"); // max(3,4)=4, within radius
     buddy.lastSeenDoing = "tilling (11,8)";
-    const stranger = makeAgent({ x: 20, y: 15 }, "Far"); // beyond radius 4
+    const stranger = makeAgent({ x: 20, y: 15 }, "Far"); // max(12,2)=12, beyond radius 4
 
     const obs = buildObservation(a, getWorld(), [buddy, stranger]);
     expect(obs.self).toMatchObject({
       name: "Tester",
       role: "farmer",
-      pos: { x: 9, y: 9 },
+      pos: { x: 8, y: 13 },
       energy: 100,
       gold: 200, // STARTING_GOLD (v1.2)
       goal: "get rich",
@@ -145,12 +147,13 @@ describe("buildObservation", () => {
     expect(obs.nearby.agents).toEqual([
       { name: "Bob", pos: { x: 11, y: 9 }, lastSeenDoing: "tilling (11,8)" },
     ]);
-    expect(obs.nearby.landmarks.map((l) => l.kind).sort()).toEqual([
-      "bed",
-      "house",
-      "shop",
-      "water",
-    ]);
+    // Landmarks are global knowledge (all returned regardless of position).
+    const kinds = obs.nearby.landmarks.map((l) => l.kind);
+    expect(kinds.filter((k) => k === "bed").length).toBe(6);
+    expect(kinds.filter((k) => k === "house").length).toBe(6);
+    expect(kinds.filter((k) => k === "shop").length).toBe(1);
+    expect(kinds.filter((k) => k === "tavern").length).toBe(1);
+    expect(kinds.filter((k) => k === "water").length).toBe(1);
     expect(obs.lastAction).toEqual({ action: "TILL", ok: false, reason: "nope" });
     expect(obs.economy.buys["seed:parsnip"]).toBe(20);
     expect(obs.economy.sells["crop:parsnip"]).toBe(35);

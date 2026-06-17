@@ -377,8 +377,8 @@ describe("MOVE_TO hostile targets", () => {
     const world = new World();
     const agent = makeAgent({ x: 3, y: 6 });
     for (const target of [
-      { x: 3, y: 3 }, // building interior
-      { x: 8, y: 3 }, // pond
+      { x: 5, y: 13 }, // building interior (Dora's house)
+      { x: 31, y: 10 }, // pond (x:30-33, y:8-11)
       { x: 0, y: 0 }, // wall
     ]) {
       const r = await executeAction(agent, action({ action: "MOVE_TO", target }), world, [], INSTANT);

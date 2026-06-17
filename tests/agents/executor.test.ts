@@ -57,7 +57,7 @@ describe("MOVE_TO", () => {
 
   it("rejects an impassable target (water)", async () => {
     const a = makeAgent({ x: 3, y: 5 });
-    const r = await exec(a, act("MOVE_TO", { x: 8, y: 3 }));
+    const r = await exec(a, act("MOVE_TO", { x: 31, y: 10 })); // inside the pond
     expect(r.ok).toBe(false);
     expect(r.reason).toMatch(/not walkable/);
     expect(a.pos).toEqual({ x: 3, y: 5 });
@@ -108,8 +108,8 @@ describe("TILL", () => {
     expect(again.ok).toBe(false);
     expect(again.reason).toMatch(/already tilled/);
 
-    const path = makeAgent({ x: 11, y: 8 });
-    const onPath = await exec(path, act("TILL", { x: 11, y: 7 }));
+    const path = makeAgent({ x: 13, y: 9 });
+    const onPath = await exec(path, act("TILL", { x: 12, y: 9 })); // x=12 vertical road
     expect(onPath.ok).toBe(false);
     expect(onPath.reason).toMatch(/not tillable/);
   });
