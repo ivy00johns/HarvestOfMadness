@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import {
   COBBLE_PATH_FRAMES,
   FENCE_FRAMES,
+  FURNITURE_FRAMES,
+  INTERIOR_FRAMES,
   SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
@@ -140,6 +142,20 @@ describe("town props frame constants (decorations + paths sheets, 16 frames/row)
     for (const f of Object.values(SIGN_FRAMES)) {
       expect(ROW(f)).toBeLessThanOrEqual(1);
     }
+  });
+
+  it("interior floor/wall/furniture frames are non-negative sheet indices", () => {
+    expect(INTERIOR_FRAMES.FLOOR).toBeGreaterThanOrEqual(0);
+    expect(INTERIOR_FRAMES.WALL.length).toBeGreaterThan(0);
+    for (const f of INTERIOR_FRAMES.WALL) expect(ROW(f)).toBe(0); // back-wall row
+    for (const f of [INTERIOR_FRAMES.SHELF, INTERIOR_FRAMES.CABINET, INTERIOR_FRAMES.BARREL])
+      expect(f).toBeGreaterThanOrEqual(0);
+  });
+
+  it("the bed is a 2x2 block: head row directly above the foot row", () => {
+    expect(FURNITURE_FRAMES.BED_HEAD_R - FURNITURE_FRAMES.BED_HEAD_L).toBe(1);
+    expect(FURNITURE_FRAMES.BED_FOOT_R - FURNITURE_FRAMES.BED_FOOT_L).toBe(1);
+    expect(FURNITURE_FRAMES.BED_FOOT_L - FURNITURE_FRAMES.BED_HEAD_L).toBe(16);
   });
 });
 

@@ -54,6 +54,8 @@ import { activityEmoji } from "../obs/activityEmoji";
 import { buildingStyle } from "../obs/buildingStyle";
 import {
   COBBLE_PATH_FRAMES,
+  FURNITURE_FRAMES,
+  INTERIOR_FRAMES,
   SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
@@ -630,17 +632,10 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
    * so buildings are visually distinguishable even with the shared house.png art.
    */
   private dressBuildings(): void {
+    const openRoof = this.textures.exists("interior");
     for (const b of BUILDINGS) {
       const isShop = b.kind === "shop";
       const isTavern = b.kind === "tavern";
-      const door: [number, number] =
-        isShop || isTavern
-          ? [HOUSE_FRAMES.DOOR_B_TOP, HOUSE_FRAMES.DOOR_B_BOT]
-          : [HOUSE_FRAMES.DOOR_A_TOP, HOUSE_FRAMES.DOOR_A_BOT];
-      // Window: place on the column opposite the door within the facade.
-      // For a 3-wide building (x0..x1), if door is on x0 use x1 else use x0.
-      const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
-      const style = buildingStyle(b.kind);
       // Shop/tavern get a real hanging LPC sign (tankard / bread loaf); houses
       // keep the lightweight emoji sign from buildingStyle.
       const signFrame = isTavern
@@ -648,6 +643,18 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         : isShop
           ? SIGN_FRAMES.BREAD
           : undefined;
+      if (openRoof) {
+        // Smallville-style open-roof furnished room (agents walk in visibly).
+        this.paintInterior(b, signFrame);
+        continue;
+      }
+      // Degraded fallback: the v1 closed brick facade.
+      const door: [number, number] =
+        isShop || isTavern
+          ? [HOUSE_FRAMES.DOOR_B_TOP, HOUSE_FRAMES.DOOR_B_BOT]
+          : [HOUSE_FRAMES.DOOR_A_TOP, HOUSE_FRAMES.DOOR_A_BOT];
+      const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
+      const style = buildingStyle(b.kind);
       this.paintFacade(b.x0, b.y0, b.x1, b.y1, {
         doorX: b.doorX,
         door,
@@ -657,6 +664,78 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         sign: style.sign,
         signFrame,
       });
+    }
+  }
+
+  /**
+   * Open-roof furnished interior (Smallville cutaway): a tiled floor over the
+   * whole footprint, a back-wall strip along the top, kind-specific furniture,
+   * and the hanging/emoji sign above. No opaque roof, so agents standing on the
+   * bed/door tiles read as being *inside* the room.
+   */
+  private paintInterior(b: (typeof BUILDINGS)[number], signFrame?: number): void {
+    const { x0, y0, x1, y1, kind } = b;
+    const hasFurn = this.textures.exists("furniture_wood");
+    const put = (
+      x: number,
+      y: number,
+      texture: string,
+      frame: number,
+      depth: number,
+    ): void => {
+      this.add
+        .image(x * TILE_SIZE, y * TILE_SIZE, texture, frame)
+        .setOrigin(0, 0)
+        .setDepth(depth);
+    };
+
+    // Floor across the whole footprint, then the back wall along the top row.
+    for (let y = y0; y <= y1; y++)
+      for (let x = x0; x <= x1; x++)
+        put(x, y, "interior", INTERIOR_FRAMES.FLOOR, DEPTH_FACADE);
+    for (let x = x0; x <= x1; x++)
+      put(x, y0, "interior", INTERIOR_FRAMES.WALL[(x - x0) % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+
+    // Kind-specific furnishing (props sit above the floor; agents y-sort over them).
+    if (kind === "house") {
+      if (hasFurn) {
+        put(x0, y0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
+        put(x0 + 1, y0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
+        put(x0, y1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
+        put(x0 + 1, y1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
+      }
+      put(x1, y0 + 1, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+    } else if (kind === "shop") {
+      put(x0, y0 + 1, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      put(x1, y0 + 1, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
+      // Produce crates flanking the storefront (kept from the old facade look).
+      put(x0, y1, "farming", CRATE_FRAMES[0], DEPTH_PROP);
+      put(x1, y1, "farming", CRATE_FRAMES[1], DEPTH_PROP);
+    } else if (kind === "tavern") {
+      if (hasFurn) put(x0 + 1, y0 + 1, "furniture_wood", FURNITURE_FRAMES.TABLE_ROUND, DEPTH_PROP);
+      put(x0, y1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+      put(x1, y1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+    }
+
+    // Sign above the room: real hanging sign for shop/tavern, emoji for houses.
+    const midX = ((x0 + x1) / 2 + 0.5) * TILE_SIZE;
+    if (signFrame != null && this.textures.exists("decorations")) {
+      this.add
+        .image(midX, y0 * TILE_SIZE, "decorations", signFrame)
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_PROP + 1);
+    } else {
+      const sign = buildingStyle(kind).sign;
+      if (sign)
+        this.add
+          .text(midX, y0 * TILE_SIZE - 4, sign, {
+            fontSize: "16px",
+            fontFamily: "ui-monospace, Menlo, monospace",
+            stroke: "#000000",
+            strokeThickness: 2,
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(DEPTH_PROP + 1);
     }
   }
 

@@ -166,6 +166,22 @@
       "tileHeight": 32,
       "purpose": "buildings",
       "notes": "512x2048, 16 frames/row (64 rows). LPC medieval village decorations. Hanging signs at rows 0-1: frame 6 plain board, 7 swords, 8 jug, 9 bread/loaf, 22 book, 23 beer mug, 24 INN. Lanterns/torches cols 12-15. Stone well at cols 0-1 rows 13-15: frames 208/209 (rim), 224/225 (body), 240/241 (base). Statues, fences, gravestones elsewhere. CC-BY-SA 3.0."
+    },
+    {
+      "key": "interior",
+      "path": "assets/lpc/interiors/interior.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "buildings",
+      "notes": "512x512, 16 frames/row. LPC house interior & decorations (Reemax/Sharm). Back-wall beams frames 0-2 (row 0); floors at row 4 (frame 64 stone/tile, 65 cobble); bookshelf 96, cabinet 98 (row 6); barrels 129 (row 8); stoves/fireplaces, clocks, tables lower rows. Used for open-roof interior rendering. CC-BY-SA 3.0."
+    },
+    {
+      "key": "furniture_wood",
+      "path": "assets/lpc/furniture/blonde-wood.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "buildings",
+      "notes": "512x1024, 16 frames/row (32 rows). LPC wooden furniture (blonde tone). Beds at rows 13-14 (frames 208/209 head, 224/225 foot); round table ~125; benches/cabinets/bookshelves upper rows. Used for open-roof interior furnishing. CC-BY-SA 3.0."
     }
   ],
   "water": {

@@ -83,6 +83,30 @@ export const SIGN_FRAMES = {
   BEER: 23, // tankard — tavern
 } as const;
 
+/**
+ * interior.png — 16 frames/row. Open-roof room rendering: a tiled floor, a
+ * back-wall strip, and a few built-in furnishings. frame = row*16 + col.
+ */
+export const INTERIOR_FRAMES = {
+  FLOOR: 64, // c0r4 — stone/tile floor
+  // Back wall as a framed row: top-left corner, top edge, top-right corner.
+  // (frame 1 is a broken-wall hole — never use it.) Indexed left→right.
+  WALL: [0, 2, 4] as readonly number[],
+  SHELF: 96, // c0r6 — bookshelf
+  CABINET: 98, // c2r6 — cabinet
+  BARREL: 129, // c1r8 — barrel stack
+} as const;
+
+/**
+ * blonde-wood.png furniture — 16 frames/row. A double bed (2×2 block) and a
+ * round table for furnishing houses / the tavern.
+ */
+export const FURNITURE_FRAMES = {
+  BED_HEAD_L: 208, BED_HEAD_R: 209, // r13 — pillow end
+  BED_FOOT_L: 224, BED_FOOT_R: 225, // r14 — foot end
+  TABLE_ROUND: 125, // c13r7 — small round table
+} as const;
+
 /** 4-neighbour membership probe: same-type checks at (±1,0)/(0,±1). */
 export type NeighborProbe = (dx: number, dy: number) => boolean;
 
