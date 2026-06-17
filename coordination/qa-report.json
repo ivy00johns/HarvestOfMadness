@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "status": "complete",
+  "scores": {
+    "contract_conformance": {
+      "score": 5,
+      "notes": "v2 conformance diff asserted in-process (tests/qe/contract-conformance.test.ts, 20 tests): openapi.yaml 2.0.0 declares exactly /api/health + /api/agent/complete + /api/embeddings and the live createApp() serves exactly those (GET on the POST routes 404s); every wire field is camelCase end to end (snake_case request aliases rejected, usage.prompt_tokens/completion_tokens mapped to tokensIn/tokensOut, no snake_case in any response); tier enum is closed (fast→FREELLMAPI_MODEL_FAST, smart→SMART, omitted→base model verified against a stub upstream; FAST/turbo/null/array all 400 and never reach upstream); embeddings limits enforced at the boundary (0 and 33 texts 400 before any upstream call, 32 accepted, 2001-char text 400, index-order restored); ApiError envelope verified for EVERY failure class (400/401/429-rate/429-budget/502 + non-JSON body) with type always in the contract's 6-value enum and message ≤240 chars after sanitization. Client callers conform: liveRouter POSTs exactly {agentId,system,user[,jsonSchema][,tier]} to /api/agent/complete and surfaces the envelope as 'type: message' (the exact string the budget fallback keys on); embedTexts posts {texts} to /api/embeddings batching 70→32+32+6 with EMBED_BATCH_SIZE === server MAX_EMBED_TEXTS === spec maxItems === 32, resolving [] on any failure. GIVE_GIFT matches its §4.4 v2 row exactly, including the seam a sloppy merge would miss: 4-adjacency (diagonal rejected) while TALK_TO stays Chebyshev-1 (diagonal accepted) — both proven on the same positions. AFFINITY_DELTAS (TALK_TO +2, GIVE_GIFT +10, each direction, clamp ±100) and the retrieval formula (decay 0.995/game-hour on lastAccess, importance/10, cosine relevance, top-5) verified against an independent reimplementation of the contract math, bit-exact."
+    },
+    "integration": {
+      "score": 5,
+      "notes": "Full-loop mock integration WITH cognition under adversarial degradation (tests/qe/v2-full-loop.test.ts): 3 persona agents × mockRouter × 4+ in-game days under fake timers while the cognition layer believes it is LIVE, every cognition completion fails (error-LlmResponse, exactly what liveRouter produces with the proxy down) and every embeddings call REJECTS outright. Result: ZERO unhandled rejections (process-level listener asserted empty), agents keep farming (TILL/PLANT/WATER/SLEEP all succeed, >30 ok resolutions, all FSMs drain to IDLE), rule-9 memories accumulate per agent with card counters mirroring the store, ≥1 reflection fires citing sourceIds that all exist in the store (no self-citation), and every day ≥2 has a 4-step plan whose plan_created.seq precedes the agent's first llm_call of a turn STARTED that day (boundary-straddling turns excluded by anchoring to turn_start day). v2 event payloads conform: plan_created {day, steps[4]}, reflection {insightIds[]}, memory_written {memoryId, type, importance 1..10}, relationship_updated {otherName, affinity ≤|100|, delta}. Cognition metrics prove the live calls were genuinely attempted and failed gracefully (not a silently-mock config). Kill-switch seam (tests/qe/killswitch-seam.test.ts): a REJECTING live router (beyond the router contract — routers must not throw) still yields exactly one latched llm_offline with the router_threw reason, agents degrade to WAIT with complete event chains and keep deciding, llm_recovered fires exactly once on the next success, the latch re-arms for a second outage, and budget_exceeded NEVER reads as offline (budget_reached + permanent per-agent mock fallback verified: exactly 1 live call ever spent). v1 invariants held throughout every run (gold finite ≥0, energy 0..100, inventory positive integers)."
+    },
+    "security": {
+      "score": 5,
+      "notes": "Fresh `vite build` then grep of dist/ (dist/assets/index-*.js, 1.7MB): zero hits for 'freellmapi-', 'FREELLMAPI_API_KEY', 'Bearer ', ':3001', '127.0.0.1', 'localhost:8787', and sk-/gsk_/AIza key shapes. src/ has zero key references; the client speaks only to relative /api paths (asserted by the captured-fetch conformance tests: liveRouter → '/api/agent/complete', embedTexts → '/api/embeddings'). server/.env is gitignored (git check-ignore confirms; only server/.env.example is tracked). Error-message sanitization re-verified at the wire: a 1000-char hostile upstream error arrives ≤240 chars in the envelope. The v2 embeddings route enforces the same key-secrecy/envelope rules as complete and was probed for 401-without-key. v1 protections (redaction before truncation, parse.ts injection containment, executor mirrored gates) remain in force with their regression tests still green."
+    },
+    "regression": {
+      "score": 5,
+      "notes": "Full suite green with the QE v2 additions: 543/543 across 49 files, zero skips; tsc --noEmit clean; vite build green. All 484 pre-existing tests (v1 QE suite + the five v2 wave role-agent suites) pass unchanged. The v1 hardening regressions (NaN-qty economy gate, rejecting-router loop survival, throw-proof mockRouter, fence-preserving parse) were re-exercised indirectly by the new adversarial runs — the GIVE_GIFT battery confirms gateQty also guards the new v2 action (NaN/Infinity/0/-1/1.5 all rejected with the whole-number reason, world state byte-identical), and the rejecting-router kill-switch test re-proves the loop-survival fix under the v2 health latch. The kickoff gate (3 agents ≥5 days headless) still passes."
+    },
+    "v2_coverage": {
+      "score": 4,
+      "notes": "59 new adversarial cross-agent tests in tests/qe/ (contract-conformance 20, v2-full-loop 1, killswitch-seam 2, gift-adversarial 23, retrieval-determinism 5, asset-manifest 8) on top of the role-agents' own v2 suites. Covered: proxy wire conformance incl. tier + embeddings, cognition full loop under total endpoint failure, kill-switch latch incl. the throwing-router and budget exclusion cases, GIVE_GIFT §4.4 row + both-sides cognition effects + affinity clamping, retrieval determinism + bit-exact contract math + lastAccess bump semantics, and the rule-15/16 supply side (manifest contract shape, every referenced file exists, every CropKind renderable via strip or documented alias, every shipped binary attributed in CREDITS.txt, no forbidden pack names). NOT covered headless (delegated to the browser verifier, see gate notes): BootScene's runtime manifest-fallback path (fetch 404/parse error → ONE warning → placeholders — Phaser scene, needs a browser), rule-14 readable text (12px @ zoom 1), the HUD kill-switch badge actually rendering, LPC walk animations/emotes/speech bubbles, and live-mode end-to-end against a real FreeLLMAPI."
+    }
+  },
+  "test_results": {
+    "total": 543,
+    "passed": 543,
+    "failed": 0,
+    "skipped": 0,
+    "files": 49
+  },
+  "blockers": [],
+  "issues": [
+    {
+      "severity": "MINOR",
+      "title": "Client bundle is a single 1.7MB chunk",
+      "detail": "Carried from v1: npm run build emits dist/assets/index-*.js at ~1.7MB (Phaser bundled whole) with Rollup's >500kB warning. Not a gate concern for a local demo; consider manualChunks if it ever ships."
+    },
+    {
+      "severity": "MINOR",
+      "title": "A THROWING cognition router skips the mock-reflection fallback",
+      "detail": "ReflectionEngineImpl.reflectLive awaits the router without its own try/catch; maybeReflect's catch returns [] instead of degrading to reflectMock, and the importance accumulator is left un-reset, so reflection would retry (and re-fail) on every subsequent observation write while such a router stays broken. NOT reachable with conforming routers — liveRouter never throws, and an error-LlmResponse correctly falls back to the mock reflection (verified in tests/qe/v2-full-loop.test.ts where reflections kept flowing with every live call failing). Defense-in-depth polish: catch around the router calls inside reflectLive, falling back to reflectMock, would make the engine fully throw-proof like the rest of the cognition layer. No test asserts the current gap as correct, so the fix is non-breaking."
+    },
+    {
+      "severity": "INFO",
+      "title": "GIVE_GIFT accepts qty > 1 but transfers exactly 1",
+      "detail": "contracts/types.ts pins the gift target at qty:1 and §4.4 says 'transfers 1 item'. The executor accepts any whole qty ≥ 1 and transfers exactly 1 (verified: qty 5 moves 1, inventories conserved). Lenient-input/strict-effect is a defensible contract reading and is now pinned by tests/qe/gift-adversarial.test.ts; flagged so nobody 'fixes' it in either direction without a contract decision."
+    },
+    {
+      "severity": "INFO",
+      "title": "Cauliflower renders via the turnip strip alias; carrot/turnip strips are extra",
+      "detail": "public/assets/manifest.json ships crop strips for potato/parsnip/carrot/turnip while the contract CropKind set is parsnip/potato/cauliflower. WorldScene's documented CROP_STRIP_ALIAS (cauliflower→turnip) plus the rule-15 placeholder fallback keep every kind renderable (asserted headlessly in tests/qe/asset-manifest.test.ts). Cosmetic only: a cauliflower crop looks like a turnip in assets mode."
+    }
+  ],
+  "resolved": [
+    {
+      "severity": "MAJOR",
+      "title": "Executor accepted BUY/SELL with qty:NaN and corrupted the economy to NaN",
+      "resolved_in": "89ccf81",
+      "detail": "v1 finding, fix re-verified in this pass: gateQty also guards the v2 GIVE_GIFT path (NaN/Infinity/fractional/negative/zero all rejected, world state unchanged — tests/qe/gift-adversarial.test.ts)."
+    },
+    {
+      "severity": "MAJOR",
+      "title": "A rejecting Router killed that agent's loop forever via an unhandled rejection",
+      "resolved_in": "89ccf81",
+      "detail": "v1 finding, fix re-verified in this pass under the v2 health latch: a throwing live router yields router_threw error semantics, one latched llm_offline, WAIT-degraded turns with complete chains, and a surviving loop (tests/qe/killswitch-seam.test.ts)."
+    },
+    {
+      "severity": "MINOR",
+      "title": "mockRouter threw TypeError on a parseable-but-partial observation",
+      "resolved_in": "3b91777",
+      "detail": "v1 finding; mockRouter remained the throw-proof safety net throughout the v2 full-loop and kill-switch runs."
+    },
+    {
+      "severity": "MINOR",
+      "title": "stripFences mutated backtick fences inside JSON string values",
+      "resolved_in": "3b91777",
+      "detail": "v1 finding; parse battery still green in the v2 suite."
+    }
+  ],
+  "gate_decision": {
+    "proceed": true,
+    "reason": "All five v2 cross-agent seams hold under adversarial pressure: (1) the proxy wire conforms to openapi 2.0.0 exactly — paths, methods, camelCase fields, closed tier enum, 32-text embeddings limit, and the 6-type error envelope verified in-process against the real createApp with the client callers' captured wire shapes matching byte for byte; (2) the generative-agents loop survives total endpoint failure — 3 agents × 4+ days with every cognition completion failing and embeddings rejecting outright produced zero unhandled rejections, uninterrupted farming, rule-9 memory accumulation, threshold-30 reflections citing real sourceIds, and a 4-step plan provably created before each day's first decision; (3) the kill-switch latch is correct even against a router that throws (one llm_offline, agents keep acting, one llm_recovered, re-arms; budget_exceeded stays a separate deliberate state); (4) GIVE_GIFT rejects every hostile input with the world byte-identical and a valid gift moves exactly 1 item with +10 affinity each direction, clamped at ±100; (5) retrieval is deterministic and bit-exact against an independent implementation of the contract formula, including lastAccess bump semantics. Suite 543/543 (49 files, zero skips), tsc clean, build green, bundle grep-clean of all key material. No blocker; both MINOR issues are non-gating polish. REQUIRED BROWSER FOLLOW-UP before final ship sign-off: rule-15 BootScene fallback (boot with manifest.json removed/corrupted → ONE warning + placeholders), rule-14 text readability, the HUD kill-switch badge, and LPC walk/emote/speech rendering — none are expressible headlessly. Gate: proceed."
+  }
+}

@@ -1,0 +1,149 @@
+openapi: 3.1.0
+info:
+  title: Harvest of Madness — agent proxy API
+  version: 2.1.0
+  description: >
+    Thin Express proxy. Holds the FreeLLMAPI unified key server-side and
+    forwards agent decision requests to the running FreeLLMAPI instance.
+    Conventions: no trailing slashes; Content-Type application/json; all
+    fields camelCase; errors use the ApiError envelope (contracts/types.ts).
+servers:
+  - url: http://localhost:8787
+paths:
+  /api/health:
+    get:
+      summary: Liveness + upstream reachability
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, upstream, decisionsToday, dailyCeiling]
+                properties:
+                  status: { type: string, const: ok }
+                  upstream: { type: string, enum: [ok, unreachable, unauthorized] }
+                  decisionsToday: { type: integer }
+                  dailyCeiling: { type: integer }
+  /api/agent/complete:
+    post:
+      summary: One agent decision completion via FreeLLMAPI
+      description: >
+        Forwards to POST {FREELLMAPI_BASE_URL}/v1/chat/completions with
+        model=$FREELLMAPI_MODEL (default "auto"), messages=[{role:system},
+        {role:user}], stream=false. Response model = X-Routed-Via header when
+        present, else body.model. latencyMs measured server-side. Server
+        increments a UTC-day decision counter; past DAILY_CEILING returns 429
+        budget_exceeded WITHOUT calling upstream.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [agentId, system, user]
+              properties:
+                agentId: { type: string }
+                system: { type: string }
+                user: { type: string }
+                jsonSchema: { type: object }
+                tier:
+                  type: string
+                  enum: [fast, smart]
+                  description: >
+                    v2 tiered routing. fast → FREELLMAPI_MODEL_FAST,
+                    smart → FREELLMAPI_MODEL_SMART; both default to "auto"
+                    when unset. Omitted tier behaves exactly like v1.
+                maxTokens:
+                  type: integer
+                  description: >
+                    v3 completion token cap; absent = server default. The
+                    decision retry boosts this on length/truncation so a
+                    reasoning-model reroute can't starve the JSON.
+      responses:
+        "200":
+          description: Completion
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [raw, model, latencyMs]
+                properties:
+                  raw: { type: string }
+                  model: { type: string }
+                  latencyMs: { type: number }
+                  tokensIn: { type: integer }
+                  tokensOut: { type: integer }
+                  bouncedFrom: { type: string, description: "v3 — home model when the call bounced to the auto router" }
+                  bouncedTo: { type: string, description: "v3 — model the auto router actually served" }
+                  finishReason: { type: string, description: "v3 — upstream finish_reason when present" }
+        "400": { $ref: "#/components/responses/Err" } # invalid_request_error
+        "401": { $ref: "#/components/responses/Err" } # authentication_error (bad/missing FREELLMAPI_API_KEY)
+        "429": { $ref: "#/components/responses/Err" } # rate_limit_error | budget_exceeded
+        "502": { $ref: "#/components/responses/Err" } # upstream_error
+  /api/embeddings:
+    post:
+      summary: Batch text embeddings via FreeLLMAPI (v2 — memory retrieval)
+      description: >
+        Forwards to POST {FREELLMAPI_BASE_URL}/v1/embeddings with
+        model=$FREELLMAPI_EMBED_MODEL (default "auto"), input=texts.
+        Embedding calls do NOT count toward the decision daily ceiling but
+        share the same key secrecy rules. Order of embeddings matches the
+        order of texts. Max 32 texts per call (400 above that).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [texts]
+              properties:
+                texts:
+                  type: array
+                  minItems: 1
+                  maxItems: 32
+                  items: { type: string, maxLength: 2000 }
+      responses:
+        "200":
+          description: Embeddings
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [embeddings, model]
+                properties:
+                  embeddings:
+                    type: array
+                    items:
+                      type: array
+                      items: { type: number }
+                  model: { type: string }
+        "400": { $ref: "#/components/responses/Err" }
+        "401": { $ref: "#/components/responses/Err" }
+        "429": { $ref: "#/components/responses/Err" }
+        "502": { $ref: "#/components/responses/Err" }
+components:
+  responses:
+    Err:
+      description: ApiError envelope
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [message, type]
+                properties:
+                  message: { type: string, maxLength: 240 }
+                  type:
+                    type: string
+                    enum:
+                      - authentication_error
+                      - rate_limit_error
+                      - budget_exceeded
+                      - upstream_error
+                      - invalid_request_error
+                      - server_error

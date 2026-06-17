@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "tileSize": 32,
+  "characters": [
+    {
+      "name": "Farmer",
+      "key": "char_farmer",
+      "path": "assets/characters/farmer_male.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Village Woman",
+      "key": "char_village_woman",
+      "path": "assets/characters/village_woman.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Soldier",
+      "key": "char_soldier",
+      "path": "assets/characters/soldier.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Princess",
+      "key": "char_princess",
+      "path": "assets/characters/princess.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Mage",
+      "key": "char_mage",
+      "path": "assets/characters/mage.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "framesPerRow": 9
+    }
+  ],
+  "crops": [
+    {
+      "kind": "potato",
+      "path": "assets/lpc/crops/potato_strip.png",
+      "frameWidth": 32,
+      "frameHeight": 64,
+      "stageFrames": [0, 1, 2, 3, 4]
+    },
+    {
+      "kind": "parsnip",
+      "path": "assets/lpc/crops/parsnip_strip.png",
+      "frameWidth": 32,
+      "frameHeight": 64,
+      "stageFrames": [0, 1, 2, 3, 4]
+    },
+    {
+      "kind": "carrot",
+      "path": "assets/lpc/crops/carrot_strip.png",
+      "frameWidth": 32,
+      "frameHeight": 64,
+      "stageFrames": [0, 1, 2, 3, 4]
+    },
+    {
+      "kind": "turnip",
+      "path": "assets/lpc/crops/turnip_strip.png",
+      "frameWidth": 32,
+      "frameHeight": 64,
+      "stageFrames": [0, 1, 2, 3, 4]
+    }
+  ],
+  "tilesets": [
+    {
+      "key": "terrain",
+      "path": "assets/lpc/terrain/terrain.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "terrain",
+      "notes": "1024x2048, 32x64 tile grid. Grass/dirt/water transitions, snow, sand, rock, bog variants. Created by bluecarrot16 (v7). Rows 0-15 cover basic outdoor tiles (grass at col 2-4, row 0; dirt at row 2; water-grass edge transitions); see terrain-v7.tsx for exact Tiled mapping. framesPerRow=32."
+    },
+    {
+      "key": "water_tiles",
+      "path": "assets/lpc/water/water_tiles.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "water",
+      "notes": "96x192, 3x6 tile grid (3 animation frames per column, 6 water tile variants per row). Columns 0-2 are animation frames for each water type. Row 0 = open water center, rows 1-5 = edge/corner transitions. From LPC Base Assets by Lanea Zimmerman."
+    },
+    {
+      "key": "farming",
+      "path": "assets/lpc/farming/farming.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "640x640, 20x20 tile grid. Contains farming props, food items, village marketplace objects, wheat stacks, sacks, tools. Row/col layout: rows 0-4 crops and food, rows 5-9 props and furniture, rows 10-14 environmental objects, rows 15-19 misc. By Daniel Eddeland (daneeklu)."
+    },
+    {
+      "key": "fence",
+      "path": "assets/lpc/farming/fence.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "96x192, 3x6 tile grid. Fence post and rail tiles: horizontal, vertical, corner, end caps. By Daniel Eddeland (daneeklu)."
+    },
+    {
+      "key": "plowed_soil",
+      "path": "assets/lpc/farming/plowed_soil.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "96x192, 3x6 tile grid. Plowed/tilled soil tiles for farm plots. By Daniel Eddeland (daneeklu)."
+    },
+    {
+      "key": "fruit_trees",
+      "path": "assets/lpc/trees/fruit-trees.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "trees",
+      "notes": "1024x4096, 32x128 tile grid. Multiple fruit tree species with seasonal states: bare, budding, blooming, fruiting (apple, cherry, pear, olive, peach, orange, lemon). Each species occupies ~16 rows. By bluecarrot16, Joshua Taylor, cynicmusic. CC-BY-SA 3.0."
+    },
+    {
+      "key": "treetop",
+      "path": "assets/lpc/trees/treetop.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "trees",
+      "notes": "192x224, 6x7 tile grid. Deciduous tree canopy tiles for compositing with trunk. From LPC Base Assets by Lanea Zimmerman."
+    },
+    {
+      "key": "trunk",
+      "path": "assets/lpc/trees/trunk.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "trees",
+      "notes": "192x96, 6x3 tile grid. Tree trunk base tiles. From LPC Base Assets by Lanea Zimmerman."
+    },
+    {
+      "key": "house",
+      "path": "assets/lpc/buildings/house.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "buildings",
+      "notes": "288x224, 9x7 tile grid. Farmhouse building tiles: roof, walls, door, windows, chimney. From LPC Base Assets by Lanea Zimmerman."
+    }
+  ],
+  "water": {
+    "key": "water_anim",
+    "path": "assets/lpc/water/wateranimate2.png",
+    "animFrames": 4,
+    "notes": "576x386 spritesheet by ZaPaper. Non-standard grid: 4 animation frames visible at y=0..162 (top block), each approximately 96px wide; waterfall variants at y=166-255 and y=224-386. For animated water tiles, use water_tiles.png (96x192, 3-frame animation at 32x32 per tile) from LPC Base Assets as the primary Phaser animation source. wateranimate2.png provides supplemental decorative water/waterfall elements."
+  }
+}
