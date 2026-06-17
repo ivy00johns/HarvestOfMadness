@@ -1,0 +1,11 @@
+"LPC Compatible Ancient Roman Architecture"
+by Wolthera van Hövell tot Westerflier (TheraHedwig) and Lanea Zimmerman (Sharm).
+CC-BY-SA 3.0 / GPL 3.0
+https://opengameart.org/content/lpc-compatible-ancient-roman-architecture
+
+Files: LPC_Ancient_Rome_Architecture.png, LPC_Ancient_Rome_Architecture_aquaduct.png,
+LPC_Ancient_Rome_Architecture_therme.png (Roman baths).
+
+(Attribution recovered from the [LPC] Walls CREDITS, which lists this pack as a source;
+the download itself shipped without a license file. Krita .kra source files and the .md
+working notes were not retained — they are editor sources, not game assets.)

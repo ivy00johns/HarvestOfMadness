@@ -1,0 +1,8 @@
+"RPG Tiles: Cobble stone paths & town objects"
+by Zabin, Daneeklu, Jetrel, Hyptosis, Redshrike, and Bertram.
+CC-BY-SA 3.0 (Hyptosis's grass / cliff / water elements are CC-BY 3.0)
+http://opengameart.org/content/rpg-tiles-cobble-stone-paths-town-objects
+
+Files: PathAndObjects.png (cobblestone paths, boats, market stalls, fences, produce),
+Artistinfo2.png (the visual attribution diagram showing who drew what — must be kept
+per the submission's attribution request).
