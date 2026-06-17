@@ -46,7 +46,7 @@ import {
   WATERED_TINT,
   WATER_ANIM_MS,
 } from "../config";
-import { computeHud, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
+import { computeHud, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
 import type { Rect } from "../obs/layout";
 import { getWorld } from "../world/instance";
 import { BED_POS, SHOP_POS } from "../world/map";
@@ -205,6 +205,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.scale.off(Phaser.Scale.Events.RESIZE, this.frameCamera, this);
       this.unsubscribeWorld?.();
       setRenderApi(null);
     });
@@ -227,10 +228,9 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
    * follow them, click empty ground to stop following.
    */
   private setupCamera(): void {
-    const cam = this.cameras.main;
-    cam.setBounds(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE);
-    cam.setZoom(GAME_ZOOM);
-    cam.centerOn((MAP_WIDTH * TILE_SIZE) / 2, (MAP_HEIGHT * TILE_SIZE) / 2);
+    this.frameCamera();
+    // The canvas is fullscreen (Scale.RESIZE) — re-frame whenever it changes.
+    this.scale.on(Phaser.Scale.Events.RESIZE, this.frameCamera, this);
 
     this.cursors = this.input.keyboard?.createCursorKeys() ?? null;
     // Map WASD onto the directional names the pan code reads (up/down/left/
@@ -248,6 +248,26 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     this.input.on(Phaser.Input.Events.POINTER_MOVE, this.onWorldPointerMove, this);
     this.input.on(Phaser.Input.Events.POINTER_UP, this.onWorldPointerUp, this);
     this.input.on(Phaser.Input.Events.POINTER_WHEEL, this.onWorldWheel, this);
+  }
+
+  /**
+   * Inset the world camera below the opaque HUD top bar (controls + kill-switch
+   * badge) so the bar never covers the map — the top fence was being hidden
+   * behind it. Then fit the whole map into that inset region (never tighter
+   * than GAME_ZOOM, never below the wheel-zoom floor) so the full fence
+   * perimeter is visible by default. Re-runs on resize.
+   */
+  private frameCamera(): void {
+    const cam = this.cameras.main;
+    const w = this.scale.width;
+    const viewH = Math.max(1, this.scale.height - HUD_TOP_H);
+    const mapW = MAP_WIDTH * TILE_SIZE;
+    const mapH = MAP_HEIGHT * TILE_SIZE;
+    cam.setViewport(0, HUD_TOP_H, w, viewH);
+    cam.setBounds(0, 0, mapW, mapH);
+    const fit = Math.min(w / mapW, viewH / mapH);
+    cam.setZoom(Phaser.Math.Clamp(Math.min(GAME_ZOOM, fit), CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX));
+    cam.centerOn(mapW / 2, mapH / 2);
   }
 
   /** True when a pointer position sits on HUD chrome (don't pan/select there). */
@@ -385,15 +405,29 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
    * stagger to any number of stacked agents).
    */
   private restackLabels(): void {
+    // Labels sit above their sprite. Two forces fight: agents cluster at the
+    // map's top, where the HUD top bar (a separate scene drawn over the world)
+    // would occlude a label; and clustered labels overlap each other. Resolve
+    // both by clamping every label's top to just below the HUD band FIRST, then
+    // de-colliding DOWNWARD (away from the band). De-colliding upward — the old
+    // behavior — pushes labels back under the bar, so a top cluster collapses
+    // into one overlapping row.
+    const cam = this.cameras.main;
+    // The camera viewport is inset below the HUD bar, so worldView.y is already
+    // the top visible row; just keep labels from clipping at that edge.
+    const ceilingTopY = cam.worldView.y + 2 / cam.zoom; // label-top floor
     const list = [...this.agents.values()].sort((a, b) => a.container.y - b.container.y);
     const placed: Rect[] = [];
     const lineH = LABEL_FONT_SIZE + 5;
     const base = this.labelLift();
     for (const a of list) {
       const w = (a.label.width || a.label.text.length * 7) + 4;
-      let lift = base;
-      for (let guard = 0; guard < 12; guard++) {
-        const cx = a.container.x;
+      const cx = a.container.x;
+      // natural lift (above the sprite), but never let the label top breach the
+      // HUD band — push it down to the floor if it would.
+      const minLift = ceilingTopY - a.container.y + lineH;
+      let lift = Math.max(base, minLift);
+      for (let guard = 0; guard < 16; guard++) {
         const top = a.container.y + lift - lineH;
         const box: Rect = { x: cx - w / 2, y: top, w, h: lineH };
         const hit = placed.some(
@@ -404,7 +438,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
           placed.push(box);
           break;
         }
-        lift -= lineH;
+        lift += lineH; // stack downward, away from the HUD band
       }
       a.label.setY(Math.round(lift));
     }
@@ -887,7 +921,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: `${SPEECH_FONT_SIZE}px`,
         color: "#101014",
-        wordWrap: { width: 150 },
+        wordWrap: { width: 230 },
       })
       .setOrigin(0.5, 0.5);
     const bounds = label.getBounds();
