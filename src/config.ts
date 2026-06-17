@@ -66,7 +66,9 @@ export const WATERED_TINT = 0x2b4a66;
 
 /** Speech bubble lifetime + truncation (RenderApi.showSpeech). */
 export const SPEECH_DURATION_MS = 4_000;
-export const SPEECH_MAX_CHARS = 60;
+/** Bubble text cap — high enough that a sentence or two of LLM dialogue isn't
+ *  clipped; the bubble wraps (see RenderApi.showSpeech) so it grows in height. */
+export const SPEECH_MAX_CHARS = 160;
 
 /** Agent walk tween: ms per tile at speed 1 (divided by speed multiplier). */
 export const WALK_MS_PER_TILE = 200;

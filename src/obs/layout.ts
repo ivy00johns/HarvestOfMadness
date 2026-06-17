@@ -112,6 +112,11 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const logY = h - logH - 4;
   const logX = 4;
   const logW = Math.max(120, cardX - 8);
+  // Truncation must track the live feed width, not the old 768px design width:
+  // ~7.5px/char for the 12px monospace feed font (matches the design's 68 chars
+  // over its ~508px usable width). Without this the feed clips early on wide
+  // screens and leaves a large empty gutter.
+  const logMaxChars = Math.max(24, Math.floor((logW - 2 * LOG_PAD_X) / 7.5));
   const panelX = 4;
   const panelY = cardTop;
   const panelW = Math.max(120, cardX - 8);
@@ -166,7 +171,7 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     logLineH: LOG_LINE_H,
     logPadX: LOG_PAD_X,
     logPadY: LOG_PAD_Y,
-    logMaxChars: LOG_MAX_CHARS,
+    logMaxChars,
     panelX,
     panelY,
     panelW,
