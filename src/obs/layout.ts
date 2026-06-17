@@ -214,8 +214,8 @@ export const REG_HUD = "hudPanelRect";
 // Legacy fixed design size (768×576) — the v1 logical frame the pure layout
 // unit tests assert. The live HUD docks to the viewport (computeHud), so this
 // design size is independent of the map dimensions.
-export const HUD_W = 768;
-export const HUD_H = 576;
+export const HUD_W = 768; // v1 design frame: 24 tiles × 32px (frozen)
+export const HUD_H = 576; // v1 design frame: 18 tiles × 32px (frozen)
 
 const DESIGN = computeHud(HUD_W, HUD_H);
 

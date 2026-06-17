@@ -61,6 +61,9 @@ export interface InventoryEntry {
 }
 
 export interface Landmark {
+  // "tavern" is landmark-only: a plain building footprint with no special
+  // tile type (social actions need only adjacency), unlike bed→bedTile /
+  // shop→shopTile.
   kind: "shop" | "bed" | "water" | "house" | "tavern";
   pos: Vec2;
 }
