@@ -76,10 +76,13 @@ Upstream: running FreeLLMAPI at `http://127.0.0.1:3001` (Docker), OpenAI-compati
 4. **Async, no global tick** — agent FSM `IDLE → THINKING → EXECUTING → IDLE`;
    world rendering never awaits a decision. Validation happens against
    *current* world state when the LLM response returns.
-5. **Budget kill-switch** — past `maxDecisionsPerDay` (client) or
-   `DAILY_CEILING` (server 429 `budget_exceeded`), the AgentManager switches
+5. **Opt-in budget kill-switch** — both ceilings (`maxDecisionsPerDay` client,
+   `DAILY_CEILING` server) default to **unlimited** (`<= 0`), since FreeLLMAPI
+   tokens are free. If you set a positive cap, past it the AgentManager switches
    that agent to the mock heuristic router and emits a `budget_reached` event;
-   the HUD shows a "budget reached" badge.
+   the HUD shows a "budget reached" badge. (Genuine upstream exhaustion is a
+   separate, always-on path: a `rate_limit_error` 429 drives the `LLM OFFLINE`
+   kill-switch with auto-recovery.)
 6. **Prompt contract** — system prompt ends with: respond with ONLY one JSON
    object, no prose, no fences. Parsing is always defensive (strip fences,
    first `{...}` block) regardless.

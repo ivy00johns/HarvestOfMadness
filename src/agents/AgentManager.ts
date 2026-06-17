@@ -279,7 +279,12 @@ export class AgentManager {
     const liveDecision = this.nextDecisionIsLive(agent);
     if (liveDecision) {
       this.decisionsThisUtcDay++;
-      if (this.decisionsThisUtcDay > this.config.maxDecisionsPerDay) {
+      // maxDecisionsPerDay <= 0 means UNLIMITED — the ceiling is opt-in only
+      // (FreeLLMAPI is free, so we never self-throttle by default).
+      if (
+        this.config.maxDecisionsPerDay > 0 &&
+        this.decisionsThisUtcDay > this.config.maxDecisionsPerDay
+      ) {
         this.ceilingReached = true;
         const t = getWorld().time();
         this.bus.emit({

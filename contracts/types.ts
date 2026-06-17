@@ -239,14 +239,19 @@ export interface SchedulerConfig {
   maxConcurrentDecisions: number; // default 3
   /** per-agent ms between decision requests */
   decisionCooldownMs: number; // mock ~2500, live ~6000
-  /** hard daily ceiling; past it agents fall back to mock heuristic */
-  maxDecisionsPerDay: number; // default 200
+  /**
+   * Opt-in daily live-decision ceiling. `<= 0` means UNLIMITED (the default):
+   * FreeLLMAPI tokens are free, so we do not self-throttle. Set a positive
+   * value only to deliberately cap a session (e.g. a demo); past it agents
+   * fall back to the mock heuristic and a budget_reached event fires.
+   */
+  maxDecisionsPerDay: number; // 0 = unlimited (default)
 }
 
 export const SCHEDULER_DEFAULTS: SchedulerConfig = {
   maxConcurrentDecisions: 3,
   decisionCooldownMs: 2500,
-  maxDecisionsPerDay: 200,
+  maxDecisionsPerDay: 0, // unlimited — opt in to a cap via a positive value
 };
 
 // ---------------------------------------------------------------------------

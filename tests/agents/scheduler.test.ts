@@ -137,6 +137,32 @@ describe("daily ceiling (domain rule 5, manager side — counts LIVE decisions o
     expect(lastLlm?.payload?.model).toBe("mock");
   });
 
+  it("maxDecisionsPerDay <= 0 means UNLIMITED: never latches, stays live, no budget_reached", async () => {
+    let liveCalls = 0;
+    const fakeLive: Router = async () => {
+      liveCalls++;
+      return waitResponse("live-stub");
+    };
+    manager = new AgentManager({
+      config: { decisionCooldownMs: 200, maxConcurrentDecisions: 3, maxDecisionsPerDay: 0 },
+      router: fakeLive,
+    });
+    manager.start(personas(1));
+    await vi.advanceTimersByTimeAsync(3_000);
+
+    // every cycle stayed on the live router — the ceiling never tripped
+    expect(liveCalls).toBeGreaterThan(3);
+    expect(liveCalls).toBe(totalDecisions(manager));
+    expect(
+      getEventBus().recent().filter((e) => e.kind === "budget_reached"),
+    ).toHaveLength(0);
+    const lastLlm = getEventBus()
+      .recent()
+      .filter((e) => e.kind === "llm_call")
+      .pop();
+    expect(lastLlm?.payload?.model).toBe("live-stub"); // never flipped to mock
+  });
+
   it("mock mode NEVER latches: $0 decisions don't count toward the cost ceiling", async () => {
     // no injected router -> getRouter() -> mockRouter under vitest (mode unset)
     manager = new AgentManager({

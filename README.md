@@ -2,7 +2,7 @@
 
 Harvest of Madness is an AI-driven, Stardew-like farming sim you *watch* rather than play. A small cast of LLM-driven agents wakes up on a tiny pixel farm, observes its surroundings, and decides — one JSON action at a time — when to till, plant, water, harvest, trade, gossip, and sleep. Every decision is fully inspectable: the raw observation sent to the model, the raw response, latency, tokens, and the validated outcome are all surfaced in an in-game inspector.
 
-The build is mock-first and costs $0 by default: a deterministic heuristic router plays the entire farm loop with no server, no API key, and no image assets. Flip `VITE_MODEL_MODE=live` and a thin Express proxy routes real decisions through a local [FreeLLMAPI](https://github.com/) instance with a hard daily budget ceiling, so live mode stays free too.
+The build is mock-first and costs $0 by default: a deterministic heuristic router plays the entire farm loop with no server, no API key, and no image assets. Flip `VITE_MODEL_MODE=live` and a thin Express proxy routes real decisions through a local [FreeLLMAPI](https://github.com/) instance — which pools free provider tokens, so live mode stays free too (with an optional opt-in daily cap if you ever want one).
 
 ## Quick start
 
@@ -34,7 +34,7 @@ Copy `.env.example` to `.env` (client) and `server/.env` (server). The FreeLLMAP
 | `FREELLMAPI_BASE_URL` | `http://127.0.0.1:3001` | server | Running FreeLLMAPI instance |
 | `FREELLMAPI_API_KEY` | (empty) | server | Bearer key for FreeLLMAPI |
 | `FREELLMAPI_MODEL` | `auto` | server | Model id; `auto` lets FreeLLMAPI route |
-| `DAILY_CEILING` | `200` | server | Hard daily decision budget (429 past it) |
+| `DAILY_CEILING` | `0` (unlimited) | server | Opt-in daily decision cap; `0`/unset = unlimited, positive = 429 past it |
 
 ## Going live
 
@@ -52,7 +52,7 @@ Self-verify with `GET http://localhost:8787/api/health` (`curl -s localhost:8787
 | `unauthorized` | reachable, but the key is missing/invalid — finish step 2, restart the proxy |
 | `ok` | ready — live decisions will flow |
 
-Expected progression: `unauthorized` (fresh checkout, no key) → `ok` (after steps 1–2). Then `npm run live:smoke` (with the proxy running) sends one real canned-observation decision through the proxy and prints model / latency / tokens and the parsed action; it exits non-zero with a pointed message if the key is still missing. Past `DAILY_CEILING` decisions in a UTC day the proxy returns 429 `budget_exceeded` and agents fall back to the mock heuristic.
+Expected progression: `unauthorized` (fresh checkout, no key) → `ok` (after steps 1–2). Then `npm run live:smoke` (with the proxy running) sends one real canned-observation decision through the proxy and prints model / latency / tokens and the parsed action; it exits non-zero with a pointed message if the key is still missing. `DAILY_CEILING` is unlimited by default (FreeLLMAPI is free); if you set a positive cap, past that many decisions in a UTC day the proxy returns 429 `budget_exceeded` and agents fall back to the mock heuristic.
 
 ## Repo map
 
