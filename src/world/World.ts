@@ -19,7 +19,7 @@ import { Grid } from "./Grid";
 import { findPath as aStar } from "./Pathfinding";
 import { TimeSystem } from "./TimeSystem";
 import { buildBuyPrices, buildSellPrices } from "./Economy";
-import { generateMap, type MapData } from "./map";
+import { generateMap, type DecorItem, type MapData } from "./map";
 import { isTypeTillable } from "./Tile";
 
 /**
@@ -33,6 +33,7 @@ export class World implements WorldApi {
   readonly grid: Grid;
   readonly timeSystem: TimeSystem;
   private readonly mapLandmarks: Landmark[];
+  private readonly mapDecor: DecorItem[];
   private readonly buyTable = buildBuyPrices();
   private readonly sellTable = buildSellPrices();
   private readonly changeListeners = new Set<WorldChangeListener>();
@@ -41,6 +42,7 @@ export class World implements WorldApi {
     this.grid = new Grid(map);
     this.timeSystem = timeSystem;
     this.mapLandmarks = map.landmarks;
+    this.mapDecor = map.decor ?? [];
   }
 
   get width(): number {
@@ -74,6 +76,11 @@ export class World implements WorldApi {
 
   landmarks(): Landmark[] {
     return this.mapLandmarks.map((l) => ({ kind: l.kind, pos: { ...l.pos } }));
+  }
+
+  /** Non-interactive scenery for the renderer (defensive copy). */
+  decor(): DecorItem[] {
+    return this.mapDecor.map((d) => ({ kind: d.kind, pos: { ...d.pos } }));
   }
 
   time(): TimeState {

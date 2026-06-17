@@ -71,6 +71,16 @@ describe("World map + queries", () => {
     expect(w.findPath(byKind.house, byKind.bed)).not.toBeNull();
     expect(w.findPath(byKind.house, byKind.shop)).not.toBeNull();
   });
+
+  it("exposes the map's decor list (defensive copy, defaults empty)", () => {
+    const w = new World();
+    const decor = w.decor();
+    expect(Array.isArray(decor)).toBe(true);
+    expect(decor.length).toBeGreaterThan(0);
+    // mutating the returned copy must not affect the world
+    decor.length = 0;
+    expect(w.decor().length).toBeGreaterThan(0);
+  });
 });
 
 describe("Farm mutations — tile-level preconditions", () => {
