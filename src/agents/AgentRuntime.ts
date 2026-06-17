@@ -241,8 +241,15 @@ export async function runDecisionCycle(
     ...(action.target !== undefined ? { target: action.target } : {}),
   });
 
+  // Smallville "pronunciatio": update the persistent activity emoji above the
+  // agent sprite to reflect the newly chosen action. The RenderApi interface
+  // does not declare setActivityEmoji (render-only extension), so we duck-type.
+  const renderApi = getRenderApi();
+  (renderApi as { setActivityEmoji?: (n: string, a: string, e?: string) => void })
+    ?.setActivityEmoji?.(agent.name, action.action, action.emotion);
+
   if (action.say) {
-    getRenderApi()?.showSpeech(agent.name, action.say, action.emotion ?? "neutral");
+    renderApi?.showSpeech(agent.name, action.say, action.emotion ?? "neutral");
     emit("agent_speech", `${agent.name}: ${action.say}`, { say: action.say });
     // Rule 9: everyone in earshot remembers what they heard.
     ctx.cognition?.recordSpeech(agent, action.say, others);

@@ -17,20 +17,54 @@ export {
 } from "@contracts/types";
 
 /**
- * Default spectator camera zoom. The map is small (768x576) so on a large
- * fullscreen canvas we frame the farm at >1x by default; the spectator can
- * mouse-wheel between CAMERA_ZOOM_MIN and CAMERA_ZOOM_MAX.
+ * Default spectator camera zoom. The map is 48×32 tiles (1536×1024 world px).
+ * At DEFAULT_ZOOM=1.5 a typical 1440-wide viewport shows ~24 tiles across —
+ * agents and buildings are readable. GAME_ZOOM is kept as an alias so existing
+ * code that imports it still compiles; new code should prefer DEFAULT_ZOOM.
  */
-export const GAME_ZOOM = 1.75;
+export const DEFAULT_ZOOM = 1.5;
+/** @deprecated prefer DEFAULT_ZOOM */
+export const GAME_ZOOM = DEFAULT_ZOOM;
 
-/** Spectator camera zoom clamp (mouse wheel). */
-export const CAMERA_ZOOM_MIN = 0.5;
+/**
+ * Spectator camera zoom clamp.
+ * MIN is set near the fit-to-map value for the 48×32 world on typical viewports
+ * (~0.6) so the player can zoom out to see the whole town without endless void.
+ * MAX stays at 3 — good for close-up inspection.
+ */
+export const CAMERA_ZOOM_MIN = 0.6;
 export const CAMERA_ZOOM_MAX = 3;
-/** Multiplicative wheel zoom step. */
-export const CAMERA_ZOOM_STEP = 1.1;
 
-/** Keyboard pan speed (world px/sec at zoom 1, scaled by 1/zoom). */
-export const CAMERA_PAN_SPEED = 480;
+/**
+ * Wheel zoom sensitivity (exponential).  Formula: factor = exp(-dy * S).
+ * At S=0.0015 a single mouse-wheel notch (dy≈±100) yields factor≈1.16 (zoom in)
+ * or ≈0.86 (zoom out) — noticeable but not jarring.  A small trackpad tick
+ * (dy≈±10) gives ≈1.015 — imperceptibly smooth.
+ * The old CAMERA_ZOOM_STEP (fixed ×1.1 per ANY wheel event) is removed; this
+ * helper scales proportionally to delta magnitude so fast scrolls still move
+ * quickly but single notches are gentle.
+ */
+export const ZOOM_WHEEL_SENSITIVITY = 0.0015;
+
+/**
+ * Pure helper — delta-proportional zoom factor for a wheel event.
+ * dy > 0  → scroll down → zoom OUT (factor < 1).
+ * dy < 0  → scroll up  → zoom IN  (factor > 1).
+ * dy = 0  → no change  (factor = 1).
+ * Tunable via the sensitivity constant; safe to unit-test with no Phaser dep.
+ */
+export function zoomFactorForWheelDelta(
+  dy: number,
+  sensitivity = ZOOM_WHEEL_SENSITIVITY,
+): number {
+  return Math.exp(-dy * sensitivity);
+}
+
+/** Keyboard pan speed (world px/sec at zoom 1, scaled by 1/zoom).
+ *  Raised from 480→720 for the larger 48×32 map so panning the full width
+ *  still takes a comfortable ~2s at zoom 1.
+ */
+export const CAMERA_PAN_SPEED = 720;
 
 /** Camera follow lerp (per-axis) when tracking a clicked agent. */
 export const CAMERA_FOLLOW_LERP = 0.12;

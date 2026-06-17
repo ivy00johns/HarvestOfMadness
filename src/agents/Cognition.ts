@@ -29,6 +29,7 @@ import type {
   MemoryType,
   Observation,
   Router,
+  SimEvent,
   WorldApi,
 } from "@contracts/types";
 import { liveRouter } from "../llm/router";
@@ -41,7 +42,9 @@ import { rateImportance } from "./memory/importance";
 import { ReflectionEngineImpl } from "./Reflection";
 import { PlannerImpl } from "./Planner";
 import { RelationshipStoreImpl } from "./Relationships";
+import { EventBoard } from "./EventBoard";
 import type { ExecutorCognitionHooks } from "./ActionExecutor";
+import { ConversationSystem } from "./Conversation";
 
 /** Memory texts injected into prompts are truncated to this many chars. */
 export const MEMORY_TEXT_MAX_CHARS = 200;
@@ -55,6 +58,33 @@ function detectModelMode(): string | undefined {
   return typeof import.meta !== "undefined" && import.meta.env
     ? (import.meta.env.VITE_MODEL_MODE as string | undefined)
     : undefined;
+}
+
+/**
+ * Phase ordering for past-event filtering. morning < afternoon < evening < night.
+ * Used by isPastEvent to decide whether an event is in the past relative to now.
+ */
+export const PHASE_INDEX: Record<import("@contracts/types").Phase, number> = {
+  morning: 0,
+  afternoon: 1,
+  evening: 2,
+  night: 3,
+};
+
+/**
+ * Returns true when the event is strictly in the past relative to `now`.
+ * "Past" = event.day < today, OR (event.day === today AND event.phase is
+ * strictly before now.phase in morning < afternoon < evening < night order).
+ * Events happening NOW (same day+phase) or in the future are NOT past.
+ */
+export function isPastEvent(
+  event: { day: number; phase: import("@contracts/types").Phase },
+  now: import("@contracts/types").GameStamp,
+): boolean {
+  if (event.day < now.day) return true;
+  if (event.day > now.day) return false;
+  // same day — compare phases
+  return PHASE_INDEX[event.phase] < PHASE_INDEX[now.phase];
 }
 
 function truncateText(text: string, max: number): string {
@@ -87,6 +117,8 @@ export class CognitionSystem implements ExecutorCognitionHooks {
   readonly reflection: ReflectionEngineImpl;
   readonly planner: PlannerImpl;
   readonly relationships: RelationshipStoreImpl;
+  /** v3 — seeded social events + knowledge diffusion (EventBoard). */
+  readonly events = new EventBoard();
   /** live cognition LLM calls, by purpose (budget visibility) */
   readonly metrics: CognitionMetrics = {
     planCalls: 0,
@@ -94,10 +126,16 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     relationshipCalls: 0,
     importanceCalls: 0,
   };
+  /** v3 — back-and-forth conversation reply generator */
+  private conversation!: ConversationSystem;
 
   private readonly agents = new Map<string, Agent>();
   private readonly seenActivity = new Set<string>();
   private readonly heardSpeech = new Set<string>();
+  /** v3 — tracks arrivals logged per agent+event to avoid duplicate feed events */
+  private readonly arrivedAtEvent = new Set<string>();
+  /** v3 — dedup for gossip sharing: "speakerName|listenerName|memId" */
+  private readonly sharedGossip = new Set<string>();
 
   private readonly bus: EventBus;
   private readonly router: Router;
@@ -162,6 +200,24 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       onChange: (name) => this.refreshRelationshipRows(name),
       onLiveCall: () => this.metrics.relationshipCalls++,
     });
+
+    this.conversation = new ConversationSystem({
+      bus: this.bus,
+      now: this.now,
+      live: this.live,
+      router: this.router,
+      affinityText: (bName, aName) => {
+        try {
+          const rel = this.relationships.get(bName, aName);
+          return rel?.summary ?? "";
+        } catch {
+          return "";
+        }
+      },
+      writeMemory: (agentName, text, importance) => {
+        this.writeObservation(agentName, text, importance);
+      },
+    });
   }
 
   // -- agent registry --------------------------------------------------------
@@ -172,6 +228,35 @@ export class CognitionSystem implements ExecutorCognitionHooks {
 
   private personaOf(name: string): string {
     return this.agents.get(name)?.persona.description ?? "a farmer";
+  }
+
+  // -- v3 event seeding + diffusion ------------------------------------------
+
+  /**
+   * Seed a social event: the host knows it, gets a high-importance memory,
+   * and the feed receives an event_seeded WorldEvent.
+   */
+  seedEvent(event: SimEvent): void {
+    try {
+      this.events.seed(event);
+      void this.write(
+        event.host,
+        "observation",
+        `I am hosting ${event.description} on day ${event.day} (${event.phase})`,
+        8,
+      ).catch(() => {});
+      const t = this.now();
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "event_seeded",
+        agentName: event.host,
+        text: `${event.host} is planning ${event.description}`,
+        payload: { eventId: event.id, host: event.host, description: event.description },
+      });
+    } catch {
+      /* defensive — never throw into callers */
+    }
   }
 
   // -- memory writing (rule 9 discipline) ------------------------------------
@@ -296,6 +381,64 @@ export class CognitionSystem implements ExecutorCognitionHooks {
 
   // -- executor hooks (ExecutorCognitionHooks) -------------------------------
 
+  /**
+   * v3 — Object interaction: write a memory for the actor and, for the
+   * notice_board, teach the agent about any active seeded event they don't
+   * yet know (passive information diffusion without conversation).
+   */
+  onUseObject(agent: Agent, objectId: string, objectKind: string): void {
+    try {
+      let memText: string;
+      let importance: number;
+
+      switch (objectKind) {
+        case "well":
+          memText = `I drew water at the well`;
+          importance = 2;
+          break;
+        case "bench":
+          memText = `I rested on the bench by the pond`;
+          importance = 2;
+          break;
+        case "notice_board": {
+          memText = `I read the town notice board`;
+          importance = 3;
+          // Passive event diffusion: teach the agent any active (non-past) event
+          // they don't yet know. Mirrors the isPastEvent helper inline.
+          try {
+            const t = this.now();
+            for (const event of this.events.all()) {
+              if (isPastEvent(event, t)) continue;
+              const isNew = this.events.markKnows(event.id, agent.name);
+              if (isNew) {
+                const announcement = `The town notice board announces: ${event.description} on day ${event.day} (${event.phase})`;
+                void this.write(agent.name, "observation", announcement, 7).catch(() => {});
+                this.bus.emit({
+                  day: t.day,
+                  phase: t.phase,
+                  kind: "event_heard",
+                  agentName: agent.name,
+                  text: `${agent.name} read about ${event.description} on the notice board`,
+                  payload: { eventId: event.id, from: "notice_board", to: agent.name },
+                });
+              }
+            }
+          } catch {
+            /* defensive — diffusion must not interrupt the interaction */
+          }
+          break;
+        }
+        default:
+          memText = `I used the ${objectKind} (${objectId})`;
+          importance = 2;
+      }
+
+      this.writeObservation(agent.name, memText, importance);
+    } catch {
+      /* rule 10: never block a decision on cognition */
+    }
+  }
+
   /** Gift resolved: high-importance memories + recordInteraction, BOTH sides. */
   onGift(giver: Agent, receiver: Agent, itemId: string): void {
     this.writeObservation(
@@ -322,7 +465,7 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     );
   }
 
-  /** Conversation resolved: affinity both ways + the listener's memory. */
+  /** Conversation resolved: affinity both ways + the listener's memory + B's reply. */
   onTalk(speaker: Agent, listener: Agent, say: string | null): void {
     const topic = say ?? "a friendly chat";
     this.relationships.recordInteraction(speaker.name, listener.name, "TALK_TO", topic);
@@ -334,6 +477,92 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         `${speaker.name} stopped to chat with me`,
         5,
       );
+    }
+
+    // v3 — generate B's reply (fire-and-forget; never blocks or throws).
+    if (say !== null && say.trim() !== "") {
+      try {
+        this.conversation.handleReply(speaker, listener, say);
+      } catch {
+        /* defensive: reply generation must never interrupt the talk hook */
+      }
+    }
+
+    // v3 — event diffusion: for each event the speaker knows that the listener
+    // does not, mark the listener as knowing it and write a high-importance
+    // observation memory. This is the one-hop cascade mechanism.
+    try {
+      const t = this.now();
+      for (const event of this.events.knownBy(speaker.name)) {
+        const isNew = this.events.markKnows(event.id, listener.name);
+        if (isNew) {
+          void this.write(
+            listener.name,
+            "observation",
+            `${speaker.name} told me about ${event.description} on day ${event.day} (${event.phase}) at the tavern`,
+            7,
+          ).catch(() => {});
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "event_heard",
+            agentName: listener.name,
+            text: `${speaker.name} invited ${listener.name} to ${event.description}`,
+            payload: { eventId: event.id, from: speaker.name, to: listener.name },
+          });
+        }
+      }
+    } catch {
+      /* defensive — event diffusion must never interrupt the talk hook */
+    }
+
+    // v3 — gossip: speaker shares their single most salient first-person
+    // observation with the listener (single-hop, first-hand only, deduped).
+    try {
+      // Hearsay-detection patterns: skip memories the speaker merely heard.
+      const hearsayRe = /^[A-Za-z].* (?:mentioned:|told me|said:)/;
+      const speakerMems = this.memory.all(speaker.name);
+      // Consider only first-person observations with importance ≥ 5 that are
+      // not themselves relayed hearsay.
+      const candidates = speakerMems.filter(
+        (m) =>
+          m.type === "observation" &&
+          m.importance >= 5 &&
+          !hearsayRe.test(m.text),
+      );
+      if (candidates.length > 0) {
+        // Pick highest importance; break ties by last in array (most recent append).
+        let best = candidates[0];
+        for (const m of candidates) {
+          if (m.importance > best.importance) {
+            best = m;
+          } else if (m.importance === best.importance) {
+            // Prefer the one that appears later in the array (more recent).
+            best = m;
+          }
+        }
+        const dedupKey = `${speaker.name}|${listener.name}|${best.id}`;
+        if (!this.sharedGossip.has(dedupKey)) {
+          this.sharedGossip.add(dedupKey);
+          const gist = truncateText(best.text, 100);
+          void this.write(
+            listener.name,
+            "observation",
+            `${speaker.name} mentioned: ${gist}`,
+            4,
+          ).catch(() => {});
+          const t = this.now();
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "gossip",
+            agentName: speaker.name,
+            text: `${speaker.name} told ${listener.name} the news`,
+          });
+        }
+      }
+    } catch {
+      /* defensive — gossip must never throw into the decision loop */
     }
   }
 
@@ -388,6 +617,67 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       }
 
       this.recordNearbyActivity(agent, obs.nearby.agents);
+
+      // v3 — surface known events (isNow = event day+phase matches current time)
+      // Past events are excluded: only upcoming or currently-happening events are actionable.
+      const t = this.now();
+      const knownEvents = this.events
+        .knownBy(agent.name)
+        .filter((e) => !isPastEvent(e, t))
+        .map((e) => ({
+          ...e,
+          isNow: e.day === t.day && e.phase === t.phase,
+        }));
+      if (knownEvents.length > 0) {
+        obs.self.knownEvents = knownEvents;
+      }
+
+      // v3 — arrival logging: for each known isNow event the agent is at/adjacent to
+      try {
+        for (const ke of knownEvents) {
+          if (!ke.isNow) continue;
+          if (chebyshev(agent.pos, ke.location) > 1) continue;
+          const arrivalKey = `${agent.name}|${ke.id}`;
+          if (this.arrivedAtEvent.has(arrivalKey)) continue;
+          this.arrivedAtEvent.add(arrivalKey);
+          void this.write(
+            agent.name,
+            "observation",
+            `I arrived at ${ke.description}`,
+            6,
+          ).catch(() => {});
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "event_arrived",
+            agentName: agent.name,
+            text: `${agent.name} arrived at ${ke.description}`,
+            payload: { eventId: ke.id, agentName: agent.name },
+          });
+        }
+      } catch {
+        /* defensive — arrival logging must never interrupt enrichment */
+      }
+
+      // v3 — inviteTargets: for events this agent hosts that are NOT past, find agents who don't know yet
+      try {
+        const hostedEvents = this.events.all().filter((e) => e.host === agent.name && !isPastEvent(e, t));
+        if (hostedEvents.length > 0) {
+          const targets: { name: string; pos: { x: number; y: number } }[] = [];
+          for (const e of hostedEvents) {
+            for (const [, other] of this.agents) {
+              if (other.name === agent.name) continue;
+              if (this.events.knows(e.id, other.name)) continue;
+              targets.push({ name: other.name, pos: { x: other.pos.x, y: other.pos.y } });
+            }
+          }
+          if (targets.length > 0) {
+            obs.self.inviteTargets = targets;
+          }
+        }
+      } catch {
+        /* defensive — inviteTargets must never interrupt enrichment */
+      }
     } catch {
       /* rule 10: never block/break a decision on cognition */
     }
@@ -419,6 +709,7 @@ const OK_IMPORTANCE_HINTS: Partial<Record<AgentAction["action"], number>> = {
   BUY: 2,
   SELL: 2,
   SLEEP: 2,
+  USE_OBJECT: 3,
 };
 
 /** First-person memory text for a resolved action. */
@@ -427,7 +718,7 @@ export function outcomeText(
   result: { ok: boolean; reason?: string },
 ): string {
   const t = action.target as
-    | { x?: number; y?: number; itemId?: string; qty?: number; agentName?: string }
+    | { x?: number; y?: number; itemId?: string; qty?: number; agentName?: string; objectId?: string }
     | undefined;
   if (!result.ok) {
     return `I tried to ${action.action} but failed: ${result.reason ?? "unknown reason"}`;
@@ -455,6 +746,8 @@ export function outcomeText(
       return `I showed how I felt (${action.emotion ?? "neutral"})`;
     case "SLEEP":
       return "I slept through the night; a new day begins";
+    case "USE_OBJECT":
+      return `I used the ${t?.objectId ?? "object"}`;
     case "WAIT":
     default:
       return "I waited for a while";

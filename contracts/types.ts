@@ -68,6 +68,16 @@ export interface Landmark {
   pos: Vec2;
 }
 
+/**
+ * v3 — A placeable world object agents can perceive and interact with via
+ * USE_OBJECT. Exterior only; no interior objects.
+ */
+export interface WorldObject {
+  id: string;
+  kind: "well" | "notice_board" | "bench";
+  pos: Vec2;
+}
+
 // ---------------------------------------------------------------------------
 // §7 World constants — v1.2: values pinned by docs/kickoff-fable5.md
 // "Simulation constants (authoritative)" (anti-deadlock tuning)
@@ -97,6 +107,7 @@ export const ENERGY_COSTS: Record<ActionType, number> = {
   EMOTE: 0,
   SLEEP: 0,
   WAIT: 0,
+  USE_OBJECT: 0,
 };
 export const STARTING_GOLD = 200;
 /** starting inventory: 5× "seed:parsnip" */
@@ -131,6 +142,10 @@ export interface Observation {
     currentPlanStep?: string | null;
     /** v2 — affinity snapshot for nearby/known agents, newest-first, cap 5 */
     relationships?: { name: string; affinity: number }[];
+    /** v3 — events this agent has heard about (for attend/spread behavior). */
+    knownEvents?: (SimEvent & { isNow: boolean })[];
+    /** v3 — for an event host: town agents who have NOT yet heard about it (with positions), so the host can go invite them. */
+    inviteTargets?: { name: string; pos: Vec2 }[];
   };
   time: TimeState;
   nearby: {
@@ -142,6 +157,8 @@ export interface Observation {
     }[]; // radius ~4
     agents: { name: string; pos: Vec2; lastSeenDoing: string }[];
     landmarks: Landmark[];
+    /** v3 — world objects within OBSERVATION_RADIUS (well, notice_board, bench) */
+    objects?: WorldObject[];
   };
   lastAction: { action: string; ok: boolean; reason?: string } | null;
   availableActions: ActionType[];
@@ -166,7 +183,8 @@ export type ActionType =
   | "GIVE_GIFT" // v2 — target {agentName, itemId, qty:1}; adjacency + ownership required
   | "EMOTE" // v2 — always legal; renders a transient emote above the sprite
   | "SLEEP"
-  | "WAIT";
+  | "WAIT"
+  | "USE_OBJECT"; // v3 — target {objectId: string}; adjacency to the object required
 
 /** v2 — surfaced on speech bubbles and emotes */
 export type Emotion = "neutral" | "happy" | "annoyed" | "sad" | "excited";
@@ -179,7 +197,8 @@ export interface AgentAction {
     | Vec2
     | { itemId: string; qty: number }
     | { agentName: string }
-    | { agentName: string; itemId: string; qty: number }; // GIVE_GIFT
+    | { agentName: string; itemId: string; qty: number } // GIVE_GIFT
+    | { objectId: string }; // USE_OBJECT — v3
   goal?: string;
   /** v2 — optional; defaults to "neutral" */
   emotion?: Emotion;
@@ -273,6 +292,10 @@ export interface WorldApi {
   /** A* over passable tiles; null when unreachable */
   findPath(from: Vec2, to: Vec2): Vec2[] | null;
   landmarks(): Landmark[];
+  /** v3 — all world objects (well, notice_board, bench); defensive copy. */
+  objects(): WorldObject[];
+  /** v3 — find the closest world object adjacent to pos, if any. */
+  adjacentObject(pos: Vec2): WorldObject | null;
 
   time(): TimeState;
   /**
@@ -650,3 +673,24 @@ export interface AssetManifest {
 //   "agent_emote"           payload { emotion }
 //   "llm_offline"           payload { reason }   → HUD shows kill-switch badge
 //   "llm_recovered"
+// v3 EventKind additions (open union — documented, not enforced):
+//   "event_seeded"          payload { eventId, host, description }
+//   "event_heard"           payload { eventId, from, to }
+//   "event_arrived"         payload { eventId, agentName }
+
+// ---------------------------------------------------------------------------
+// v3 — Seeded social events (smallville party-emergence design)
+// ---------------------------------------------------------------------------
+
+/** A planned social gathering that can diffuse through the agent network. */
+export interface SimEvent {
+  id: string;
+  /** Agent name of the host who seeded the event. */
+  host: string;
+  /** Where the gathering happens (e.g. the tavern door tile). */
+  location: Vec2;
+  day: number;
+  phase: Phase;
+  /** Human-readable description, e.g. "a gathering at the tavern". */
+  description: string;
+}

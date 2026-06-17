@@ -13,6 +13,7 @@ import type {
   TimeState,
   Vec2,
   WorldApi,
+  WorldObject,
 } from "@contracts/types";
 import { CROPS } from "@contracts/types";
 import { Grid } from "./Grid";
@@ -34,6 +35,7 @@ export class World implements WorldApi {
   readonly timeSystem: TimeSystem;
   private readonly mapLandmarks: Landmark[];
   private readonly mapDecor: DecorItem[];
+  private readonly mapObjects: WorldObject[];
   private readonly buyTable = buildBuyPrices();
   private readonly sellTable = buildSellPrices();
   private readonly changeListeners = new Set<WorldChangeListener>();
@@ -43,6 +45,7 @@ export class World implements WorldApi {
     this.timeSystem = timeSystem;
     this.mapLandmarks = map.landmarks;
     this.mapDecor = map.decor ?? [];
+    this.mapObjects = map.objects ?? [];
   }
 
   get width(): number {
@@ -76,6 +79,22 @@ export class World implements WorldApi {
 
   landmarks(): Landmark[] {
     return this.mapLandmarks.map((l) => ({ kind: l.kind, pos: { ...l.pos } }));
+  }
+
+  /** v3 — world objects (defensive copy). */
+  objects(): WorldObject[] {
+    return this.mapObjects.map((o) => ({ ...o, pos: { ...o.pos } }));
+  }
+
+  /**
+   * v3 — find the closest world object adjacent (4-neighbour or same tile)
+   * to pos. Returns null when none is adjacent.
+   */
+  adjacentObject(pos: Vec2): WorldObject | null {
+    for (const obj of this.mapObjects) {
+      if (this.isAdjacent(pos, obj.pos)) return { ...obj, pos: { ...obj.pos } };
+    }
+    return null;
   }
 
   /** Non-interactive scenery for the renderer (defensive copy). */

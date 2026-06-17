@@ -3,6 +3,7 @@ import type { TileType, Vec2 } from "@contracts/types";
 import { MAP_HEIGHT, MAP_WIDTH, OBSERVATION_RADIUS } from "@contracts/types";
 import {
   BED_POS,
+  BUILDINGS,
   FIELD_RECT,
   generateMap,
   HOMESTEADS,
@@ -26,8 +27,8 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly six homesteads, each a house + bed + door + plot", () => {
-    expect(HOMESTEADS).toHaveLength(6);
+  it("has exactly twelve homesteads, each a house + bed + door + plot", () => {
+    expect(HOMESTEADS).toHaveLength(12);
     for (const h of HOMESTEADS) {
       for (let y = h.house.y; y <= h.house.y + 2; y++) {
         for (let x = h.house.x; x <= h.house.x + 2; x++) {
@@ -45,14 +46,14 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly 6 bedTiles and the expected landmark counts", () => {
+  it("has exactly 12 bedTiles and the expected landmark counts", () => {
     let beds = 0;
     for (let y = 0; y < MAP_HEIGHT; y++)
       for (let x = 0; x < MAP_WIDTH; x++) if (map.tiles[y][x] === "bedTile") beds++;
-    expect(beds).toBe(6);
+    expect(beds).toBe(12);
     const count = (k: string) => map.landmarks.filter((l) => l.kind === k).length;
-    expect(count("bed")).toBe(6);
-    expect(count("house")).toBe(6);
+    expect(count("bed")).toBe(12);
+    expect(count("house")).toBe(12);
     expect(count("shop")).toBe(1);
     expect(count("tavern")).toBe(1);
     expect(count("water")).toBeGreaterThanOrEqual(1);
@@ -110,5 +111,18 @@ describe("town generator", () => {
       expect(d.pos.y).toBeLessThan(MAP_HEIGHT - 1);
       expect(map.tiles[d.pos.y][d.pos.x], `decor at ${d.pos.x},${d.pos.y}`).toBe("grass");
     }
+  });
+
+  it("every building footprint is actually built and its door is in range", () => {
+    const built = new Set<TileType>(["building", "bedTile", "shopTile"]);
+    for (const b of BUILDINGS) {
+      expect(b.doorX, `${b.kind} doorX in [x0,x1]`).toBeGreaterThanOrEqual(b.x0);
+      expect(b.doorX).toBeLessThanOrEqual(b.x1);
+      for (let y = b.y0; y <= b.y1; y++)
+        for (let x = b.x0; x <= b.x1; x++)
+          expect(built.has(map.tiles[y][x]), `building tile ${x},${y} is ${map.tiles[y][x]}`).toBe(true);
+    }
+    // Expect 14 buildings: 12 homesteads + shop + tavern.
+    expect(BUILDINGS).toHaveLength(14);
   });
 });

@@ -1,15 +1,17 @@
 /**
- * Code-generated 48x32 town (no Tiled). Six homesteads — each a 3x3 house with
- * its own bed and an adjacent soil plot — ring a central commons (shop, tavern,
- * pond). A horizontal road at y=16 spans the interior; every door opens directly
- * onto it (doors sit at y=15 or y=17), so the whole town is connected with no
- * path stubs. Three vertical roads (x=12/24/36) add cross-town travel.
+ * Code-generated 48x32 town (no Tiled). Twelve homesteads — each a 3x3 house
+ * with its own bed and an adjacent soil plot — ring a central commons (shop,
+ * tavern, pond). A horizontal road at y=16 spans the interior; the original six
+ * doors open onto it (y=15 or y=17). Three vertical roads (x=12/24/36) add
+ * cross-town travel; the six new homesteads place their doors directly ON these
+ * vertical roads (also path tiles), so the whole town is connected with no path
+ * stubs.
  *
  * Divergence is spatial: each agent starts at its own door and the LLM/mock both
  * act on the NEAREST crop/tile/bed, so agents tend their own plots and sleep in
  * their own beds without any ownership rules.
  */
-import type { Landmark, TileType, Vec2 } from "@contracts/types";
+import type { Landmark, TileType, Vec2, WorldObject } from "@contracts/types";
 import { MAP_HEIGHT, MAP_WIDTH } from "@contracts/types";
 
 export interface DecorItem {
@@ -25,6 +27,8 @@ export interface MapData {
   landmarks: Landmark[];
   /** non-interactive scenery (renderer only) */
   decor: DecorItem[];
+  /** v3 — interactable world objects (well, notice_board, bench) */
+  objects: WorldObject[];
 }
 
 /** Inclusive rect fill helper. */
@@ -57,17 +61,33 @@ interface HomesteadSpec {
 }
 
 /**
- * Six homesteads spread to the quadrants + the center commons. Doors sit one
- * tile off the y=16 road. Persona placement matches flavor (Sage by the tavern,
- * Moss by the pond, the rest in the corners).
+ * Twelve homesteads spread across the map. The original six doors sit one tile
+ * off the y=16 horizontal road (y=15 or y=17). The six new homesteads place
+ * their doors directly on a vertical road (x=12, x=24, or x=36), which are all
+ * path tiles, so every door is passable and BFS-connected to the tavern.
  */
 export const HOMESTEADS: HomesteadSpec[] = [
+  // -- original six (unchanged) -----------------------------------------------
   { id: "dora",  house: { x: 5,  y: 12 }, bed: { x: 6,  y: 14 }, door: { x: 6,  y: 15 }, plot: { x0: 8,  y0: 12, x1: 11, y1: 14 } },
   { id: "gus",   house: { x: 39, y: 12 }, bed: { x: 40, y: 14 }, door: { x: 40, y: 15 }, plot: { x0: 42, y0: 12, x1: 45, y1: 14 } },
   { id: "fern",  house: { x: 5,  y: 18 }, bed: { x: 6,  y: 18 }, door: { x: 6,  y: 17 }, plot: { x0: 8,  y0: 18, x1: 11, y1: 20 } },
   { id: "rusty", house: { x: 39, y: 18 }, bed: { x: 40, y: 18 }, door: { x: 40, y: 17 }, plot: { x0: 42, y0: 18, x1: 45, y1: 20 } },
   { id: "sage",  house: { x: 26, y: 12 }, bed: { x: 27, y: 14 }, door: { x: 27, y: 15 }, plot: { x0: 29, y0: 12, x1: 32, y1: 14 } },
   { id: "moss",  house: { x: 28, y: 18 }, bed: { x: 29, y: 18 }, door: { x: 29, y: 17 }, plot: { x0: 31, y0: 18, x1: 34, y1: 20 } },
+  // -- six new homesteads (doors on vertical roads x=12/24/36) -----------------
+  // Each bed is on the road-facing edge of its house so door→bed is one step.
+  // brix: NW upper quadrant, house west of x=12 road, door ON road
+  { id: "brix",  house: { x: 9,  y: 3  }, bed: { x: 11, y: 4  }, door: { x: 12, y: 4  }, plot: { x0: 6,  y0: 3,  x1: 8,  y1: 5  } },
+  // nell: SW lower quadrant, house west of x=12 road, door ON road
+  { id: "nell",  house: { x: 9,  y: 23 }, bed: { x: 11, y: 24 }, door: { x: 12, y: 24 }, plot: { x0: 6,  y0: 23, x1: 8,  y1: 25 } },
+  // wren: N central, house west of x=24 road, door ON road
+  { id: "wren",  house: { x: 20, y: 3  }, bed: { x: 22, y: 4  }, door: { x: 24, y: 4  }, plot: { x0: 25, y0: 3,  x1: 27, y1: 5  } },
+  // clem: S central, house west of x=24 road, door ON road
+  { id: "clem",  house: { x: 20, y: 23 }, bed: { x: 22, y: 24 }, door: { x: 24, y: 24 }, plot: { x0: 25, y0: 23, x1: 27, y1: 25 } },
+  // ford: NE upper quadrant, house east of x=36 road, door ON road
+  { id: "ford",  house: { x: 37, y: 3  }, bed: { x: 37, y: 4  }, door: { x: 36, y: 4  }, plot: { x0: 40, y0: 3,  x1: 43, y1: 5  } },
+  // zola: SE lower quadrant, house east of x=36 road, door ON road
+  { id: "zola",  house: { x: 37, y: 23 }, bed: { x: 37, y: 24 }, door: { x: 36, y: 24 }, plot: { x0: 40, y0: 23, x1: 43, y1: 25 } },
 ];
 
 /** persona id -> start (door) tile, consumed by src/agents/personas.ts. */
@@ -83,6 +103,21 @@ const TAVERN_BUILDING: Vec2 = { x: 21, y: 12 };
 const TAVERN_DOOR: Vec2 = { x: 22, y: 15 };
 const POND = { x0: 30, y0: 8, x1: 33, y1: 11 };
 
+// -- v3: world object positions (exterior, commons + pond area) ---------------
+// Well: on the main road between shop and tavern doors (in the commons)
+export const WELL_POS: Vec2 = { x: 19, y: 16 };
+// Notice board: one step east of the well, also in the commons
+export const NOTICE_BOARD_POS: Vec2 = { x: 20, y: 16 };
+// Bench: one tile to the left of the pond (grass tile adjacent to water)
+export const BENCH_POS: Vec2 = { x: 29, y: 10 };
+
+/** The three usable world objects placed in the town. */
+export const WORLD_OBJECTS: WorldObject[] = [
+  { id: "well",         kind: "well",         pos: { ...WELL_POS } },
+  { id: "notice_board", kind: "notice_board", pos: { ...NOTICE_BOARD_POS } },
+  { id: "bench",        kind: "bench",        pos: { ...BENCH_POS } },
+];
+
 // -- back-compat representative exports (existing importers depend on these) --
 export const SHOP_POS: Vec2 = { ...SHOP_TILE };
 export const BED_POS: Vec2 = { ...HOMESTEADS[0].bed }; // Dora's bed
@@ -93,6 +128,50 @@ export const HOUSE_POS: Vec2 = { ...HOMESTEADS[0].door };
 // tile by contract; see tests/world/world.test.ts), so it is not walkable.
 export const WATER_POS: Vec2 = { x: POND.x0, y: POND.y0 };
 export const FIELD_RECT = { ...HOMESTEADS[0].plot }; // Dora's plot
+
+/**
+ * Building footprints (twelve homestead houses + shop + tavern) for the
+ * renderer's facade dressing. `doorX` is the entrance column (always within
+ * [x0,x1]). The map's facade renderer reads this so it can never drift from
+ * the generated map (see tests/world/map.test.ts).
+ */
+export interface BuildingFootprint {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  doorX: number;
+  kind: "house" | "shop" | "tavern";
+}
+
+export const BUILDINGS: BuildingFootprint[] = [
+  ...HOMESTEADS.map(
+    (h): BuildingFootprint => ({
+      x0: h.house.x,
+      y0: h.house.y,
+      x1: h.house.x + 2,
+      y1: h.house.y + 2,
+      doorX: h.bed.x,
+      kind: "house",
+    }),
+  ),
+  {
+    x0: SHOP_BUILDING.x,
+    y0: SHOP_BUILDING.y,
+    x1: SHOP_BUILDING.x + 2,
+    y1: SHOP_BUILDING.y + 2,
+    doorX: SHOP_TILE.x,
+    kind: "shop",
+  },
+  {
+    x0: TAVERN_BUILDING.x,
+    y0: TAVERN_BUILDING.y,
+    x1: TAVERN_BUILDING.x + 2,
+    y1: TAVERN_BUILDING.y + 2,
+    doorX: TAVERN_DOOR.x,
+    kind: "tavern",
+  },
+];
 
 function stampHomestead(tiles: TileType[][], landmarks: Landmark[], h: HomesteadSpec): void {
   fillRect(tiles, h.house.x, h.house.y, h.house.x + 2, h.house.y + 2, "building");
@@ -160,5 +239,5 @@ export function generateMap(): MapData {
     }
   }
 
-  return { width: MAP_WIDTH, height: MAP_HEIGHT, tiles, landmarks, decor };
+  return { width: MAP_WIDTH, height: MAP_HEIGHT, tiles, landmarks, decor, objects: WORLD_OBJECTS.map((o) => ({ ...o, pos: { ...o.pos } })) };
 }

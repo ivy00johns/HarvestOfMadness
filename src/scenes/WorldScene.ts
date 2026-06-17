@@ -28,12 +28,11 @@ import {
   CAMERA_PAN_SPEED,
   CAMERA_ZOOM_MAX,
   CAMERA_ZOOM_MIN,
-  CAMERA_ZOOM_STEP,
   CROP_COLORS,
   CROP_READY_COLOR,
+  DEFAULT_ZOOM,
   EMOTE_DURATION_MS,
   EMOTION_STYLE,
-  GAME_ZOOM,
   LABEL_FONT_SIZE,
   REG_ASSETS_ON,
   REG_ASSET_MANIFEST,
@@ -45,11 +44,14 @@ import {
   WATERED_SOIL_TINT,
   WATERED_TINT,
   WATER_ANIM_MS,
+  zoomFactorForWheelDelta,
 } from "../config";
 import { computeHud, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
 import type { Rect } from "../obs/layout";
 import { getWorld } from "../world/instance";
-import { BED_POS, SHOP_POS } from "../world/map";
+import { BUILDINGS, WORLD_OBJECTS } from "../world/map";
+import { activityEmoji } from "../obs/activityEmoji";
+import { buildingStyle } from "../obs/buildingStyle";
 import {
   SOIL_FRAMES,
   WATER_FRAMES,
@@ -127,6 +129,8 @@ interface AgentSprite {
   /** placeholder circle (fallback mode) — null in assets mode */
   circle: Phaser.GameObjects.Graphics | null;
   label: Phaser.GameObjects.Text;
+  /** Smallville "pronunciatio" — persistent activity emoji above the name label */
+  activityLabel: Phaser.GameObjects.Text;
   charKey: string | null;
   facing: Dir;
   tilePos: Vec2;
@@ -195,6 +199,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.tileGfx.setDepth(DEPTH_BASE);
     }
     this.redrawAll();
+    // v3 — draw world object markers over the tile layer (both asset + placeholder modes).
+    this.dressWorldObjects();
 
     this.unsubscribeWorld = world.onChange((tiles) => {
       if (tiles === null) {
@@ -252,10 +258,10 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
 
   /**
    * Inset the world camera below the opaque HUD top bar (controls + kill-switch
-   * badge) so the bar never covers the map — the top fence was being hidden
-   * behind it. Then fit the whole map into that inset region (never tighter
-   * than GAME_ZOOM, never below the wheel-zoom floor) so the full fence
-   * perimeter is visible by default. Re-runs on resize.
+   * badge) so the bar never covers the map. Default zoom = DEFAULT_ZOOM (1.5),
+   * which shows ~24 tiles across a typical viewport — agents and buildings are
+   * readable. On very small viewports we clamp down to CAMERA_ZOOM_MIN so the
+   * whole map is still reachable. Re-runs on resize.
    */
   private frameCamera(): void {
     const cam = this.cameras.main;
@@ -265,8 +271,11 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     const mapH = MAP_HEIGHT * TILE_SIZE;
     cam.setViewport(0, HUD_TOP_H, w, viewH);
     cam.setBounds(0, 0, mapW, mapH);
-    const fit = Math.min(w / mapW, viewH / mapH);
-    cam.setZoom(Phaser.Math.Clamp(Math.min(GAME_ZOOM, fit), CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX));
+    // Use the configured DEFAULT_ZOOM for a readable starting view, but clamp
+    // it so we never zoom in tighter than the map fills the viewport (no void),
+    // and never lower than CAMERA_ZOOM_MIN.
+    const zoom = Phaser.Math.Clamp(DEFAULT_ZOOM, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    cam.setZoom(zoom);
     cam.centerOn(mapW / 2, mapH / 2);
   }
 
@@ -333,10 +342,20 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   private onWorldWheel(p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number): void {
     if (this.pointerOverHud(p.x, p.y)) return;
     const cam = this.cameras.main;
+    // Sample the world point under the cursor BEFORE changing zoom — used below
+    // to keep that world point stationary under the cursor (cursor-anchored zoom).
     const before = cam.getWorldPoint(p.x, p.y);
-    const factor = dy > 0 ? 1 / CAMERA_ZOOM_STEP : CAMERA_ZOOM_STEP;
-    const z = Phaser.Math.Clamp(cam.zoom * factor, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    // Delta-proportional factor: exp(-dy * sensitivity).
+    // dy>0 → scroll down → factor<1 (zoom out); dy<0 → zoom in.
+    // A single mouse notch (dy≈100) gives factor≈0.86 (zoom out ×0.86 or in ×1.16).
+    const z = Phaser.Math.Clamp(
+      cam.zoom * zoomFactorForWheelDelta(dy),
+      CAMERA_ZOOM_MIN,
+      CAMERA_ZOOM_MAX,
+    );
     cam.setZoom(z);
+    // Re-sample the world point that now maps to the same screen pixel; scroll
+    // by the difference so the world appears to zoom toward/away from the cursor.
     const after = cam.getWorldPoint(p.x, p.y);
     cam.setScroll(cam.scrollX + (before.x - after.x), cam.scrollY + (before.y - after.y));
   }
@@ -597,23 +616,34 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   // -- static dressing (assets mode, drawn once) -----------------------------
 
   /**
-   * Brick facades over the two frozen building footprints from map.ts:
-   * farmhouse (2,2)-(5,4) with its door on the bedTile column, shop
-   * (18,2)-(21,4) with its door on the shopTile column plus market crates.
-   * All these tiles are impassable except the door tiles the pathfinder uses.
+   * Brick facades over all 14 building footprints from map.ts (12 homesteads +
+   * shop + tavern). Each entry in BUILDINGS carries its own doorX and kind, so
+   * we never drift from the generated map. Shop/tavern get the light-wood door
+   * (DOOR_B) and market crates; houses get the dark-wood door (DOOR_A).
+   * Each kind gets a distinct roof/wall tint and a sign emoji (via buildingStyle)
+   * so buildings are visually distinguishable even with the shared house.png art.
    */
   private dressBuildings(): void {
-    this.paintFacade(2, 2, 5, 4, {
-      doorX: BED_POS.x,
-      door: [HOUSE_FRAMES.DOOR_A_TOP, HOUSE_FRAMES.DOOR_A_BOT],
-      windowX: 5,
-    });
-    this.paintFacade(18, 2, 21, 4, {
-      doorX: SHOP_POS.x,
-      door: [HOUSE_FRAMES.DOOR_B_TOP, HOUSE_FRAMES.DOOR_B_BOT],
-      windowX: 21,
-      crateXs: [18, 20],
-    });
+    for (const b of BUILDINGS) {
+      const isShop = b.kind === "shop";
+      const isTavern = b.kind === "tavern";
+      const door: [number, number] =
+        isShop || isTavern
+          ? [HOUSE_FRAMES.DOOR_B_TOP, HOUSE_FRAMES.DOOR_B_BOT]
+          : [HOUSE_FRAMES.DOOR_A_TOP, HOUSE_FRAMES.DOOR_A_BOT];
+      // Window: place on the column opposite the door within the facade.
+      // For a 3-wide building (x0..x1), if door is on x0 use x1 else use x0.
+      const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
+      const style = buildingStyle(b.kind);
+      this.paintFacade(b.x0, b.y0, b.x1, b.y1, {
+        doorX: b.doorX,
+        door,
+        windowX,
+        crateXs: isShop ? [b.x0, b.x1] : undefined,
+        tint: style.tint,
+        sign: style.sign,
+      });
+    }
   }
 
   private paintFacade(
@@ -626,13 +656,19 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       door: [number, number];
       windowX: number;
       crateXs?: number[];
+      /** 0xRRGGBB tint applied to all facade tiles (0xffffff = no tint) */
+      tint?: number;
+      /** Emoji/sign placed centred above the roof, below speech bubbles */
+      sign?: string;
     },
   ): void {
-    const put = (x: number, y: number, frame: number, depth: number): void => {
-      this.add
+    const tint = opts.tint ?? 0xffffff;
+    const put = (x: number, y: number, frame: number, depth: number): Phaser.GameObjects.Image => {
+      return this.add
         .image(x * TILE_SIZE, y * TILE_SIZE, "house", frame)
         .setOrigin(0, 0)
-        .setDepth(depth);
+        .setDepth(depth)
+        .setTint(tint);
     };
     for (let y = y0; y <= y1; y++) {
       const row =
@@ -658,6 +694,20 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         .setOrigin(0, 0)
         .setDepth(DEPTH_PROP);
     }
+    // Sign emoji centred above the roof (y0 row), depth between props and bubbles.
+    if (opts.sign) {
+      const midX = ((x0 + x1) / 2 + 0.5) * TILE_SIZE; // pixel centre of facade
+      const roofTopY = y0 * TILE_SIZE - 4;              // 4px above the top edge
+      this.add
+        .text(midX, roofTopY, opts.sign, {
+          fontSize: "16px",
+          fontFamily: "ui-monospace, Menlo, monospace",
+          stroke: "#000000",
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_PROP + 1);
+    }
   }
 
   /** A few fruit trees along the bottom fence for life. */
@@ -673,6 +723,49 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         )
         .setOrigin(0.5, 1)
         .setDepth(DEPTH_OVERHEAD);
+    }
+  }
+
+  /**
+   * v3 — Draw simple placeholder markers for each world object (well, notice
+   * board, bench). Prioritise an existing tileset frame if available; fall
+   * back to a labeled colored rectangle (works in both placeholder and asset
+   * modes — the real art phase comes later).
+   */
+  private dressWorldObjects(): void {
+    const OBJECT_COLORS: Record<string, number> = {
+      well:         0x4488cc, // blue — water
+      notice_board: 0xcc8833, // amber — parchment
+      bench:        0x886644, // brown — wood
+    };
+    const OBJECT_LABELS: Record<string, string> = {
+      well:         "🪣",
+      notice_board: "📋",
+      bench:        "🪑",
+    };
+
+    for (const obj of WORLD_OBJECTS) {
+      const px = obj.pos.x * TILE_SIZE;
+      const py = obj.pos.y * TILE_SIZE;
+      const cx = px + TILE_SIZE / 2;
+      const cy = py + TILE_SIZE / 2;
+      const color = OBJECT_COLORS[obj.kind] ?? 0xffffff;
+
+      // Colored rect marker (placeholder-mode compatible; also drawn in asset
+      // mode as a low-cost visible marker until dedicated sprites are added).
+      const gfx = this.add.graphics();
+      gfx.fillStyle(color, 0.85);
+      gfx.fillRoundedRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
+      gfx.lineStyle(1, 0x000000, 0.5);
+      gfx.strokeRoundedRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
+      gfx.setDepth(DEPTH_PROP + 1);
+
+      // Emoji label above the rect.
+      const label = OBJECT_LABELS[obj.kind] ?? "⚙";
+      this.add
+        .text(cx, cy, label, { fontSize: "14px", align: "center" })
+        .setOrigin(0.5, 0.5)
+        .setDepth(DEPTH_PROP + 2);
     }
   }
 
@@ -830,11 +923,24 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         strokeThickness: 3,
       })
       .setOrigin(0.5, 1);
+    // Smallville "pronunciatio": persistent activity emoji pinned just above
+    // the name label, below speech bubbles. Starts blank until first action.
+    const activityLabel = this.add
+      .text(0, Math.round(this.labelLift()) - LABEL_FONT_SIZE - 2, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "14px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(DEPTH_PROP);
     const [cx, cy] = this.tileCenter(pos);
     const container = this.add.container(cx, cy, [
       ...(sprite ? [sprite] : []),
       ...(circle ? [circle] : []),
       label,
+      activityLabel,
     ]);
     container.setDepth(cy + TILE_SIZE / 2);
     this.agents.set(name, {
@@ -842,6 +948,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       sprite,
       circle,
       label,
+      activityLabel,
       charKey: null,
       facing: "down",
       tilePos: { ...pos },
@@ -955,6 +1062,23 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       if (agent.speech === bubble) agent.speech = null;
       agent.speechTimer = null;
     });
+  }
+
+  /**
+   * Smallville "pronunciatio": update the persistent activity emoji for an
+   * agent. Called by AgentRuntime after each decision cycle with the chosen
+   * ActionType (and optional emotion for EMOTE actions). The emoji is rendered
+   * as a small text object pinned above the name label, below speech bubbles.
+   */
+  setActivityEmoji(name: string, action: string, emotion?: string): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    // activityEmoji is a pure function — import is at top of file.
+    const emoji = activityEmoji(
+      action as Parameters<typeof activityEmoji>[0],
+      emotion as Parameters<typeof activityEmoji>[1],
+    );
+    agent.activityLabel.setText(emoji);
   }
 
   /** v2 — transient ~2s emote symbol floating up above the sprite. */

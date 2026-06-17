@@ -47,15 +47,16 @@ ${cropTable()}
 - BUY and SELL only work at the shop, with itemIds like "seed:parsnip" (buy) and "crop:parsnip" (sell). You need gold to buy seeds; you start with ${STARTING_GOLD} gold.
 - TALK_TO another agent only when they are within 1 tile. MOVE_TO takes a map coordinate. WAIT does nothing for one beat.
 - GIVE_GIFT hands 1 item from your inventory to an agent within 1 tile (builds friendship). EMOTE shows a feeling above your head; it is always allowed and changes nothing in the world.
+- USE_OBJECT interacts with a nearby world object (well, notice_board, bench): USE the well to draw water and refresh yourself; USE the notice_board to read town news (you may learn about upcoming events); USE the bench to rest. Target: {"objectId": "<id>"}. Only available (in availableActions) when you are adjacent to a usable object.
 - Your observation lists nearby tiles, agents, landmarks (shop, bed, water, house), your inventory, gold, energy, the result of your last action, and which actions are currently available. Choose ONLY from availableActions.
-- Your observation may also include MEMORIES (relevant past experiences), a CURRENT PLAN STEP (your goal for this phase of the day), and RELATIONSHIPS (how you feel about others). Let them guide your choice.
+- Your observation may also include MEMORIES (relevant past experiences), a CURRENT PLAN STEP (your goal for this phase of the day), RELATIONSHIPS (how you feel about others), and NEARBY OBJECTS (well/notice_board/bench within sight). Let them guide your choice.
 
 RESPONSE FORMAT — exactly one JSON object with this shape:
 {
   "thought": string,            // brief private reasoning
   "say": string | null,         // optional short spoken line
-  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE",
-  "target": {"x":number,"y":number} | {"itemId":string,"qty":number} | {"agentName":string} | {"agentName":string,"itemId":string,"qty":number},  // GIVE_GIFT uses {"agentName","itemId","qty":1}; omit for SLEEP/WAIT/EMOTE
+  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE"|"USE_OBJECT",
+  "target": {"x":number,"y":number} | {"itemId":string,"qty":number} | {"agentName":string} | {"agentName":string,"itemId":string,"qty":number} | {"objectId":string},  // GIVE_GIFT uses {"agentName","itemId","qty":1}; USE_OBJECT uses {"objectId":"..."}; omit for SLEEP/WAIT/EMOTE
   "goal": string,               // optional, your current standing goal
   "emotion": "neutral"|"happy"|"annoyed"|"sad"|"excited"  // optional, defaults to "neutral"
 }
@@ -95,6 +96,44 @@ export function buildUserPrompt(obs: Observation): string {
           .map((r) => `- ${r.name}: affinity ${r.affinity}`)
           .join("\n"),
     );
+  }
+  if (obs.self?.knownEvents && obs.self.knownEvents.length > 0) {
+    const lines = obs.self.knownEvents.map(
+      (e) =>
+        `- ${e.description}, hosted by ${e.host}, on day ${e.day} (${e.phase}) at tile (${e.location.x},${e.location.y})${e.isNow ? " — HAPPENING NOW" : ""}`,
+    );
+    lines.push(
+      "If a gathering is HAPPENING NOW, strongly prefer MOVE_TO its location to attend (or EMOTE/WAIT if already there). " +
+        "If it is upcoming, mention it to nearby farmers via TALK_TO so word spreads.",
+    );
+    sections.push("Gatherings you know about:\n" + lines.join("\n"));
+  }
+  if (obs.self?.inviteTargets && obs.self.inviteTargets.length > 0) {
+    const lines = obs.self.inviteTargets.map(
+      (t) => `- ${t.name} at (${t.pos.x},${t.pos.y})`,
+    );
+    lines.push(
+      "Walk to each of them (MOVE_TO) then TALK_TO to invite them.",
+    );
+    sections.push(
+      "You are hosting a gathering — these folks haven't heard yet:\n" + lines.join("\n"),
+    );
+  }
+  // v3 — surface nearby world objects when present.
+  if (obs.nearby?.objects && obs.nearby.objects.length > 0) {
+    const OBJECT_DESCRIPTIONS: Record<string, string> = {
+      well:         "draw water (refreshes you)",
+      notice_board: "read town news (learn about upcoming events)",
+      bench:        "rest a while",
+    };
+    const lines = obs.nearby.objects.map(
+      (o) =>
+        `- ${o.kind} (id:"${o.id}") at (${o.pos.x},${o.pos.y}) — ${OBJECT_DESCRIPTIONS[o.kind] ?? "interact"}`,
+    );
+    if (obs.availableActions.includes("USE_OBJECT")) {
+      lines.push("You are adjacent to one of these — USE_OBJECT with {\"objectId\":\"<id>\"} to interact.");
+    }
+    sections.push("NEARBY OBJECTS:\n" + lines.join("\n"));
   }
 
   const prefix = sections.length > 0 ? `${sections.join("\n")}\n` : "";
@@ -155,6 +194,10 @@ Respond with ONLY a JSON array of at most 5 objects shaped {"insight": string, "
  * Morning daily plan (smart tier): exactly 4 steps, one per phase
  * morning/afternoon/evening/night. Model must answer with ONLY the JSON
  * object {steps:[{phase, goal, targetLandmark?}]}.
+ *
+ * Plans should mix farm work with social/leisure/errand steps so the town
+ * feels inhabited: socialize at the tavern, stroll by the pond, browse the
+ * market, visit a neighbor, rest at home. Persona guides the mix.
  */
 export function buildDailyPlanPrompt(
   persona: string,
@@ -175,7 +218,16 @@ export function buildDailyPlanPrompt(
 PERSONA:
 ${persona}
 
-${reflections}${places}Plan your day. Produce exactly 4 steps, one for each phase in this order: morning, afternoon, evening, night. Each step has a short concrete goal (farming, shopping, socializing, resting). "targetLandmark" is optional and must be one of "shop", "bed", "water", "house" when used. The night step should normally end at the bed to sleep.
+${reflections}${places}Plan your day. Produce exactly 4 steps, one for each phase in this order: morning, afternoon, evening, night. Each step has a short concrete goal. The plan should feel VARIED and persona-driven — mix farm work with social and leisure activities:
+
+- A social persona should find time at the tavern or chatting with farmers.
+- A dreamy or wandering persona should stroll by the pond or wander the paths.
+- A frugal persona should browse the market, check prices, haggle.
+- A grumbling or methodical persona sticks mostly to the field but may visit the tavern in the evening.
+- The morning is usually for farm work; afternoon/evening can include socializing, the market, or the pond.
+- The night step should end at the bed to sleep.
+
+"targetLandmark" is optional and must be one of "shop", "bed", "water", "house", "tavern" when used.
 
 Respond with ONLY one JSON object shaped {"steps":[{"phase":"morning"|"afternoon"|"evening"|"night","goal":string,"targetLandmark":string?}]} with exactly 4 steps — no prose, no fences.`;
 }

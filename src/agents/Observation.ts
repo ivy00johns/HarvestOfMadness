@@ -6,7 +6,7 @@
  * the executor would reject on principle. The executor still re-validates
  * everything at execution time (rule 4).
  */
-import type { ActionType, Observation, Vec2, WorldApi } from "@contracts/types";
+import type { ActionType, Observation, Vec2, WorldApi, WorldObject } from "@contracts/types";
 import { OBSERVATION_RADIUS } from "@contracts/types";
 import { isTypeTillable } from "../world/Tile";
 import type { Agent } from "./Agent";
@@ -95,6 +95,13 @@ export function computeAvailableActions(
 
     // v2 — EMOTE rides inside the energy>0 block (see doc comment above).
     out.push("EMOTE");
+
+    // v3 — USE_OBJECT: available when adjacent to any world object.
+    if ("adjacentObject" in world && typeof world.adjacentObject === "function") {
+      if (world.adjacentObject(agent.pos) !== null) {
+        out.push("USE_OBJECT");
+      }
+    }
   }
 
   if (sleepOk) out.push("SLEEP");
@@ -149,6 +156,15 @@ export function buildObservation(
       // Landmarks are global knowledge (the agent lives here) — required so
       // the heuristic/LLM can navigate to shop/bed from anywhere on the map.
       landmarks: world.landmarks(),
+      // v3 — world objects within observation radius (nearby only; not global).
+      ...(() => {
+        if (!("objects" in world && typeof world.objects === "function")) return {};
+        const allObjects = world.objects() as WorldObject[];
+        const visible = allObjects.filter(
+          (o) => chebyshev(agent.pos, o.pos) <= OBSERVATION_RADIUS,
+        );
+        return visible.length > 0 ? { objects: visible } : {};
+      })(),
     },
     lastAction: agent.lastAction ? { ...agent.lastAction } : null,
     availableActions: computeAvailableActions(agent, world, others),
