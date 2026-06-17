@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TileType, Vec2 } from "@contracts/types";
-import { MAP_HEIGHT, MAP_WIDTH } from "@contracts/types";
+import { MAP_HEIGHT, MAP_WIDTH, OBSERVATION_RADIUS } from "@contracts/types";
 import {
   BED_POS,
   FIELD_RECT,
@@ -83,6 +83,20 @@ describe("town generator", () => {
     }
     for (const h of HOMESTEADS) expect(seen.has(key(h.door)), `door ${h.id}`).toBe(true);
     expect(seen.has(key(SHOP_POS)), "shop").toBe(true);
+  });
+
+  it("each homestead's plot is within observation range of its door (agents perceive their own plot)", () => {
+    const cheb = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+    for (const h of HOMESTEADS) {
+      let nearest = Infinity;
+      for (let y = h.plot.y0; y <= h.plot.y1; y++)
+        for (let x = h.plot.x0; x <= h.plot.x1; x++)
+          nearest = Math.min(nearest, cheb(h.door, { x, y }));
+      expect(nearest, `plot for ${h.id} must be within OBSERVATION_RADIUS of its door`).toBeLessThanOrEqual(
+        OBSERVATION_RADIUS,
+      );
+    }
   });
 
   it("scatters decor only on grass, within bounds, capped", () => {

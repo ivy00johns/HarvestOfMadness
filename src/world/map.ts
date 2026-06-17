@@ -63,11 +63,11 @@ interface HomesteadSpec {
  */
 export const HOMESTEADS: HomesteadSpec[] = [
   { id: "dora",  house: { x: 5,  y: 12 }, bed: { x: 6,  y: 14 }, door: { x: 6,  y: 15 }, plot: { x0: 8,  y0: 12, x1: 11, y1: 14 } },
-  { id: "gus",   house: { x: 39, y: 12 }, bed: { x: 40, y: 14 }, door: { x: 40, y: 15 }, plot: { x0: 32, y0: 12, x1: 35, y1: 14 } },
+  { id: "gus",   house: { x: 39, y: 12 }, bed: { x: 40, y: 14 }, door: { x: 40, y: 15 }, plot: { x0: 42, y0: 12, x1: 45, y1: 14 } },
   { id: "fern",  house: { x: 5,  y: 18 }, bed: { x: 6,  y: 18 }, door: { x: 6,  y: 17 }, plot: { x0: 8,  y0: 18, x1: 11, y1: 20 } },
-  { id: "rusty", house: { x: 39, y: 18 }, bed: { x: 40, y: 18 }, door: { x: 40, y: 17 }, plot: { x0: 32, y0: 18, x1: 35, y1: 20 } },
-  { id: "sage",  house: { x: 26, y: 12 }, bed: { x: 27, y: 14 }, door: { x: 27, y: 15 }, plot: { x0: 26, y0: 8,  x1: 29, y1: 10 } },
-  { id: "moss",  house: { x: 28, y: 18 }, bed: { x: 29, y: 18 }, door: { x: 29, y: 17 }, plot: { x0: 31, y0: 22, x1: 34, y1: 24 } },
+  { id: "rusty", house: { x: 39, y: 18 }, bed: { x: 40, y: 18 }, door: { x: 40, y: 17 }, plot: { x0: 42, y0: 18, x1: 45, y1: 20 } },
+  { id: "sage",  house: { x: 26, y: 12 }, bed: { x: 27, y: 14 }, door: { x: 27, y: 15 }, plot: { x0: 29, y0: 12, x1: 32, y1: 14 } },
+  { id: "moss",  house: { x: 28, y: 18 }, bed: { x: 29, y: 18 }, door: { x: 29, y: 17 }, plot: { x0: 31, y0: 18, x1: 34, y1: 20 } },
 ];
 
 /** persona id -> start (door) tile, consumed by src/agents/personas.ts. */
@@ -146,7 +146,11 @@ export function generateMap(): MapData {
         tiles[y + 1][x] === "grass" &&
         tiles[y][x - 1] === "grass" &&
         tiles[y][x + 1] === "grass";
-      if (allGrass && (x * 7 + y * 13) % 17 === 0) decor.push({ kind: "tree", pos: { x, y } });
+      // Hard cap at 16: guard the push itself — the outer-loop guard alone lets
+      // a single row overshoot, since it is only re-checked between rows.
+      if (decor.length < 16 && allGrass && (x * 7 + y * 13) % 17 === 0) {
+        decor.push({ kind: "tree", pos: { x, y } });
+      }
     }
   }
 
