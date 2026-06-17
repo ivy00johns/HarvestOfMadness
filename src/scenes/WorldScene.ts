@@ -53,8 +53,11 @@ import { BUILDINGS, WORLD_OBJECTS } from "../world/map";
 import { activityEmoji } from "../obs/activityEmoji";
 import { buildingStyle } from "../obs/buildingStyle";
 import {
+  COBBLE_PATH_FRAMES,
+  SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
+  WELL_FRAMES,
   cropStripFrame,
   fenceFrame,
   setRenderApi,
@@ -530,7 +533,10 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       case "grass":
         break; // base layer already shows grass
       case "path":
-        place("terrain", this.pick(PATH_FRAMES, x, y));
+        // Cobblestone road (PathAndObjects) when present; else the v1 dirt path.
+        if (this.textures.exists("paths"))
+          place("paths", this.pick(COBBLE_PATH_FRAMES, x, y));
+        else place("terrain", this.pick(PATH_FRAMES, x, y));
         break;
       case "water": {
         const isWater = (dx: number, dy: number): boolean =>
@@ -635,6 +641,13 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       // For a 3-wide building (x0..x1), if door is on x0 use x1 else use x0.
       const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
       const style = buildingStyle(b.kind);
+      // Shop/tavern get a real hanging LPC sign (tankard / bread loaf); houses
+      // keep the lightweight emoji sign from buildingStyle.
+      const signFrame = isTavern
+        ? SIGN_FRAMES.BEER
+        : isShop
+          ? SIGN_FRAMES.BREAD
+          : undefined;
       this.paintFacade(b.x0, b.y0, b.x1, b.y1, {
         doorX: b.doorX,
         door,
@@ -642,6 +655,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         crateXs: isShop ? [b.x0, b.x1] : undefined,
         tint: style.tint,
         sign: style.sign,
+        signFrame,
       });
     }
   }
@@ -660,6 +674,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       tint?: number;
       /** Emoji/sign placed centred above the roof, below speech bubbles */
       sign?: string;
+      /** decorations-sheet hanging-sign frame; overrides the emoji sign when set */
+      signFrame?: number;
     },
   ): void {
     const tint = opts.tint ?? 0xffffff;
@@ -694,12 +710,17 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         .setOrigin(0, 0)
         .setDepth(DEPTH_PROP);
     }
-    // Sign emoji centred above the roof (y0 row), depth between props and bubbles.
-    if (opts.sign) {
-      const midX = ((x0 + x1) / 2 + 0.5) * TILE_SIZE; // pixel centre of facade
-      const roofTopY = y0 * TILE_SIZE - 4;              // 4px above the top edge
+    // Signage centred above the roof (y0 row), depth between props and bubbles.
+    const midX = ((x0 + x1) / 2 + 0.5) * TILE_SIZE; // pixel centre of facade
+    if (opts.signFrame != null && this.textures.exists("decorations")) {
+      // Real LPC hanging sign, bottom-anchored just above the roofline.
       this.add
-        .text(midX, roofTopY, opts.sign, {
+        .image(midX, y0 * TILE_SIZE, "decorations", opts.signFrame)
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_PROP + 1);
+    } else if (opts.sign) {
+      this.add
+        .text(midX, y0 * TILE_SIZE - 4, opts.sign, {
           fontSize: "16px",
           fontFamily: "ui-monospace, Menlo, monospace",
           stroke: "#000000",
@@ -727,12 +748,13 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * v3 — Draw simple placeholder markers for each world object (well, notice
-   * board, bench). Prioritise an existing tileset frame if available; fall
-   * back to a labeled colored rectangle (works in both placeholder and asset
-   * modes — the real art phase comes later).
+   * v3 — Draw each world object (well, notice board, bench). In assets mode
+   * the well and notice board use real LPC decoration sprites; the bench (no
+   * dedicated sprite yet) and the whole placeholder path fall back to a labeled
+   * colored-rect marker.
    */
   private dressWorldObjects(): void {
+    const hasDeco = this.useAssets && this.textures.exists("decorations");
     const OBJECT_COLORS: Record<string, number> = {
       well:         0x4488cc, // blue — water
       notice_board: 0xcc8833, // amber — parchment
@@ -744,28 +766,53 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       bench:        "🪑",
     };
 
-    for (const obj of WORLD_OBJECTS) {
+    // Place a decorations-sheet tile at a map cell (top-left origin).
+    const deco = (tx: number, ty: number, frame: number, depth = DEPTH_PROP): void => {
+      this.add
+        .image(tx * TILE_SIZE, ty * TILE_SIZE, "decorations", frame)
+        .setOrigin(0, 0)
+        .setDepth(depth);
+    };
+
+    // Fallback marker: rounded rect + emoji (placeholder mode, or props without art).
+    const marker = (obj: (typeof WORLD_OBJECTS)[number]): void => {
       const px = obj.pos.x * TILE_SIZE;
       const py = obj.pos.y * TILE_SIZE;
-      const cx = px + TILE_SIZE / 2;
-      const cy = py + TILE_SIZE / 2;
-      const color = OBJECT_COLORS[obj.kind] ?? 0xffffff;
-
-      // Colored rect marker (placeholder-mode compatible; also drawn in asset
-      // mode as a low-cost visible marker until dedicated sprites are added).
       const gfx = this.add.graphics();
-      gfx.fillStyle(color, 0.85);
+      gfx.fillStyle(OBJECT_COLORS[obj.kind] ?? 0xffffff, 0.85);
       gfx.fillRoundedRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
       gfx.lineStyle(1, 0x000000, 0.5);
       gfx.strokeRoundedRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
       gfx.setDepth(DEPTH_PROP + 1);
-
-      // Emoji label above the rect.
-      const label = OBJECT_LABELS[obj.kind] ?? "⚙";
       this.add
-        .text(cx, cy, label, { fontSize: "14px", align: "center" })
+        .text(px + TILE_SIZE / 2, py + TILE_SIZE / 2, OBJECT_LABELS[obj.kind] ?? "⚙", {
+          fontSize: "14px",
+          align: "center",
+        })
         .setOrigin(0.5, 0.5)
         .setDepth(DEPTH_PROP + 2);
+    };
+
+    for (const obj of WORLD_OBJECTS) {
+      const { x, y } = obj.pos;
+      if (hasDeco && obj.kind === "well") {
+        // 2×2 stone well anchored bottom-right on the object tile; it rises one
+        // tile up onto the grass strip and never overlaps the flanking buildings.
+        deco(x - 1, y - 1, WELL_FRAMES.RIM_L);
+        deco(x,     y - 1, WELL_FRAMES.RIM_R);
+        deco(x - 1, y,     WELL_FRAMES.BODY_L);
+        deco(x,     y,     WELL_FRAMES.BODY_R);
+      } else if (hasDeco && obj.kind === "notice_board") {
+        deco(x, y, SIGN_FRAMES.BOARD);
+        this.add
+          .text(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE - 2, OBJECT_LABELS.notice_board, {
+            fontSize: "12px",
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(DEPTH_PROP + 2);
+      } else {
+        marker(obj);
+      }
     }
   }
 

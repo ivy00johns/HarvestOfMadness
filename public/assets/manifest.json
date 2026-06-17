@@ -150,6 +150,22 @@
       "tileHeight": 32,
       "purpose": "buildings",
       "notes": "288x224, 9x7 tile grid. Farmhouse building tiles: roof, walls, door, windows, chimney. From LPC Base Assets by Lanea Zimmerman."
+    },
+    {
+      "key": "paths",
+      "path": "assets/lpc/town/PathAndObjects.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "terrain",
+      "notes": "512x512, 16 frames/row. RPG cobblestone paths & town objects (Zabin, Daneeklu, Jetrel, Hyptosis, Redshrike, Bertram). Path autotile islands cols 0-11 rows 0-2; seamless full-bleed fill at rows 3-4 — frames 48 and 50 are clean grey cobblestone road tiles (49 has a grass tuft). Right cols 12-15 carry market-stall and produce props. CC-BY-SA 3.0."
+    },
+    {
+      "key": "decorations",
+      "path": "assets/lpc/town/decorations-medieval.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "buildings",
+      "notes": "512x2048, 16 frames/row (64 rows). LPC medieval village decorations. Hanging signs at rows 0-1: frame 6 plain board, 7 swords, 8 jug, 9 bread/loaf, 22 book, 23 beer mug, 24 INN. Lanterns/torches cols 12-15. Stone well at cols 0-1 rows 13-15: frames 208/209 (rim), 224/225 (body), 240/241 (base). Statues, fences, gravestones elsewhere. CC-BY-SA 3.0."
     }
   ],
   "water": {

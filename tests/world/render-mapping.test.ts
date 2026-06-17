@@ -4,9 +4,12 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  COBBLE_PATH_FRAMES,
   FENCE_FRAMES,
+  SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
+  WELL_FRAMES,
   cropStripFrame,
   fenceFrame,
   soilFrame,
@@ -106,6 +109,37 @@ describe("soilFrame (8x6 contract field at (8,8)-(15,13))", () => {
     // soilFrame itself is mask-only; the probe decides membership — a field
     // tile whose neighbours are all members stays an interior tile.
     expect(frameAt(12, 11)).toBe(SOIL_FRAMES.C);
+  });
+});
+
+describe("town props frame constants (decorations + paths sheets, 16 frames/row)", () => {
+  const COL = (f: number): number => f % 16;
+  const ROW = (f: number): number => Math.floor(f / 16);
+
+  it("cobblestone road frames are seamless-fill cells (rows 3-4, cols 0-11), no grass-tuft 49", () => {
+    expect(COBBLE_PATH_FRAMES.length).toBeGreaterThan(0);
+    for (const f of COBBLE_PATH_FRAMES) {
+      expect(ROW(f)).toBeGreaterThanOrEqual(3);
+      expect(ROW(f)).toBeLessThanOrEqual(4);
+      expect(COL(f)).toBeLessThanOrEqual(11);
+    }
+    expect(COBBLE_PATH_FRAMES).not.toContain(49); // 49 carries a grass tuft
+  });
+
+  it("well frames form a 2-wide block: rim row directly above the body row", () => {
+    // adjacent columns on each row
+    expect(WELL_FRAMES.RIM_R - WELL_FRAMES.RIM_L).toBe(1);
+    expect(WELL_FRAMES.BODY_R - WELL_FRAMES.BODY_L).toBe(1);
+    // body sits one sheet-row (16 frames) below the rim
+    expect(WELL_FRAMES.BODY_L - WELL_FRAMES.RIM_L).toBe(16);
+    expect(WELL_FRAMES.BODY_R - WELL_FRAMES.RIM_R).toBe(16);
+    expect(ROW(WELL_FRAMES.RIM_L)).toBe(13);
+  });
+
+  it("hanging-sign frames live in the sign rows (0-1)", () => {
+    for (const f of Object.values(SIGN_FRAMES)) {
+      expect(ROW(f)).toBeLessThanOrEqual(1);
+    }
   });
 });
 

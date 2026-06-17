@@ -56,6 +56,33 @@ export const FENCE_FRAMES = {
   H_LEGS: 13,
 } as const;
 
+/**
+ * PathAndObjects.png — 16 frames/row. The path autotiles live in cols 0-11;
+ * rows 3-4 are the seamless full-bleed fill (no grass border) that tiles
+ * cleanly along a 1-wide road. Frames 48 and 50 are clean grey cobblestone
+ * (49 carries a decorative grass tuft, omitted so roads read uniform).
+ */
+export const COBBLE_PATH_FRAMES: readonly number[] = [48, 50];
+
+/**
+ * decorations-medieval.png — 16 frames/row. Stone well (cols 0-1) as a 2-wide
+ * block: rim row (rows 13), body row (row 14). frame = row*16 + col.
+ */
+export const WELL_FRAMES = {
+  RIM_L: 208, RIM_R: 209, // row 13: circular stone rim top
+  BODY_L: 224, BODY_R: 225, // row 14: stone body with the bucket opening
+} as const;
+
+/**
+ * decorations-medieval.png hanging signs (rows 0-1). Single 32×32 boards that
+ * hang from a top bar — used for the notice board and shop/tavern signage.
+ */
+export const SIGN_FRAMES = {
+  BOARD: 6, // plain wooden board (notice board)
+  BREAD: 9, // loaf — general store / shop
+  BEER: 23, // tankard — tavern
+} as const;
+
 /** 4-neighbour membership probe: same-type checks at (±1,0)/(0,±1). */
 export type NeighborProbe = (dx: number, dy: number) => boolean;
 
