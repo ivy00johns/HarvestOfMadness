@@ -43,6 +43,18 @@ export const DEFAULT_MAX_TOKENS = 1024;
 const COMPLETION_TEMPERATURE = 0.75;
 
 /**
+ * Bounded `auto` retry lane (resilience). FreeLLMAPI's `model:"auto"` re-routes
+ * to a (frequently different) provider on every call, so a transient single-
+ * provider 5xx/429/network blip is recovered simply by trying "auto" again —
+ * turning a momentary outage into a successful decision instead of a mock-mode
+ * fallback. Sequential (one call per retry), never a fan-out.
+ */
+const AUTO_BACKUP_RETRIES = 2;
+/** Per-retry backoff (ms); the first retry is immediate so a re-route is instant. */
+const RETRY_BACKOFF_MS = [0, 300] as const;
+const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/**
  * JSON-mode sticky degrade (pattern 5): we send response_format json_object by
  * default. The FIRST time a provider rejects it (a 400/404/422 whose message
  * mentions response_format / json), we flip this off for the rest of the
@@ -266,12 +278,13 @@ async function attemptCompletion(
  *    response_format json_object (pattern 4/10/5).
  *  - JSON-mode STICKY DEGRADE (pattern 5): a json-mode rejection retries the
  *    SAME model once without response_format AND latches json-mode off for the
- *    process. This does NOT consume the auto backup.
- *  - SINGLE-SHOT `auto` BACKUP (pattern 1): on a bounceable failure
- *    (network/5xx/429/model-not-found) we retry exactly ONCE with model:"auto"
- *    — never a fan-out. Skipped when the home model already IS "auto" (then we
- *    propagate). 401 auth never bounces. On a successful backup, bouncedFrom =
- *    home model, bouncedTo = the auto call's routed model.
+ *    process. This does NOT consume the auto retries.
+ *  - BOUNDED `auto` RETRY LANE: on a bounceable failure (network/5xx/429/
+ *    model-not-found) we retry up to AUTO_BACKUP_RETRIES times with model:"auto",
+ *    sequentially (never a fan-out). "auto" re-routes per call, so this recovers
+ *    transient single-provider blips even when the home model already IS "auto".
+ *    401 auth never bounces and stops the loop. When the home model was a pinned
+ *    tier, a recovered call records bouncedFrom = home model, bouncedTo = routed.
  */
 export async function forwardCompletion(
   cfg: UpstreamConfig,
@@ -303,23 +316,32 @@ export async function forwardCompletion(
 
   if (home.ok) return { ok: true, body: home.body };
 
-  // --- SINGLE-SHOT auto backup (no fan-out) ------------------------------
-  // Skip when not bounceable (401 auth, or a non-model 4xx) OR when the home
-  // model already IS "auto" (the backup would be the identical call).
-  if (!home.bounceable || homeModel === "auto") {
+  // --- bounded `auto` retry lane (sequential, never a fan-out) -----------
+  // A non-bounceable failure (401 auth, or a non-model 4xx) is terminal.
+  if (!home.bounceable) {
     return { ok: false, status: home.status, body: errBody(home.type, home.message) };
   }
 
-  const backup = await attemptCompletion(cfg, "auto", system, user, cap, jsonModeEnabled);
-  if (backup.ok) {
-    backup.body.bouncedFrom = homeModel;
-    backup.body.bouncedTo = backup.body.model;
-    return { ok: true, body: backup.body };
+  // Retry on "auto" — it re-routes per call, so repeated tries hit different
+  // providers. Applies whether the home model was a pinned tier OR "auto"
+  // itself (a second "auto" is NOT the identical call). 401 stops the loop.
+  let last: AttemptFail = home;
+  for (let i = 0; i < AUTO_BACKUP_RETRIES; i++) {
+    if (RETRY_BACKOFF_MS[i] > 0) await delay(RETRY_BACKOFF_MS[i]);
+    const retry = await attemptCompletion(cfg, "auto", system, user, cap, jsonModeEnabled);
+    if (retry.ok) {
+      if (homeModel !== "auto") {
+        retry.body.bouncedFrom = homeModel;
+        retry.body.bouncedTo = retry.body.model;
+      }
+      return { ok: true, body: retry.body };
+    }
+    last = retry;
+    if (!retry.bounceable) break; // terminal (e.g. 401 on the retry) — stop early
   }
 
-  // Backup also failed — propagate the BACKUP's error (it's the freshest, and
-  // a 401 here means the key itself is bad).
-  return { ok: false, status: backup.status, body: errBody(backup.type, backup.message) };
+  // Every attempt failed — propagate the freshest error.
+  return { ok: false, status: last.status, body: errBody(last.type, last.message) };
 }
 
 function errBody(type: ApiError["error"]["type"], message: string): ApiError {

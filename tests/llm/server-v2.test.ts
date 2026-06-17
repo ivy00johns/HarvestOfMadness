@@ -349,3 +349,73 @@ describe("POST /api/agent/complete — v2 tier mapping", () => {
     expect((await post(base, "/api/embeddings", { texts: ["c"] })).status).toBe(200);
   });
 });
+
+describe("POST /api/agent/complete — auto retry resilience", () => {
+  const COMPLETE = { agentId: "dora", system: "sys", user: "obs" };
+
+  it("recovers a bounceable 5xx by retrying on the auto lane (re-route)", async () => {
+    let n = 0;
+    const { port, seen } = await startUpstream((_path, _body, res) => {
+      n += 1;
+      if (n === 1) {
+        replyJson(res, 500, { error: { message: "provider overloaded", type: "server_error" } });
+        return;
+      }
+      replyJson(
+        res,
+        200,
+        { model: "served", choices: [{ message: { content: '{"action":"WAIT"}' } }] },
+        { "X-Routed-Via": "served" },
+      );
+    });
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}` });
+
+    const res = await post(base, "/api/agent/complete", COMPLETE);
+    expect(res.status).toBe(200);
+    expect(seen).toHaveLength(2); // home (base-model) + one auto retry
+    expect(seen[0].body.model).toBe("base-model");
+    expect(seen[1].body.model).toBe("auto"); // retry re-routes via auto
+    const body = (await res.json()) as { bouncedFrom?: string; bouncedTo?: string };
+    expect(body.bouncedFrom).toBe("base-model");
+    expect(body.bouncedTo).toBe("served");
+  });
+
+  it("retries even when the home model is already auto (auto re-routes per call)", async () => {
+    let n = 0;
+    const { port, seen } = await startUpstream((_path, _body, res) => {
+      n += 1;
+      if (n === 1) {
+        replyJson(res, 503, { error: { message: "down", type: "server_error" } });
+        return;
+      }
+      replyJson(res, 200, { model: "served", choices: [{ message: { content: "ok" } }] });
+    });
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}`, model: "auto" });
+
+    const res = await post(base, "/api/agent/complete", COMPLETE);
+    expect(res.status).toBe(200);
+    expect(seen).toHaveLength(2); // previously this propagated the 503 with no retry
+  });
+
+  it("does not retry a terminal 401 auth failure", async () => {
+    const { port, seen } = await startUpstream((_p, _b, res) =>
+      replyJson(res, 401, { error: { message: "denied", type: "x" } }),
+    );
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}` });
+
+    const res = await post(base, "/api/agent/complete", COMPLETE);
+    expect(res.status).toBe(401);
+    expect(seen).toHaveLength(1);
+  });
+
+  it("gives up with 502 after exhausting the bounded auto retries", async () => {
+    const { port, seen } = await startUpstream((_p, _b, res) =>
+      replyJson(res, 503, { error: { message: "still down", type: "server_error" } }),
+    );
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}` });
+
+    const res = await post(base, "/api/agent/complete", COMPLETE);
+    expect(res.status).toBe(502);
+    expect(seen).toHaveLength(3); // home + 2 auto retries
+  });
+});
