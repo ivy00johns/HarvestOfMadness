@@ -108,6 +108,7 @@ describe("town generator", () => {
       expect(d.pos.y).toBeGreaterThan(0);
       expect(d.pos.x).toBeLessThan(MAP_WIDTH - 1);
       expect(d.pos.y).toBeLessThan(MAP_HEIGHT - 1);
+      expect(map.tiles[d.pos.y][d.pos.x], `decor at ${d.pos.x},${d.pos.y}`).toBe("grass");
     }
   });
 });

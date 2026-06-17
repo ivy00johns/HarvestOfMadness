@@ -86,8 +86,12 @@ const POND = { x0: 30, y0: 8, x1: 33, y1: 11 };
 // -- back-compat representative exports (existing importers depend on these) --
 export const SHOP_POS: Vec2 = { ...SHOP_TILE };
 export const BED_POS: Vec2 = { ...HOMESTEADS[0].bed }; // Dora's bed
-export const HOUSE_POS: Vec2 = { ...HOMESTEADS[0].door }; // Dora's door
-export const WATER_POS: Vec2 = { x: POND.x0, y: POND.y0 }; // a pond edge
+// Dora's door — this IS the "house" landmark position (a walkable path tile in
+// front of the house), not the building corner.
+export const HOUSE_POS: Vec2 = { ...HOMESTEADS[0].door };
+// A pond corner — intentionally a "water" tile (the "water" landmark is a water
+// tile by contract; see tests/world/world.test.ts), so it is not walkable.
+export const WATER_POS: Vec2 = { x: POND.x0, y: POND.y0 };
 export const FIELD_RECT = { ...HOMESTEADS[0].plot }; // Dora's plot
 
 function stampHomestead(tiles: TileType[][], landmarks: Landmark[], h: HomesteadSpec): void {
@@ -136,7 +140,9 @@ export function generateMap(): MapData {
   landmarks.push({ kind: "water", pos: { ...WATER_POS } });
 
   // Decorative trees on open grass (all-grass 4-neighbourhood), deterministic
-  // (no RNG) and capped so the bigger map reads alive without clutter.
+  // (no RNG) and capped so the bigger map reads alive without clutter. The
+  // (x*7 + y*13) % 17 test is a cheap coprime scatter selecting ~1/17 of
+  // eligible tiles with no clustering.
   const decor: DecorItem[] = [];
   for (let y = 2; y < MAP_HEIGHT - 2 && decor.length < 16; y++) {
     for (let x = 2; x < MAP_WIDTH - 2; x++) {
