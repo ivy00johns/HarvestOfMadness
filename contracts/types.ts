@@ -61,7 +61,7 @@ export interface InventoryEntry {
 }
 
 export interface Landmark {
-  kind: "shop" | "bed" | "water" | "house";
+  kind: "shop" | "bed" | "water" | "house" | "tavern";
   pos: Vec2;
 }
 
@@ -104,8 +104,8 @@ export const STARTING_SEEDS = 5;
  */
 export const PHASE_DURATION_MS = 8_000;
 
-export const MAP_WIDTH = 24;
-export const MAP_HEIGHT = 18;
+export const MAP_WIDTH = 48;
+export const MAP_HEIGHT = 32;
 /** v2: LPC art is 32×32; world logic is tile-indexed and never uses pixels */
 export const TILE_SIZE = 32;
 export const OBSERVATION_RADIUS = 4;

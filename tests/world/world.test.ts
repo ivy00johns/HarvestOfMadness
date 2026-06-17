@@ -10,15 +10,15 @@ const WALL = { x: 0, y: 0 };
 describe("World map + queries", () => {
   it("exposes the contract dimensions", () => {
     const w = new World();
-    expect(w.width).toBe(24);
-    expect(w.height).toBe(18);
+    expect(w.width).toBe(48);
+    expect(w.height).toBe(32);
   });
 
   it("getTile returns null out of bounds", () => {
     const w = new World();
     expect(w.getTile(-1, 0)).toBeNull();
-    expect(w.getTile(24, 0)).toBeNull();
-    expect(w.getTile(0, 18)).toBeNull();
+    expect(w.getTile(48, 0)).toBeNull();
+    expect(w.getTile(0, 32)).toBeNull();
     expect(w.getTile(5, 5)).not.toBeNull();
   });
 
