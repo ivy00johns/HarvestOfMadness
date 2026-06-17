@@ -12,7 +12,6 @@
  * over computeHud at the design size) so the pure layout unit tests keep
  * asserting the same geometry.
  */
-import { MAP_HEIGHT, MAP_WIDTH, TILE_SIZE } from "@contracts/types";
 
 // -- contract rule 14: every HUD font ≥ 12 logical px ------------------------
 export const FONT_SIZE_SMALL = 12;
@@ -212,8 +211,11 @@ export const REG_HUD = "hudPanelRect";
 // Legacy 768x576 design-space exports (retained for the pure layout unit tests
 // and any code still importing them). These mirror computeHud at design size.
 // ---------------------------------------------------------------------------
-export const HUD_W = MAP_WIDTH * TILE_SIZE; // 768
-export const HUD_H = MAP_HEIGHT * TILE_SIZE; // 576
+// Legacy fixed design size (768×576) — the v1 logical frame the pure layout
+// unit tests assert. The live HUD docks to the viewport (computeHud), so this
+// design size is independent of the map dimensions.
+export const HUD_W = 768;
+export const HUD_H = 576;
 
 const DESIGN = computeHud(HUD_W, HUD_H);
 
