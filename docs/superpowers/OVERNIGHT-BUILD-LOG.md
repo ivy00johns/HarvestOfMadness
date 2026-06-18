@@ -1,0 +1,41 @@
+# Overnight Autonomous Build Log
+
+**Started:** 2026-06-18 (user asleep; autonomous directive)
+**Worktree:** `/Users/johns/Projects/HOM-world-dressing` — branch `feat/world-dressing`
+**Node:** `~/.nvm/versions/node/v22.22.3/bin` (nvm functions shadow binaries — always `unfunction node npm npx nvm` + absolute paths).
+
+## The Goal (verbatim)
+Get to Smallville-level: **city size, character density, structure details, item density**. If a new asset is needed, fetch it via Playwright (free CC-BY-SA/CC0, attribute in CREDITS). Build: **diaries, jobs, building capabilities (Minecraft-ish controls), death/murder/suicide**, and **revamp the UI** (less "Game Boy Advanced", more readable/usable). "Continue dreaming, planning, and building."
+
+## Foundation decisions
+- **Governance session is DONE** (merged to `main` via PR #2). Isolation constraint lifted.
+- **Merged `main` into `feat/world-dressing`** — unified base = governance v1 + functional-locations + my 96×64 map expansion. All green (1023 tests).
+- Visual target: Image #3 (current, sparse) → Image #4 (Smallville, lush/dense/organic).
+- Strategy: I (main loop) orchestrate increments; each = implement (TDD on pure logic) → verify suite MYSELF → visual check (periodic) → commit → update this log. Use ultracode workflows for substantial increments.
+
+## Roadmap & status
+
+### Wave 1 — Visual richness (the core "Smallville look")  [item/structure/ground density]
+- [x] City size → 96×64 (12 homes + 14 reserve lots), 1023 tests green.
+- [ ] 1a. Terrain variety + grass↔path/water/soil autotile transitions
+- [ ] 1b. Organic dirt paths (replace rigid grey cobble)
+- [ ] 1c. Ground scatter — flowers/bushes/tallgrass/rocks (ITEM DENSITY; may need Playwright asset)
+- [ ] 1d. Foliage density — clustered trees / forest edges
+- [ ] 1e. Denser interiors — 8–12 furniture pieces/building (STRUCTURE DETAILS)
+- [ ] 1f. Building structure — roof-edge + wall polish
+
+### Wave 2 — Character density
+- [ ] 2a. Activate reserve lots → ~24 personas/agents (map + personas.ts)
+- [ ] 2b. More character sprite variety
+
+### Wave 3 — New agent systems
+- [ ] 3a. Diaries (per-agent daily journal + memory + UI panel)
+- [ ] 3b. Jobs (formalized occupations/roles)
+- [ ] 3c. Death / murder / suicide (mortality + events)
+
+### Wave 4 — Big systems
+- [ ] 4a. UI revamp (readability; less GBA)
+- [ ] 4b. Building capabilities (Minecraft-ish place/remove controls)
+
+## Log
+- **01:1x** Merged main, verified 1023 green @ 96×64. Created this log. Starting Wave 1a.
