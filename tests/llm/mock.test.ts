@@ -372,6 +372,68 @@ describe("mockRouter — ladder precedence", () => {
   });
 });
 
+describe("mockRouter — Living Homes #2 stash before sleep", () => {
+  it("DEPOSITs the first non-seed good when on the bed with DEPOSIT available", async () => {
+    const obs = makeObs({
+      time: { day: 2, phase: "night" },
+      self: {
+        pos: { ...BED }, // on the bed tile
+        inventory: [
+          { itemId: "seed:parsnip", qty: 2 }, // seeds are NEVER deposited
+          { itemId: "crop:parsnip", qty: 4 },
+        ],
+      },
+      availableActions: [...ALL_ACTIONS, "DEPOSIT"],
+    });
+    const res = await decideFor(obs);
+    expect(res.parsed?.action).toBe("DEPOSIT");
+    // First NON-seed entry, at its full qty (deterministic inventory order).
+    expect(res.parsed?.target).toEqual({ itemId: "crop:parsnip", qty: 4 });
+  });
+
+  it("is deterministic — same observation twice yields the same DEPOSIT", async () => {
+    const obs = makeObs({
+      time: { day: 2, phase: "night" },
+      self: {
+        pos: { ...BED },
+        inventory: [{ itemId: "crop:potato", qty: 1 }],
+      },
+      availableActions: [...ALL_ACTIONS, "DEPOSIT"],
+    });
+    const a = await decideFor(obs);
+    const b = await decideFor(obs);
+    expect(a).toEqual(b);
+    expect(a.parsed?.action).toBe("DEPOSIT");
+    expect(a.parsed?.target).toEqual({ itemId: "crop:potato", qty: 1 });
+  });
+
+  it("does NOT deposit seeds — falls through to SLEEP so the day still advances", async () => {
+    const obs = makeObs({
+      time: { day: 2, phase: "night" },
+      self: {
+        pos: { ...BED },
+        inventory: [{ itemId: "seed:parsnip", qty: 3 }], // only seeds
+      },
+      availableActions: [...ALL_ACTIONS, "DEPOSIT"],
+    });
+    const res = await decideFor(obs);
+    expect(res.parsed?.action).toBe("SLEEP");
+  });
+
+  it("does NOT deposit when DEPOSIT is not in availableActions (off the bed)", async () => {
+    const obs = makeObs({
+      time: { day: 2, phase: "night" },
+      self: {
+        pos: { ...BED },
+        inventory: [{ itemId: "crop:parsnip", qty: 4 }],
+      },
+      availableActions: [...ALL_ACTIONS], // no DEPOSIT offered
+    });
+    const res = await decideFor(obs);
+    expect(res.parsed?.action).not.toBe("DEPOSIT");
+  });
+});
+
 describe("mockRouter — persona flavor (deterministic, after the ladder)", () => {
   it("social personas sometimes chat instead of idling, never preempting farm work", async () => {
     const actions: string[] = [];

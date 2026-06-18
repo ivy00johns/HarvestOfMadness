@@ -115,6 +115,8 @@ export const ENERGY_COSTS: Record<ActionType, number> = {
   WAIT: 0,
   USE_OBJECT: 0,
   VOTE: 0, // Wave 4c — town-wide governance vote; free, no adjacency (like EMOTE)
+  DEPOSIT: 0, // Living Homes #2 — logistics, free (like BUY/SELL/USE_OBJECT)
+  WITHDRAW: 0, // Living Homes #2 — logistics, free (like BUY/SELL/USE_OBJECT)
 };
 export const STARTING_GOLD = 200;
 /** starting inventory: 5× "seed:parsnip" */
@@ -190,6 +192,12 @@ export interface Observation {
     energy: number;
     gold: number;
     inventory: InventoryEntry[];
+    /**
+     * Living Homes #2 — per-agent home storage snapshot, surfaced so the live
+     * LLM/mock can see what is stashed at home (DEPOSIT/WITHDRAW target it).
+     * Additive + optional; mirrors `inventory` (copy, never the live array).
+     */
+    homeStorage?: InventoryEntry[];
     /**
      * Standing goal (type unchanged: string | null). Wave 3a makes it dynamic:
      * synthesized from intrinsic drives (src/agents/Goals.ts) and fed to the
@@ -268,7 +276,9 @@ export type ActionType =
   | "SLEEP"
   | "WAIT"
   | "USE_OBJECT" // v3 — target {objectId: string}; adjacency to the object required
-  | "VOTE"; // Wave 4c — target {proposalId: string; support: boolean}; town-wide governance vote, no adjacency
+  | "VOTE" // Wave 4c — target {proposalId: string; support: boolean}; town-wide governance vote, no adjacency
+  | "DEPOSIT" // Living Homes #2 — target {itemId, qty}; must stand on your bed tile; moves goods from inventory into home storage
+  | "WITHDRAW"; // Living Homes #2 — target {itemId, qty}; must stand on your bed tile; moves goods from home storage back into inventory
 
 /** v2 — surfaced on speech bubbles and emotes */
 export type Emotion = "neutral" | "happy" | "annoyed" | "sad" | "excited";

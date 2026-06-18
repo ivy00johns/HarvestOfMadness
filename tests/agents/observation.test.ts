@@ -52,10 +52,20 @@ describe("availableActions honesty", () => {
     a.energy = 0;
     expect(avail(a)).toEqual(["MOVE_TO", "WAIT"]);
 
-    const sleeper = makeAgent({ ...BED_POS });
-    sleeper.energy = 0;
+    // Living Homes #2 — DEPOSIT is bed-tile + held-goods gated, NOT energy
+    // gated, so an exhausted sleeper holding its starting seeds is also offered
+    // DEPOSIT (it can still stash goods at home at 0 energy). Empty its
+    // inventory to assert the pure energy-0 floor (MOVE_TO/SLEEP/WAIT).
+    const bareSleeper = makeAgent({ ...BED_POS });
+    bareSleeper.energy = 0;
+    bareSleeper.inventory = [];
     toNight();
-    expect(avail(sleeper)).toEqual(["MOVE_TO", "SLEEP", "WAIT"]);
+    expect(avail(bareSleeper)).toEqual(["MOVE_TO", "SLEEP", "WAIT"]);
+
+    // With goods in pocket on the bed, DEPOSIT joins the floor set.
+    const sleeperWithGoods = makeAgent({ ...BED_POS });
+    sleeperWithGoods.energy = 0;
+    expect(avail(sleeperWithGoods)).toEqual(["MOVE_TO", "DEPOSIT", "SLEEP", "WAIT"]);
   });
 
   it("TILL only with an adjacent tillable tile and energy", () => {
@@ -119,6 +129,31 @@ describe("availableActions honesty", () => {
     expect(avail(a, [near, far])).toContain("TALK_TO");
   });
 
+  it("DEPOSIT offered on the bed tile when inventory is non-empty (Living Homes #2)", () => {
+    const onBed = makeAgent({ ...BED_POS }); // starts with 5 seeds
+    expect(avail(onBed)).toContain("DEPOSIT");
+
+    onBed.inventory = [];
+    expect(avail(onBed)).not.toContain("DEPOSIT");
+
+    // Off the bed with goods in pocket: never offered (bed-tile gated).
+    const offBed = makeAgent({ ...FARM_STAND });
+    expect(avail(offBed)).not.toContain("DEPOSIT");
+  });
+
+  it("WITHDRAW offered on the bed tile when home storage is non-empty (Living Homes #2)", () => {
+    const onBed = makeAgent({ ...BED_POS });
+    expect(avail(onBed)).not.toContain("WITHDRAW"); // storage empty
+
+    onBed.addToStorage("crop:parsnip", 2);
+    expect(avail(onBed)).toContain("WITHDRAW");
+
+    // Off the bed with stored goods: never offered (bed-tile gated).
+    const offBed = makeAgent({ ...FARM_STAND });
+    offBed.addToStorage("crop:parsnip", 2);
+    expect(avail(offBed)).not.toContain("WITHDRAW");
+  });
+
   it("SLEEP only on the bed tile at night", () => {
     const onBed = makeAgent({ ...BED_POS });
     expect(avail(onBed)).not.toContain("SLEEP"); // morning
@@ -169,6 +204,20 @@ describe("buildObservation", () => {
     expect(obs.economy.buys["seed:parsnip"]).toBe(20);
     expect(obs.economy.sells["crop:parsnip"]).toBe(35);
     expect(obs.time).toEqual({ day: 1, phase: "morning" });
+  });
+
+  it("surfaces self.homeStorage (Living Homes #2)", () => {
+    const a = makeAgent({ x: 8, y: 18 });
+    // Empty by default — surfaced as an empty array (copy, like inventory).
+    const empty = buildObservation(a, getWorld(), []);
+    expect(empty.self.homeStorage).toEqual([]);
+
+    a.addToStorage("crop:parsnip", 3);
+    const obs = buildObservation(a, getWorld(), []);
+    expect(obs.self.homeStorage).toEqual([{ itemId: "crop:parsnip", qty: 3 }]);
+    // Defensive copy: mutating the observation must not touch the agent.
+    obs.self.homeStorage![0].qty = 99;
+    expect(a.storageCount("crop:parsnip")).toBe(3);
   });
 
   it("includes crop state on visible tiles", () => {

@@ -150,10 +150,11 @@ Four capabilities, smallest-to-largest:
    12 + reserve lots on 140×100). They need to be **larger** — enough for a bed,
    storage, and chosen furniture, with room to read as a real home. (The reserve
    stretches + countryside give the spatial budget.)
-2. **Personal storage.** Agents already carry an `inventory`; add a **home storage**
-   (a chest/container in each home) so **bought/harvested goods have a place to
-   go**. Needs: a storage object per home + a deposit/withdraw path + per-agent
-   home-store state. This is the concrete near-term piece — the rest builds on it.
+2. **Personal storage.** ✅ **SHIPPED** (`acb9b95`). Agents carry an `inventory` and
+   now also a per-agent **home storage**: standing on their bed tile they
+   **DEPOSIT/WITHDRAW** goods (bed-tile anchored, no new world object/render/grid
+   change — the cabinet sprite is the visual). Mock agents stash unsold crops
+   before bed. This was the concrete near-term piece — Phase D (3)+(4) build on it.
 3. **Agent-chosen furnishings.** Instead of one static stamped interior, agents
    **acquire and place furniture** they pick from our large asset library
    (per-home furniture list → render). The library variety exists *for this*.
@@ -229,11 +230,11 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 - [x] A2. Civic hub `COMMONS` (5 buildings straddling the spine + well/board). ✓ `9961b4b`
 - [x] A3. 12 homesteads (4 hamlets × 3), TDD-converged against map + party tests. ✓ `9961b4b` — personas 10→12 (clem, moss); all 12 doors ≤96 A* to tavern.
 - [x] A6b. **Camera fit-to-map** — zoom-out floor now frames the whole town (no clipped corners). ✓ `c3a7044`, visually verified.
-- [ ] A4. 14 reserve lots + new `reserve-lots.test.ts`; document future-hamlet ground.
-- [~] A5. **Bigger multi-room homes (8×8/9×8) + per-home storage cabinet + ~14–16-prop interiors + natural copse decor** (killed the diagonal tree-rows). ✓ `df10580` — visually verified. _Remaining: park/pond relocation east (still NW-center) + the functional storage **deposit** mechanic (Phase D-adjacent)._
+- [x] A4. 14 reserve lots + new `reserve-lots.test.ts`; document future-hamlet ground. ✓ `3a9fcc2` — lots stamp nothing (pure capacity); strict validity test; 3 adversarial critics + 1079 green.
+- [x] A5. **Bigger multi-room homes (8×8/9×8) + per-home storage cabinet + ~14–16-prop interiors + natural copse decor** (killed the diagonal tree-rows). ✓ `df10580` — visually verified. **Park/pond relocated east** (4-wide pond kept; pathfinding invariant unchanged) ✓ `3a9fcc2`. **Functional storage DEPOSIT/WITHDRAW** (bed-tile anchored; agents stash unsold crops before bed) ✓ `acb9b95` — 1097 green, 3 adversarial critics.
 - [x] A6. Reach budget 40→100 **floor only** — shipped inside A0 (`7fc770c`). _Distance-weighted attendance deferred to Phase C._
 
-**A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Remaining in Phase A: A4 (reserve lots) + A5 (bigger homes + storage + park move + natural decor + interiors).**
+**A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Phase A is COMPLETE** (A0–A6): 140×100 world, roads, civic hub, 12 homesteads, camera fit, 14 reserve lots, bigger homes + interiors, east park/pond, natural decor, and functional home storage. Next: **Phase B (SpaceCon HUD)** — built against this finished world.
 
 **Phase B — UI overhaul (SpaceCon HUD)** — _design finalized in [`docs/design_handoff_sim_hud/`](./design_handoff_sim_hud/); builds on the 140×100 world_
 - [ ] B1. **Gathering legibility (world side only):** spread agent **bodies**

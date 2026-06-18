@@ -19,6 +19,8 @@ const ACTION_TYPES: readonly ActionType[] = [
   "SLEEP",
   "WAIT",
   "USE_OBJECT",
+  "DEPOSIT",
+  "WITHDRAW",
 ];
 
 const EMOTIONS: readonly Emotion[] = ["neutral", "happy", "annoyed", "sad", "excited"];
@@ -290,6 +292,8 @@ function validateTarget(
       return isVec2(target) ? { x: target.x, y: target.y } : false;
     case "BUY":
     case "SELL":
+    case "DEPOSIT":
+    case "WITHDRAW":
       return isItemTarget(target) ? { itemId: target.itemId, qty: target.qty } : false;
     case "TALK_TO":
       return isAgentTarget(target) ? { agentName: target.agentName } : false;
