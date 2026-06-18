@@ -163,6 +163,53 @@ export const HOMESTEAD_DOORS: Record<string, Vec2> = Object.fromEntries(
   HOMESTEADS.map((h) => [h.id, { ...h.door }]),
 );
 
+/**
+ * A reserved, road-adjacent grass footprint for a FUTURE homestead. Stamps no
+ * tiles, adds no landmark, binds no persona — pure capacity the agents layer
+ * can later activate (add a persona + promote to HOMESTEADS) with no re-survey.
+ *
+ * The lots live on the INNER sides of the two residential roads (the grass band
+ * between each road and the central spine), where there is ample open grass: the
+ * inner-north lots' doors face N onto the y=22 road, the inner-south lots' doors
+ * face S onto the y=50 road. Each footprint sits in a gap between the vertical
+ * trunks and clear of the downtown core + park, so every footprint+plot tile is
+ * grass and each door's exterior neighbour is already a `path` (drop-in ready).
+ */
+export interface ReserveLot {
+  id: string;
+  house: { x0: number; y0: number; x1: number; y1: number };
+  bed: Vec2;
+  door: Vec2;
+  doorSide: DoorSide;
+  plot: { x0: number; y0: number; x1: number; y1: number };
+}
+
+export const RESERVE_LOTS: ReserveLot[] = [
+  // -- inner-north strip: house top row y=23, door faces N onto the y=22 road;
+  //    plot sits directly below the house (Chebyshev ≤ 4 of the door). Houses
+  //    nestle in the gaps between the vertical trunks (x=8,16,24,…) and stay in
+  //    the central band so each lot's door is ≤ 40 A* tiles of the tavern
+  //    (drop-in ready, same reachability bound as the occupied homesteads). ----
+  { id: "lot_n1", house: { x0: 26, y0: 23, x1: 29, y1: 26 }, bed: { x: 27, y: 24 }, door: { x: 27, y: 23 }, doorSide: "N", plot: { x0: 26, y0: 27, x1: 28, y1: 28 } },
+  { id: "lot_n2", house: { x0: 34, y0: 23, x1: 37, y1: 26 }, bed: { x: 35, y: 24 }, door: { x: 35, y: 23 }, doorSide: "N", plot: { x0: 34, y0: 27, x1: 36, y1: 28 } },
+  { id: "lot_n3", house: { x0: 41, y0: 23, x1: 44, y1: 26 }, bed: { x: 42, y: 24 }, door: { x: 42, y: 23 }, doorSide: "N", plot: { x0: 41, y0: 27, x1: 43, y1: 28 } },
+  { id: "lot_n4", house: { x0: 49, y0: 23, x1: 52, y1: 26 }, bed: { x: 50, y: 24 }, door: { x: 50, y: 23 }, doorSide: "N", plot: { x0: 49, y0: 27, x1: 51, y1: 28 } },
+  { id: "lot_n5", house: { x0: 58, y0: 23, x1: 61, y1: 26 }, bed: { x: 59, y: 24 }, door: { x: 59, y: 23 }, doorSide: "N", plot: { x0: 58, y0: 27, x1: 60, y1: 28 } },
+  { id: "lot_n6", house: { x0: 66, y0: 23, x1: 69, y1: 26 }, bed: { x: 67, y: 24 }, door: { x: 67, y: 23 }, doorSide: "N", plot: { x0: 66, y0: 27, x1: 68, y1: 28 } },
+  // -- inner-south strip: house bottom row y=49, door faces S onto the y=50
+  //    road; plot sits directly above the house. -----------------------------
+  { id: "lot_s1", house: { x0: 26, y0: 46, x1: 29, y1: 49 }, bed: { x: 27, y: 48 }, door: { x: 27, y: 49 }, doorSide: "S", plot: { x0: 26, y0: 44, x1: 28, y1: 45 } },
+  { id: "lot_s2", house: { x0: 34, y0: 46, x1: 37, y1: 49 }, bed: { x: 35, y: 48 }, door: { x: 35, y: 49 }, doorSide: "S", plot: { x0: 34, y0: 44, x1: 36, y1: 45 } },
+  { id: "lot_s3", house: { x0: 41, y0: 46, x1: 44, y1: 49 }, bed: { x: 42, y: 48 }, door: { x: 42, y: 49 }, doorSide: "S", plot: { x0: 41, y0: 44, x1: 43, y1: 45 } },
+  { id: "lot_s4", house: { x0: 49, y0: 46, x1: 52, y1: 49 }, bed: { x: 50, y: 48 }, door: { x: 50, y: 49 }, doorSide: "S", plot: { x0: 49, y0: 44, x1: 51, y1: 45 } },
+  { id: "lot_s5", house: { x0: 58, y0: 46, x1: 61, y1: 49 }, bed: { x: 59, y: 48 }, door: { x: 59, y: 49 }, doorSide: "S", plot: { x0: 58, y0: 44, x1: 60, y1: 45 } },
+  { id: "lot_s6", house: { x0: 66, y0: 46, x1: 69, y1: 49 }, bed: { x: 67, y: 48 }, door: { x: 67, y: 49 }, doorSide: "S", plot: { x0: 66, y0: 44, x1: 68, y1: 45 } },
+  // -- spine-adjacent lots: door faces the central spine (y=36). Houses sit just
+  //    below the spine in clear grass between the trunks; plot below the house. -
+  { id: "lot_p1", house: { x0: 18, y0: 37, x1: 21, y1: 40 }, bed: { x: 19, y: 39 }, door: { x: 19, y: 37 }, doorSide: "N", plot: { x0: 18, y0: 41, x1: 20, y1: 42 } },
+  { id: "lot_p2", house: { x0: 66, y0: 37, x1: 69, y1: 40 }, bed: { x: 67, y: 39 }, door: { x: 67, y: 37 }, doorSide: "N", plot: { x0: 66, y0: 41, x1: 68, y1: 42 } },
+];
+
 // -- road network ------------------------------------------------------------
 // A hand-authored set of road SEGMENTS (each a 1-wide horizontal or vertical
 // run, inclusive endpoints) forming a downtown loop around the plaza, the main
