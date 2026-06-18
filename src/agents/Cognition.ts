@@ -45,6 +45,8 @@ import { RelationshipStoreImpl } from "./Relationships";
 import { EventBoard } from "./EventBoard";
 import type { ExecutorCognitionHooks } from "./ActionExecutor";
 import { ConversationSystem } from "./Conversation";
+import { NeedsSystem } from "./Needs";
+import { GoalsSystem } from "./Goals";
 
 /** Memory texts injected into prompts are truncated to this many chars. */
 export const MEMORY_TEXT_MAX_CHARS = 200;
@@ -110,6 +112,8 @@ export interface CognitionMetrics {
   reflectionCalls: number;
   relationshipCalls: number;
   importanceCalls: number;
+  /** Wave 3a — live smart-tier goal-synthesis calls (~1/agent/day). */
+  goalCalls: number;
 }
 
 export class CognitionSystem implements ExecutorCognitionHooks {
@@ -125,7 +129,12 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     reflectionCalls: 0,
     relationshipCalls: 0,
     importanceCalls: 0,
+    goalCalls: 0,
   };
+  /** Wave 3a — intrinsic drives (PIANO keystone): event-sourced, no global tick. */
+  readonly needs = new NeedsSystem();
+  /** Wave 3a — needs-driven standing-goal synthesis (cached, cadence-gated). */
+  readonly goals: GoalsSystem;
   /** v3 — back-and-forth conversation reply generator */
   private conversation!: ConversationSystem;
 
@@ -189,6 +198,19 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       write: (agentName, text, importance) =>
         this.write(agentName, "plan", text, importance),
       onLiveCall: () => this.metrics.planCalls++,
+      // Wave 3a — the synthesized standing goal (cache first, then the agent's
+      // transient action.goal) feeds the plan prompt as an INPUT only.
+      goalOf: (name) => this.goals.current(name) ?? this.agents.get(name)?.goal ?? null,
+    });
+
+    this.goals = new GoalsSystem({
+      live: this.live,
+      router: this.router,
+      now: this.now,
+      persona: (name) => this.personaOf(name),
+      needs: (name) => this.needs.state(name),
+      topMemories: (name) => this.topMemoryTexts(name),
+      onLiveCall: () => this.metrics.goalCalls++,
     });
 
     this.relationships = new RelationshipStoreImpl({
@@ -233,6 +255,20 @@ export class CognitionSystem implements ExecutorCognitionHooks {
 
   private personaOf(name: string): string {
     return this.agents.get(name)?.persona.description ?? "a farmer";
+  }
+
+  /** Top few memory texts (highest importance) for the goal prompt. Defensive. */
+  private topMemoryTexts(name: string, k = 5): string[] {
+    try {
+      return this.memory
+        .all(name)
+        .slice()
+        .sort((a, b) => b.importance - a.importance)
+        .slice(0, k)
+        .map((m) => truncateText(m.text, MEMORY_TEXT_MAX_CHARS));
+    } catch {
+      return [];
+    }
   }
 
   // -- v3 event seeding + diffusion ------------------------------------------
@@ -340,6 +376,13 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     action: AgentAction,
     result: { ok: boolean; reason?: string },
   ): void {
+    // Wave 3a — refill intrinsic drives on the outcome (rule-10 try-wrapped,
+    // runs even for GIVE_GIFT-ok so social drive is satisfied by gifting).
+    try {
+      this.needs.onOutcome(agent, action, result);
+    } catch {
+      /* defensive — needs bookkeeping must never block a decision */
+    }
     if (action.action === "GIVE_GIFT" && result.ok) return;
     const text = outcomeText(action, result);
     const hint = result.ok
@@ -585,7 +628,25 @@ export class CognitionSystem implements ExecutorCognitionHooks {
   /** Pre-warm every registered agent's plan (day_advanced / bootstrap). */
   onDayAdvanced(): void {
     for (const agent of this.agents.values()) {
-      void this.ensurePlan(agent).catch(() => {});
+      // Wave 3a — morning cadence: recompute derive-on-read drives, apply the
+      // daily regen pulse, force a goal refresh, THEN pre-warm the plan so the
+      // synthesized goal lands as a plan INPUT. Each step is fire-and-forget
+      // and try-wrapped; a failure degrades to the plain plan warm-up.
+      try {
+        this.needs.recomputeFromState(agent);
+        this.needs.onDayAdvanced(agent.name);
+      } catch {
+        /* defensive */
+      }
+      void this.goals
+        .refresh(agent.name, { force: true })
+        .then((g) => {
+          agent.goal = g;
+        })
+        .catch(() => {})
+        .finally(() => {
+          void this.ensurePlan(agent).catch(() => {});
+        });
     }
   }
 
@@ -610,6 +671,26 @@ export class CognitionSystem implements ExecutorCognitionHooks {
           affinity: r.affinity,
         }));
       }
+
+      // Wave 3a — drives + standing goal. recomputeFromState refreshes the
+      // derive-on-read energy/wealth drives; the vector rides the obs + card.
+      // The goal refresh is fire-and-forget (cadence-gated; never blocks the
+      // decision), and the cached goal is read synchronously so the prompt
+      // always carries the freshest already-resolved goal. The transient LLM
+      // action.goal still wins for its own turn.
+      this.needs.recomputeFromState(agent);
+      const need = this.needs.state(agent.name);
+      obs.self.needs = need;
+      agent.needs = need;
+      void this.goals
+        .refresh(agent.name)
+        .then((g) => {
+          agent.goal = g;
+          obs.self.goal = g;
+        })
+        .catch(() => {});
+      const cachedGoal = this.goals.current(agent.name);
+      if (cachedGoal) obs.self.goal = cachedGoal;
 
       const query = step?.goal ?? DEFAULT_RETRIEVAL_QUERY;
       const memories = await this.memory.retrieve(agent.name, query);

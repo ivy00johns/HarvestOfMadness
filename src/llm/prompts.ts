@@ -16,6 +16,7 @@ import {
   ENERGY_COSTS,
   STARTING_GOLD,
   type Landmark,
+  type NeedState,
   type Observation,
 } from "@contracts/types";
 
@@ -245,6 +246,7 @@ export function buildDailyPlanPrompt(
   day: number,
   reflectionTexts: string[],
   landmarks: Landmark[],
+  goal?: string | null,
 ): string {
   const reflections =
     reflectionTexts.length > 0
@@ -254,12 +256,17 @@ export function buildDailyPlanPrompt(
     landmarks.length > 0
       ? `LANDMARKS:\n${landmarks.map((l) => `- ${l.kind} at (${l.pos.x},${l.pos.y})`).join("\n")}\n\n`
       : "";
+  // Wave 3a — goal conditioning: when a synthesized standing goal is present,
+  // inject it so the plan bends toward it. Gated: omit/null → byte-identical
+  // to the v2 prompt (prompts-v2 buildDailyPlanPrompt tests stay green).
+  const goalBlock =
+    goal && goal.trim().length > 0 ? `YOUR CURRENT GOAL: ${goal.trim()}\n\n` : "";
   return `You are a farmer in a tiny farming world. It is the morning of day ${day}.
 
 PERSONA:
 ${persona}
 
-${reflections}${places}Plan your day. Produce exactly 4 steps, one for each phase in this order: morning, afternoon, evening, night. Each step has a short concrete goal. The plan should feel VARIED and persona-driven — mix farm work with social and leisure activities:
+${goalBlock}${reflections}${places}Plan your day. Produce exactly 4 steps, one for each phase in this order: morning, afternoon, evening, night. Each step has a short concrete goal. The plan should feel VARIED and persona-driven — mix farm work with social and leisure activities:
 
 - A social persona should find time at the tavern or chatting with farmers.
 - A dreamy or wandering persona should stroll by the pond or wander the paths.
@@ -271,4 +278,48 @@ ${reflections}${places}Plan your day. Produce exactly 4 steps, one for each phas
 "targetLandmark" is optional and must be one of "shop", "bed", "water", "house", "tavern" when used.
 
 Respond with ONLY one JSON object shaped {"steps":[{"phase":"morning"|"afternoon"|"evening"|"night","goal":string,"targetLandmark":string?}]} with exactly 4 steps — no prose, no fences.`;
+}
+
+// ---------------------------------------------------------------------------
+// Wave 3a — needs-driven goal synthesis (smart tier). PLAIN TEXT, one line.
+// ---------------------------------------------------------------------------
+
+/** Drive keys in display order; the higher the value the more pressing. */
+const GOAL_DRIVE_KEYS: (keyof NeedState)[] = [
+  "energy",
+  "wealth",
+  "social",
+  "novelty",
+  "purpose",
+];
+
+/**
+ * Standing-goal synthesis (smart tier): turn the agent's intrinsic drives +
+ * recent memories into ONE short standing goal. Output is PLAIN TEXT — a
+ * single sentence, no JSON, no quotes, no fences (consumed by GoalsSystem,
+ * which sanitizes to one line ≤120 chars and falls back to mockGoal on
+ * error/empty/over-long). Drives are listed strongest-first so the model
+ * leads with the most pressing need.
+ */
+export function buildGoalPrompt(
+  persona: string,
+  needs: NeedState,
+  topMemories: string[],
+): string {
+  const drives = GOAL_DRIVE_KEYS.slice()
+    .sort((a, b) => (needs?.[b] ?? 0) - (needs?.[a] ?? 0))
+    .map((k) => `- ${k}: ${(needs?.[k] ?? 0).toFixed(2)}`)
+    .join("\n");
+  const memories =
+    topMemories.length > 0
+      ? `\nRECENT MEMORIES:\n${topMemories.map((m) => `- ${m}`).join("\n")}\n`
+      : "";
+  return `You are a farmer. Persona: ${persona}
+
+YOUR INTRINSIC DRIVES (0 = satisfied, 1 = most pressing), strongest first:
+${drives}
+${memories}
+Given the drives and memories above, what is the single standing goal that should guide your day right now? Lead with your most pressing drive.
+
+Respond with ONLY one sentence (≤ 15 words) as plain text — no quotes, no JSON, no fences.`;
 }

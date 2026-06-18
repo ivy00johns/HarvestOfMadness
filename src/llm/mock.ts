@@ -36,6 +36,7 @@ import type {
   AgentAction,
   Landmark,
   LlmResponse,
+  NeedState,
   Observation,
   Phase,
   PlanStep,
@@ -205,6 +206,20 @@ function normalizeObservation(raw: unknown): Observation | null {
     inventory,
     goal: typeof self.goal === "string" ? self.goal : null,
   };
+  // Wave 3a — defensive needs round-trip: parse all 5 numerics, clamp to
+  // [0,1], and attach only when ALL five are present & finite.
+  const needsRec = asRecord(self.needs);
+  const needKeys = ["energy", "wealth", "social", "novelty", "purpose"] as const;
+  if (needKeys.every((k) => typeof needsRec[k] === "number" && Number.isFinite(needsRec[k]))) {
+    const clampNeed = (v: number): number => (v < 0 ? 0 : v > 1 ? 1 : v);
+    selfOut.needs = {
+      energy: clampNeed(needsRec.energy as number),
+      wealth: clampNeed(needsRec.wealth as number),
+      social: clampNeed(needsRec.social as number),
+      novelty: clampNeed(needsRec.novelty as number),
+      purpose: clampNeed(needsRec.purpose as number),
+    };
+  }
   // v4 — preserve currentPlanStep for plan-intent follower in decide()
   if (typeof self.currentPlanStep === "string") {
     selfOut.currentPlanStep = self.currentPlanStep;
@@ -805,6 +820,7 @@ export function mockReflection(
 export function mockDailyPlan(
   persona: string,
   day: number,
+  goal?: string,
 ): { steps: PlanStep[]; rawText: string } {
   const p = (persona ?? "").toLowerCase();
   const social = p.includes("social");
@@ -870,6 +886,49 @@ export function mockDailyPlan(
     eveningLandmark = "shop";
   }
 
+  // Wave 3a — goal conditioning: a synthesized standing goal re-weights the
+  // afternoon/evening branches by keyword. Morning stays farm-ish and night
+  // ALWAYS ends at the bed (preserves planner.test 4-step + night-at-bed). The
+  // goal NEVER adds/removes steps. Fully gated: when `goal` is omitted the
+  // output below is byte-identical to the v2 mock plan (mock-daily/mock-v2).
+  if (goal) {
+    const g = goal.toLowerCase();
+    if (g.includes("tavern") || g.includes("sociali") || g.includes("chat") || g.includes("gather")) {
+      afternoonGoal = "socialize at the tavern and catch up with the other farmers";
+      afternoonLandmark = "tavern";
+      eveningGoal = "gather at the tavern — share news and enjoy the company";
+      eveningLandmark = "tavern";
+    } else if (g.includes("market") || g.includes("sell") || g.includes("haggle") || g.includes("price")) {
+      afternoonGoal = "browse the market and check prices before deciding what to grow";
+      afternoonLandmark = "shop";
+      eveningGoal = "haggle at the market, sell harvested crops at the best price";
+      eveningLandmark = "shop";
+    } else if (g.includes("wander") || g.includes("stroll") || g.includes("explore") || g.includes("novel")) {
+      // Novelty is DISPERSIVE — wander/stroll the paths and pond, never a
+      // tavern convergence (keeps the party kill-switch meaningful: only a
+      // seeded event, not a restless drive, pulls the whole town together).
+      afternoonGoal = "wander across town and explore the quiet paths";
+      afternoonLandmark = undefined;
+      eveningGoal = "take a long evening stroll by the pond before heading home";
+      eveningLandmark = "water";
+    } else if (g.includes("pond") || g.includes("relax") || g.includes("reflect")) {
+      afternoonGoal = "relax by the pond and reflect on the morning's work";
+      afternoonLandmark = "water";
+      eveningGoal = "sit by the pond and watch the stars come out";
+      eveningLandmark = "water";
+    } else if (g.includes("rest") || g.includes("sleep") || g.includes("home")) {
+      afternoonGoal = "rest at home and conserve energy for the work ahead";
+      afternoonLandmark = "bed";
+      eveningGoal = "head home early to rest before nightfall";
+      eveningLandmark = "bed";
+    } else if (g.includes("farm") || g.includes("till") || g.includes("plant") || g.includes("water") || g.includes("crop")) {
+      afternoonGoal = "tend the crops and till new ground for the next planting";
+      afternoonLandmark = undefined;
+      eveningGoal = "sell harvested crops and restock seeds at the shop";
+      eveningLandmark = "shop";
+    }
+  }
+
   const steps: PlanStep[] = [
     {
       phase: "morning",
@@ -904,4 +963,70 @@ export function mockDailyPlan(
       ),
     }),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Wave 3a — mock goal synthesis (deterministic, $0). GoalsSystem uses this
+// whenever the live smart-tier goal call is unavailable. Pure argmax over the
+// drive vector (matching Needs.dominant tie-break order) → a one-line goal
+// whose KEYWORDS land in the mockDailyPlan re-weighting + plan-intent follower
+// vocabulary, so the synthesized goal actually steers behavior. Persona/day
+// variety via hash(persona:day) — NO Math.random, NO Date.now.
+// ---------------------------------------------------------------------------
+
+/** Drive keys + tie-break order — mirrors Needs.DRIVE_KEYS (kept local to
+ *  avoid an agents→llm import cycle). */
+const MOCK_DRIVE_KEYS = ["energy", "wealth", "social", "novelty", "purpose"] as const;
+
+/** Pure argmax over a NeedState; ties break in MOCK_DRIVE_KEYS order. */
+export function dominantDrive(needs: NeedState): (typeof MOCK_DRIVE_KEYS)[number] {
+  let best: (typeof MOCK_DRIVE_KEYS)[number] = MOCK_DRIVE_KEYS[0];
+  let bestVal = -Infinity;
+  for (const k of MOCK_DRIVE_KEYS) {
+    const v = typeof needs?.[k] === "number" && Number.isFinite(needs[k]) ? needs[k] : 0;
+    if (v > bestVal) {
+      best = k;
+      bestVal = v;
+    }
+  }
+  return best;
+}
+
+/** 2–3 phrasings per drive; keywords land in the plan-follower vocabulary. */
+const GOAL_TEMPLATES: Record<(typeof MOCK_DRIVE_KEYS)[number], string[]> = {
+  energy: [
+    "rest at home and recover my strength",
+    "head home to sleep off my exhaustion",
+    "take it easy and rest before the next push",
+  ],
+  wealth: [
+    "sell my harvest at the market for good coin",
+    "haggle at the market to build up my savings",
+  ],
+  social: [
+    "socialize at the tavern with the other farmers",
+    "spend time chatting and catching up at the tavern",
+    "gather at the tavern and enjoy some company",
+  ],
+  novelty: [
+    "wander the town and explore something new",
+    "take a long stroll and see where the paths lead",
+  ],
+  purpose: [
+    "till, plant, and water the farm to make it thrive",
+    "pour myself into the farm work and tend every crop",
+    "plant new seeds and grow the farm bigger",
+  ],
+};
+
+/**
+ * Deterministic mock goal: dominant drive → templated one-liner, with
+ * persona/day variety. Always returns a non-empty, ≤120-char single line.
+ */
+export function mockGoal(persona: string, needs: NeedState, day: number): string {
+  const drive = dominantDrive(needs);
+  const phrasings = GOAL_TEMPLATES[drive];
+  const idx = hash(`${(persona ?? "").toLowerCase()}:${day}`) % phrasings.length;
+  const line = phrasings[idx];
+  return line.length > 120 ? line.slice(0, 120) : line;
 }

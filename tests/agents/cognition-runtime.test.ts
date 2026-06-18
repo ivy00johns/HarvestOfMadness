@@ -104,6 +104,41 @@ describe("plan + enrichment on the decision path", () => {
   });
 });
 
+describe("Wave 3a — needs + goal enrichment (mock)", () => {
+  it("after a cycle the goal is non-null, needs ride the obs, and the plan step is unchanged", async () => {
+    await cycle(a, { thought: "t", say: null, action: "WAIT" });
+
+    // the synthesized standing goal landed on the agent (mock fallback path)
+    expect(a.goal).not.toBeNull();
+    expect((a.goal as string).length).toBeGreaterThan(0);
+    expect(a.needs).not.toBeNull();
+
+    const obs = JSON.parse(a.trace[0].observationJson);
+    // needs vector: exactly 5 numerics, each in [0,1]
+    expect(obs.self.needs).toBeDefined();
+    for (const k of ["energy", "wealth", "social", "novelty", "purpose"] as const) {
+      expect(typeof obs.self.needs[k]).toBe("number");
+      expect(obs.self.needs[k]).toBeGreaterThanOrEqual(0);
+      expect(obs.self.needs[k]).toBeLessThanOrEqual(1);
+    }
+
+    // the planner's 4-step shape is untouched: morning step still drives obs
+    const plan = cognition.planner.current("Alice");
+    expect(plan?.steps).toHaveLength(4);
+    expect(obs.self.currentPlanStep).toBe(plan!.steps[0].goal);
+    expect(a.planStep).toBe(plan!.steps[0].goal);
+  });
+
+  it("no same-day goal thrash: repeated cycles keep the same goal", async () => {
+    await cycle(a, { thought: "t", say: null, action: "WAIT" });
+    const first = a.goal;
+    expect(first).not.toBeNull();
+    await cycle(a, { thought: "t", say: null, action: "WAIT" });
+    await cycle(a, { thought: "t", say: null, action: "WAIT" });
+    expect(a.goal).toBe(first); // cached — no per-decision re-derivation
+  });
+});
+
 describe("rule-9 memory writes", () => {
   it("every resolved action becomes a memory for the actor", async () => {
     await cycle(a, { thought: "t", say: null, action: "TILL", target: { ...TILL_TARGET } });

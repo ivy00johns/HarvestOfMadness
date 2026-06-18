@@ -43,6 +43,13 @@ export interface PlannerDeps {
   persona: (agentName: string) => string;
   /** last reflections (texts) for the prompt */
   reflections: (agentName: string) => string[];
+  /**
+   * Wave 3a — optional synthesized standing goal. When present it is injected
+   * into the plan prompt (live) and re-weights afternoon/evening branches
+   * (mock). Optional → existing test harnesses are unaffected, and the
+   * coercePlanSteps / 4-step / night-at-bed shape is UNCHANGED.
+   */
+  goalOf?: (agentName: string) => string | null;
   /** appends a `plan` memory (cognition layer wiring; null on failure) */
   write: (
     agentName: string,
@@ -101,18 +108,21 @@ export class PlannerImpl implements Planner {
 
   private async generate(agentName: string, day: number): Promise<DailyPlan> {
     const persona = this.deps.persona(agentName);
+    // Wave 3a — optional synthesized standing goal (null when absent: existing
+    // callers and test harnesses leave goalOf undefined → byte-identical mock).
+    const goal = this.deps.goalOf?.(agentName) ?? undefined;
     let steps: PlanStep[];
     let rawText: string;
 
     if (this.deps.live()) {
-      const live = await this.generateLive(agentName, day, persona);
+      const live = await this.generateLive(agentName, day, persona, goal);
       if (live) {
         ({ steps, rawText } = live);
       } else {
-        ({ steps, rawText } = mockDailyPlan(persona, day)); // garbage -> mock fallback
+        ({ steps, rawText } = mockDailyPlan(persona, day, goal)); // garbage -> mock fallback
       }
     } else {
-      ({ steps, rawText } = mockDailyPlan(persona, day));
+      ({ steps, rawText } = mockDailyPlan(persona, day, goal));
     }
 
     const plan: DailyPlan = { agentName, day, steps, rawText };
@@ -136,6 +146,7 @@ export class PlannerImpl implements Planner {
     agentName: string,
     day: number,
     persona: string,
+    goal?: string,
   ): Promise<{ steps: PlanStep[]; rawText: string } | null> {
     try {
       this.deps.onLiveCall?.();
@@ -149,6 +160,7 @@ export class PlannerImpl implements Planner {
           day,
           this.deps.reflections(agentName).slice(-PLAN_REFLECTION_WINDOW),
           this.deps.landmarks(),
+          goal,
         ),
         tier: "smart",
       });

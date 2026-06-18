@@ -7,6 +7,7 @@ import type {
   AgentFsmState,
   DecisionTraceEntry,
   InventoryEntry,
+  NeedState,
   Vec2,
 } from "@contracts/types";
 import { ENERGY_START, STARTING_GOLD, STARTING_SEEDS } from "@contracts/types";
@@ -56,6 +57,8 @@ export class Agent {
   // Maintained by CognitionSystem; the obs layer reads them off the agent.
   /** current DailyPlan step text (AgentCardModel.planStep) */
   planStep: string | null = null;
+  /** Wave 3a — intrinsic drive vector (AgentCardModel.needs); card-projection store. */
+  needs: NeedState | null = null;
   /** top-5 affinity rows incl. summaries (AgentCardModel.relationships) */
   relationshipRows: { name: string; affinity: number; summary: string }[] = [];
   /** memory stream size (AgentCardModel.memoryCount) */

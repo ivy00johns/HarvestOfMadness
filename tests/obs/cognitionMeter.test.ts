@@ -28,6 +28,7 @@ describe("formatCognitionMeter", () => {
       reflectionCalls: 2,
       relationshipCalls: 5,
       importanceCalls: 7,
+      goalCalls: 0,
     };
     const out = formatCognitionMeter(m);
     expect(out.total).toBe(17);

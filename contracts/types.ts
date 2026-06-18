@@ -128,6 +128,24 @@ export const TILE_SIZE = 32;
 export const OBSERVATION_RADIUS = 4;
 
 // ---------------------------------------------------------------------------
+// Wave 3a — needs-driven goal generation (PIANO keystone)
+// ---------------------------------------------------------------------------
+
+/**
+ * Intrinsic drive vector (5 needs), each in [0,1] where HIGHER = more pressing
+ * (so the dominant drive is the argmax). Event-sourced inside the agent
+ * cognition layer (src/agents/Needs.ts); rides Observation.self.needs +
+ * AgentCardModel.needs purely as additive, optional surface data.
+ */
+export interface NeedState {
+  energy: number;
+  wealth: number;
+  social: number;
+  novelty: number;
+  purpose: number;
+}
+
+// ---------------------------------------------------------------------------
 // §4.1 Observation (mission verbatim)
 // ---------------------------------------------------------------------------
 
@@ -140,7 +158,15 @@ export interface Observation {
     energy: number;
     gold: number;
     inventory: InventoryEntry[];
+    /**
+     * Standing goal (type unchanged: string | null). Wave 3a makes it dynamic:
+     * synthesized from intrinsic drives (src/agents/Goals.ts) and fed to the
+     * planner as a prompt INPUT. The transient LLM action.goal still wins for
+     * its own turn.
+     */
     goal: string | null;
+    /** Wave 3a — intrinsic drive vector, surfaced when the needs system is active. */
+    needs?: NeedState;
     /** v2 — current DailyPlan step text, when the planner is active */
     currentPlanStep?: string | null;
     /** v2 — affinity snapshot for nearby/known agents, newest-first, cap 5 */
@@ -387,7 +413,10 @@ export interface AgentCardModel {
   persona: string;
   gold: number;
   energy: number;
+  /** Standing goal (Wave 3a: synthesized from drives; type unchanged). */
   goal: string | null;
+  /** Wave 3a — intrinsic drive vector for the card's needs row, when present. */
+  needs?: NeedState;
   lastThought: string | null;
   lastSay: string | null;
   lastAction: { action: string; ok: boolean; reason?: string } | null;

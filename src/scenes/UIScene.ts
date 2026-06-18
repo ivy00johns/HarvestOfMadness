@@ -31,6 +31,7 @@ import { toCssColor } from "../obs/EventLog";
 import {
   buildAgentCard,
   formatAffinityRow,
+  formatNeedsRow,
   formatTraceEntry,
   formatTraceSummary,
   personaText,
@@ -120,6 +121,7 @@ interface CardUi {
   energyText: Phaser.GameObjects.Text;
   plan: Phaser.GameObjects.Text;
   goal: Phaser.GameObjects.Text;
+  needs: Phaser.GameObjects.Text;
   thought: Phaser.GameObjects.Text | null;
   action: Phaser.GameObjects.Text;
   relRows: Phaser.GameObjects.Text[];
@@ -935,6 +937,9 @@ export class UIScene extends Phaser.Scene {
       energyText: text(x + cardW - 6, rowGold, { ...small }).setOrigin(1, 0),
       plan: text(x + 6, rowPlan, { ...small, color: COLOR_PLAN }),
       goal: text(x + 6, rowGoal, { ...small, color: COLOR_GOAL }),
+      // Wave 3a — intrinsic-drive bars, right-aligned on the goal row; empty
+      // when the agent carries no needs vector (additive, never overlaps text).
+      needs: text(x + cardW - 6, rowGoal, { ...small, color: COLOR_DIM }).setOrigin(1, 0),
       thought: compact
         ? null
         : text(x + 6, rowThought, {
@@ -962,6 +967,8 @@ export class UIScene extends Phaser.Scene {
     // v2: current plan step ("PLAN: water east plot") — hidden when absent
     ui.plan.setText(card.planStep ? this.clip(`PLAN: ${card.planStep}`, 30) : "");
     ui.goal.setText(this.clip(`goal: ${card.goal ?? "—"}`, 30));
+    // Wave 3a — intrinsic-drive bars (empty when the agent has no needs vector)
+    ui.needs.setText(card.needs ? formatNeedsRow(card.needs) : "");
     // ~30 wrapped chars/line at 12px in cardW-12 → clip to guarantee ≤2 lines
     ui.thought?.setText(card.lastThought ? this.clip(card.lastThought, 58) : "…");
 

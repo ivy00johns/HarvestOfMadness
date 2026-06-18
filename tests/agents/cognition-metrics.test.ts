@@ -25,6 +25,7 @@ describe("CognitionSystem.metricsSnapshot()", () => {
       reflectionCalls: 0,
       relationshipCalls: 0,
       importanceCalls: 0,
+      goalCalls: 0,
     });
   });
 
@@ -35,12 +36,14 @@ describe("CognitionSystem.metricsSnapshot()", () => {
     snap.reflectionCalls = 999;
     snap.relationshipCalls = 999;
     snap.importanceCalls = 999;
+    snap.goalCalls = 999;
     // The next snapshot reflects the untouched live metrics.
     expect(cog.metricsSnapshot()).toEqual<CognitionMetrics>({
       planCalls: 0,
       reflectionCalls: 0,
       relationshipCalls: 0,
       importanceCalls: 0,
+      goalCalls: 0,
     });
   });
 
