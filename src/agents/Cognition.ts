@@ -34,6 +34,7 @@ import type {
 } from "@contracts/types";
 import { liveRouter } from "../llm/router";
 import { getWorld } from "../world/instance";
+import { getRenderApi } from "../world/render";
 import type { Agent } from "./Agent";
 import { chebyshev } from "./Observation";
 import { getEventBus } from "./events";
@@ -49,6 +50,7 @@ import { ConversationSystem } from "./Conversation";
 import { NeedsSystem } from "./Needs";
 import { GoalsSystem } from "./Goals";
 import { RolesSystem } from "./Roles";
+import { MortalitySystem } from "./Mortality";
 import { Governance } from "./Governance";
 
 /** Memory texts injected into prompts are truncated to this many chars. */
@@ -218,6 +220,12 @@ export class CognitionSystem implements ExecutorCognitionHooks {
   readonly goals: GoalsSystem;
   /** Wave 4a — emergent role specialization (action-histogram, hysteresis-gated). */
   readonly roles = new RolesSystem();
+  /**
+   * Mortality (deterministic sim mechanic) — starvation / despair / murder.
+   * Driven once per game-day in onDayAdvanced over the LIVING agents; pure +
+   * conservative, so normally-behaving agents never die.
+   */
+  readonly mortality = new MortalitySystem();
   /** v3 — back-and-forth conversation reply generator */
   private conversation!: ConversationSystem;
 
@@ -998,6 +1006,10 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     // Wave 4c — a new day may cross a proposal's deadline; resolve lazily.
     this.maybeResolve();
     for (const agent of this.agents.values()) {
+      // Mortality: the dead don't plan, dream, or journal. Skip them here so
+      // the morning warm-up only touches the living (the scheduler skips them
+      // too). Their card fields (alive/causeOfDeath/deathDay) stay surfaced.
+      if (agent.alive === false) continue;
       // Wave 3a — morning cadence: recompute derive-on-read drives, apply the
       // daily regen pulse, force a goal refresh, THEN pre-warm the plan so the
       // synthesized goal lands as a plan INPUT. Each step is fire-and-forget
@@ -1028,6 +1040,70 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       // stream. Fire-and-forget AFTER the needs/goal/plan prewarm so it never
       // blocks the morning warm-up; guarded one-entry-per-agent-per-day inside.
       void this.diary.writeEntry(agent.name).catch(() => {});
+    }
+
+    // Mortality (deterministic): AFTER the per-agent prewarm, evaluate the
+    // LIVING registered agents and resolve any deaths. Conservative thresholds
+    // mean normally-behaving agents never die. Try-wrapped end to end so it can
+    // never throw into the day-advance handler.
+    this.evaluateMortality();
+  }
+
+  /**
+   * Run the deterministic mortality pass over the LIVING agents and resolve any
+   * deaths: flip alive/causeOfDeath/deathDay, emit a `death` feed event, and
+   * best-effort mark the sprite (existing showSpeech only — no contract change;
+   * the scheduler also stops scheduling the agent, so the sprite goes still).
+   * Never throws.
+   */
+  private evaluateMortality(): void {
+    try {
+      const t = this.now();
+      const living = [...this.agents.values()].filter((a) => a.alive !== false);
+      const deaths = this.mortality.evaluate(living, t.day, (from, to) => {
+        try {
+          return this.relationships.get(from, to)?.affinity ?? null;
+        } catch {
+          return null;
+        }
+      });
+      for (const d of deaths) {
+        const agent = this.agents.get(d.name);
+        if (!agent || agent.alive === false) continue;
+        agent.alive = false;
+        agent.causeOfDeath = d.cause;
+        agent.deathDay = t.day;
+        const text =
+          d.cause === "murder" && d.by
+            ? `💀 ${d.name} was murdered by ${d.by}`
+            : `💀 ${d.name} died of ${d.cause}`;
+        try {
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "death",
+            agentName: d.name,
+            text,
+            payload: {
+              cause: d.cause,
+              ...(d.by ? { by: d.by } : {}),
+              day: t.day,
+            },
+          });
+        } catch {
+          /* a broken bus must never take the day-advance loop down */
+        }
+        // Best-effort sprite marker — existing RenderApi call only. The agent
+        // is already unscheduled, so this is purely cosmetic. Headless-safe
+        // (getRenderApi() is null with no scene).
+        try {
+          getRenderApi()?.showSpeech(d.name, "💀");
+        } catch {
+          /* render is best-effort and must never throw here */
+        }
+      }
+    } catch {
+      /* defensive — mortality must never throw into onDayAdvanced */
     }
   }
 

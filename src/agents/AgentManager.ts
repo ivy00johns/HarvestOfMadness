@@ -262,7 +262,8 @@ export class AgentManager {
    * cooldown. Resolves when the cycle completes. No-op when no agent is IDLE.
    */
   async step(): Promise<void> {
-    const idle = this.agentList.filter((a) => a.fsm === "IDLE");
+    // Mortality: the dead are never scheduled — they stop acting entirely.
+    const idle = this.agentList.filter((a) => a.alive !== false && a.fsm === "IDLE");
     if (idle.length === 0) return;
     idle.sort(
       (a, b) =>
@@ -287,6 +288,9 @@ export class AgentManager {
       await sleep(POLL_MS);
       if (!this.running) break;
       if (this.paused) continue;
+      // Mortality: a dead agent is never selected for a decision cycle. It
+      // stays in agentList (the UI still sees it) but its loop idles forever.
+      if (agent.alive === false) continue;
       if (agent.fsm !== "IDLE") continue; // step() may have it busy
       const last = this.lastDecisionAt.get(agent.name);
       if (last !== undefined && Date.now() - last < this.cooldownMs()) continue;
