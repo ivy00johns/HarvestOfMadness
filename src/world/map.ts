@@ -466,8 +466,13 @@ export function generateMap(): MapData {
   const decor: DecorItem[] = [];
   const isGrass = (gx: number, gy: number): boolean =>
     gy >= 0 && gy < MAP_HEIGHT && gx >= 0 && gx < MAP_WIDTH && tiles[gy][gx] === "grass";
+  // A tree's canopy is bottom-anchored and ~2 tiles tall, extending NORTH (up),
+  // so the trunk tile's neighbourhood AND the two tiles above must be clear grass
+  // — otherwise the canopy overhangs a building roof to the north (the "tree
+  // growing out of the cafe" artefact).
   const clearCanopy = (gx: number, gy: number): boolean =>
-    isGrass(gx, gy) && isGrass(gx - 1, gy) && isGrass(gx + 1, gy) && isGrass(gx, gy - 1) && isGrass(gx, gy + 1);
+    isGrass(gx, gy) && isGrass(gx - 1, gy) && isGrass(gx + 1, gy) &&
+    isGrass(gx, gy - 1) && isGrass(gx, gy + 1) && isGrass(gx, gy - 2);
   // Grass tile that touches a soil plot — keep the showier decor (bushes,
   // flowers) OFF these so fields read with clean borders instead of being
   // "fenced" by a ring of scatter.
