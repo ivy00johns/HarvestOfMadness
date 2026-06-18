@@ -315,8 +315,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
 
   /**
    * Inset the world camera below the opaque HUD top bar (controls + kill-switch
-   * badge) so the bar never covers the map. Default zoom = DEFAULT_ZOOM (1.5),
-   * which shows ~24 tiles across a typical viewport — agents and buildings are
+   * badge) so the bar never covers the map. Default zoom = DEFAULT_ZOOM (1.2),
+   * which shows ~30 tiles across a typical viewport — agents and buildings are
    * readable. On very small viewports we clamp down to CAMERA_ZOOM_MIN so the
    * whole map is still reachable. Re-runs on resize.
    */

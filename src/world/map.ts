@@ -195,7 +195,7 @@ interface RoadSeg {
 }
 
 /**
- * ROAD_SEGMENTS — every road run in the 96×64 town. Order is irrelevant (they
+ * ROAD_SEGMENTS — every road run in the 140×100 town. Order is irrelevant (they
  * are all stamped to `path`). Authored so: (a) the y=36 spine spans the full
  * interior; (b) two residential roads (north y=22, south y=50) host the
  * homes; (c) eleven evenly-spaced vertical trunks tie both residential rows to
@@ -435,7 +435,7 @@ export function generateMap(): MapData {
   landmarks.push({ kind: "park", pos: { ...parkCentre } });
 
   // Decorative ground cover — deterministic (zero RNG), dense and layered so the
-  // 96x64 town reads as a lush, lived-in place rather than bare lawn. Four kinds
+  // 140x100 town reads as a lush, lived-in place rather than bare lawn. Four kinds
   // by descending size: clustered trees (forest feel) > bushes > flowers > grass
   // tufts. Each kind uses a distinct coprime hash so the layers never align into
   // visible stripes. One decor item per grass tile (priority tree>bush>flower>

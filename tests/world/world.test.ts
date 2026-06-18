@@ -150,7 +150,9 @@ describe("Farm mutations — tile-level preconditions", () => {
     const occupied = w.plant(SOIL, "potato");
     expect(occupied.ok).toBe(false);
     expect(occupied.reason).toContain("already has a parsnip");
-    expect(w.plant({ x: 99, y: 0 }, "parsnip").reason).toContain("outside the map");
+    expect(
+      w.plant({ x: MAP_WIDTH, y: 0 }, "parsnip").reason,
+    ).toContain("outside the map");
   });
 
   it("water: crop + unwatered -> watered; rejects no-crop and double-water", () => {
@@ -195,7 +197,9 @@ describe("Farm mutations — tile-level preconditions", () => {
     const notReady = w.harvest(SOIL);
     expect(notReady.ok).toBe(false);
     expect(notReady.reason).toContain("not ready");
-    expect(w.harvest({ x: 99, y: 99 }).reason).toContain("outside the map");
+    expect(
+      w.harvest({ x: MAP_WIDTH, y: MAP_HEIGHT }).reason,
+    ).toContain("outside the map");
   });
 });
 
