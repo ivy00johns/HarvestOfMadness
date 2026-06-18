@@ -464,6 +464,56 @@ export async function executeAction(
         return { ok: true };
       }
 
+      case "DEPOSIT": {
+        // Living Homes #2 — stash goods into home storage. Bed-tile gated
+        // (same anchor as SLEEP); moves qty from inventory → homeStorage.
+        const target = action.target;
+        if (!isItemTarget(target)) {
+          return reject("DEPOSIT needs an {itemId, qty} target");
+        }
+        const here = world.getTile(agent.pos.x, agent.pos.y);
+        if (here?.type !== "bedTile") {
+          return reject("you must be home (on your bed) to stash goods in storage");
+        }
+        const qty = gateQty(target.qty);
+        if (qty === null) {
+          return reject(`DEPOSIT qty must be a whole number >= 1 (got ${target.qty})`);
+        }
+        const have = agent.countItem(target.itemId);
+        if (have < qty) {
+          return reject(`you have ${have}x ${target.itemId}, not ${qty}`);
+        }
+        agent.removeItem(target.itemId, qty);
+        agent.addToStorage(target.itemId, qty);
+        spendEnergy(agent, "DEPOSIT"); // 0 by table — kept for uniformity
+        return { ok: true };
+      }
+
+      case "WITHDRAW": {
+        // Living Homes #2 — pull goods back out of home storage. Symmetric with
+        // DEPOSIT: bed-tile gated; moves qty from homeStorage → inventory.
+        const target = action.target;
+        if (!isItemTarget(target)) {
+          return reject("WITHDRAW needs an {itemId, qty} target");
+        }
+        const here = world.getTile(agent.pos.x, agent.pos.y);
+        if (here?.type !== "bedTile") {
+          return reject("you must be home (on your bed) to take goods from storage");
+        }
+        const qty = gateQty(target.qty);
+        if (qty === null) {
+          return reject(`WITHDRAW qty must be a whole number >= 1 (got ${target.qty})`);
+        }
+        const stored = agent.storageCount(target.itemId);
+        if (stored < qty) {
+          return reject(`your storage has ${stored}x ${target.itemId}, not ${qty}`);
+        }
+        agent.removeFromStorage(target.itemId, qty);
+        agent.addItem(target.itemId, qty);
+        spendEnergy(agent, "WITHDRAW"); // 0 by table — kept for uniformity
+        return { ok: true };
+      }
+
       default:
         return reject(`unknown action "${String(action.action)}"`);
     }

@@ -43,6 +43,13 @@ export class Agent {
   energy: number = ENERGY_START;
   gold: number = STARTING_GOLD;
   inventory: InventoryEntry[] = [{ itemId: "seed:parsnip", qty: STARTING_SEEDS }];
+  /**
+   * Living Homes #2 — per-agent home storage, mirroring `inventory`. Filled by
+   * DEPOSIT (inventory→storage) and drained by WITHDRAW (storage→inventory) when
+   * the agent stands on its bed tile. Persists across day transitions (SLEEP only
+   * resets energy); in-memory per session, no persistence layer.
+   */
+  homeStorage: InventoryEntry[] = [];
   goal: string | null = null;
   lastAction: { action: string; ok: boolean; reason?: string } | null = null;
   lastThought: string | null = null;
@@ -112,6 +119,32 @@ export class Agent {
     entry.qty -= qty;
     if (entry.qty === 0) {
       this.inventory = this.inventory.filter((i) => i !== entry);
+    }
+    return true;
+  }
+
+  /** Living Homes #2 — qty of itemId in home storage (mirrors countItem). */
+  storageCount(itemId: string): number {
+    const entry = this.homeStorage.find((i) => i.itemId === itemId);
+    return entry ? entry.qty : 0;
+  }
+
+  /** Living Homes #2 — add to home storage (mirrors addItem). */
+  addToStorage(itemId: string, qty: number): void {
+    if (qty <= 0) return;
+    const entry = this.homeStorage.find((i) => i.itemId === itemId);
+    if (entry) entry.qty += qty;
+    else this.homeStorage.push({ itemId, qty });
+  }
+
+  /** Living Homes #2 — remove from home storage; false + no-op when short (mirrors removeItem). */
+  removeFromStorage(itemId: string, qty: number): boolean {
+    if (qty <= 0) return false;
+    const entry = this.homeStorage.find((i) => i.itemId === itemId);
+    if (!entry || entry.qty < qty) return false;
+    entry.qty -= qty;
+    if (entry.qty === 0) {
+      this.homeStorage = this.homeStorage.filter((i) => i !== entry);
     }
     return true;
   }

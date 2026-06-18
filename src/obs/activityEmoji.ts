@@ -25,6 +25,8 @@ export function activityEmoji(action: ActionType, emotion?: Emotion): string {
     case "WAIT":       return "💭";
     case "USE_OBJECT": return "✨";
     case "VOTE":       return "🗳️"; // Wave 4c — governance vote
+    case "DEPOSIT":    return "📦"; // Living Homes #2 — stash into home storage
+    case "WITHDRAW":   return "📦"; // Living Homes #2 — pull from home storage
   }
 }
 

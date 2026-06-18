@@ -21,6 +21,8 @@ const ALL_ACTIONS: ActionType[] = [
   "WAIT",
   "USE_OBJECT",
   "VOTE",
+  "DEPOSIT",
+  "WITHDRAW",
 ];
 
 const ALL_EMOTIONS: Emotion[] = ["neutral", "happy", "annoyed", "sad", "excited"];
@@ -60,6 +62,8 @@ describe("activityEmoji", () => {
     expect(activityEmoji("WATER")).toBe("💧");
     expect(activityEmoji("GIVE_GIFT")).toBe("🎁");
     expect(activityEmoji("VOTE")).toBe("🗳️");
+    expect(activityEmoji("DEPOSIT")).toBe("📦");
+    expect(activityEmoji("WITHDRAW")).toBe("📦");
     expect(activityEmoji("EMOTE", "happy")).toBe("😊");
     expect(activityEmoji("EMOTE", "sad")).toBe("😢");
     expect(activityEmoji("EMOTE", "annoyed")).toBe("😠");

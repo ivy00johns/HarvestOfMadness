@@ -104,6 +104,12 @@ export function computeAvailableActions(
     }
   }
 
+  // Living Homes #2 — DEPOSIT/WITHDRAW are 0-cost logistics gated only on the
+  // bed tile (like SLEEP), so they sit OUTSIDE the energy>0 block: an
+  // exhausted agent can still stash/retrieve goods at home.
+  if (onBed && agent.inventory.some((i) => i.qty > 0)) out.push("DEPOSIT");
+  if (onBed && agent.homeStorage.some((i) => i.qty > 0)) out.push("WITHDRAW");
+
   if (sleepOk) out.push("SLEEP");
   out.push("WAIT");
   return out;
@@ -129,6 +135,8 @@ export function buildObservation(
       energy: agent.energy,
       gold: agent.gold,
       inventory: agent.inventory.map((i) => ({ ...i })),
+      // Living Homes #2 — always surface home storage (copy, like inventory).
+      homeStorage: agent.homeStorage.map((i) => ({ ...i })),
       goal: agent.goal,
     },
     time: world.time(),

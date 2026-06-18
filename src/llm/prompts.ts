@@ -50,6 +50,7 @@ ${cropTable()}
 - GIVE_GIFT hands 1 item from your inventory to an agent within 1 tile (builds friendship). EMOTE shows a feeling above your head; it is always allowed and changes nothing in the world.
 - USE_OBJECT interacts with a nearby world object (well, notice_board, bench): USE the well to draw water and refresh yourself; USE the notice_board to read town news (you may learn about upcoming events OR a proposed town rule); USE the bench to rest. Target: {"objectId": "<id>"}. Only available (in availableActions) when you are adjacent to a usable object.
 - VOTE casts your ballot on the one active TOWN RULE proposal: support it (true) or oppose it (false). It is town-wide — no adjacency, no energy cost. Target: {"proposalId": "<id>", "support": true|false}. Only available (in availableActions) when you know an open proposal and have not voted yet; vote once.
+- DEPOSIT moves goods from your inventory into your home storage; WITHDRAW takes them back out. Both require standing on your own bed tile (your home), cost no energy, and use a {"itemId": string, "qty": number} target. Stash unsold crops at home so they have somewhere to live; pull them back out when you need them.
 - Your observation lists nearby tiles, agents, landmarks (shop, bed, water, house), your inventory, gold, energy, the result of your last action, and which actions are currently available. Choose ONLY from availableActions.
 - Your observation may also include MEMORIES (relevant past experiences), a CURRENT PLAN STEP (your goal for this phase of the day), RELATIONSHIPS (how you feel about others), and NEARBY OBJECTS (well/notice_board/bench within sight). Let them guide your choice.
 
@@ -57,7 +58,7 @@ RESPONSE FORMAT — exactly one JSON object with this shape:
 {
   "thought": string,            // brief private reasoning
   "say": string | null,         // optional short spoken line
-  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE"|"USE_OBJECT"|"VOTE",
+  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE"|"USE_OBJECT"|"VOTE"|"DEPOSIT"|"WITHDRAW",
   "target": {"x":number,"y":number} | {"itemId":string,"qty":number} | {"agentName":string} | {"agentName":string,"itemId":string,"qty":number} | {"objectId":string} | {"proposalId":string,"support":boolean},  // GIVE_GIFT uses {"agentName","itemId","qty":1}; USE_OBJECT uses {"objectId":"..."}; VOTE uses {"proposalId":"...","support":true|false}; omit for SLEEP/WAIT/EMOTE
   "goal": string,               // optional, your current standing goal
   "emotion": "neutral"|"happy"|"annoyed"|"sad"|"excited"  // optional, defaults to "neutral"

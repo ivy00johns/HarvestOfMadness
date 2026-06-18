@@ -64,6 +64,8 @@ const ACTION_TYPES: readonly ActionType[] = [
   "WAIT",
   "USE_OBJECT", // v3 — heuristic emits when adjacent + plan calls for it
   "VOTE", // Wave 4c — heuristic emits when enrichObservation injected it (aware + unvoted)
+  "DEPOSIT", // Living Homes #2 — heuristic emits to stash non-seed goods before SLEEP
+  "WITHDRAW", // Living Homes #2 — accepted in availableActions; the heuristic never emits it
 ];
 
 const PHASES = ["morning", "afternoon", "evening", "night"] as const;
@@ -111,6 +113,14 @@ function normalizeObservation(raw: unknown): Observation | null {
   const nearby = asRecord(o.nearby);
 
   const inventory = asArray(self.inventory).flatMap((e) => {
+    const it = asRecord(e);
+    return typeof it.itemId === "string" && typeof it.qty === "number" && Number.isFinite(it.qty)
+      ? [{ itemId: it.itemId, qty: it.qty }]
+      : [];
+  });
+
+  // Living Homes #2 — home-storage pass-through (same defensive shape as inventory).
+  const homeStorage = asArray(self.homeStorage).flatMap((e) => {
     const it = asRecord(e);
     return typeof it.itemId === "string" && typeof it.qty === "number" && Number.isFinite(it.qty)
       ? [{ itemId: it.itemId, qty: it.qty }]
@@ -232,6 +242,8 @@ function normalizeObservation(raw: unknown): Observation | null {
     inventory,
     goal: typeof self.goal === "string" ? self.goal : null,
   };
+  // Living Homes #2 — surface stashed goods when present (optional field).
+  if (homeStorage.length > 0) selfOut.homeStorage = homeStorage;
   // Wave 3a — defensive needs round-trip: parse all 5 numerics, clamp to
   // [0,1], and attach only when ALL five are present & finite.
   const needsRec = asRecord(self.needs);
@@ -783,6 +795,26 @@ function decide(obs: Observation): AgentAction {
         x: spot.x,
         y: spot.y,
       });
+    }
+  }
+
+  // Living Homes #2 — STASH BEFORE SLEEP. On the bed (DEPOSIT available) with a
+  // non-seed good in pocket, stash the FIRST non-seed inventory entry (inventory
+  // order — deterministic, no RNG) into home storage before turning in. Seeds are
+  // NEVER deposited, so once the non-seed goods are gone the agent falls through
+  // to the SLEEP branch next turn (terminates; never starves the day-advance).
+  // Sits immediately ABOVE step 6 so it only competes with SLEEP/WAIT-at-bed.
+  if (can("DEPOSIT")) {
+    const goods = self.inventory.find(
+      (i) => !i.itemId.startsWith("seed:") && i.qty > 0,
+    );
+    if (goods) {
+      return act(
+        "DEPOSIT",
+        "Stashing the day's harvest at home.",
+        null,
+        { itemId: goods.itemId, qty: goods.qty },
+      );
     }
   }
 
