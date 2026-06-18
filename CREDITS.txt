@@ -225,6 +225,17 @@ INTERIOR FLOOR & WALL (warm wood) — PROJECT-AUTHORED
         voids. These two seamless 32x32 tiles replace them so interiors read as
         cozy wood-floored rooms. Tone matches TILE_COLORS.floor = 0x8b6f47.
 
+GROUND FLOWERS — PROJECT-AUTHORED
+  Files: assets/lpc/farming/flowers.png
+  Title: Ground flower tufts (Harvest of Madness)
+  Author(s): Harvest of Madness project (procedurally authored for this repo)
+  License: CC0 1.0 (public domain dedication)
+  Note: a 128x32 sheet of four 32x32 flower tufts (red / yellow / purple /
+        white blossoms on green stems). Replaces the decorative use of the crop
+        sheet's harvested produce (plants.png frames 99-102 — tomatoes/potatoes/
+        carrots/cabbage), which read as "vegetables used as a fence" when
+        scattered on grass. Used by the decor scatter's "flower" kind.
+
 WOODEN FURNITURE
   Files: assets/lpc/furniture/blonde-wood.png, assets/lpc/furniture/dark-wood.png,
          assets/lpc/furniture/green-wood.png, assets/lpc/furniture/white-wood.png,

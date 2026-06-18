@@ -461,6 +461,12 @@ export function generateMap(): MapData {
     gy >= 0 && gy < MAP_HEIGHT && gx >= 0 && gx < MAP_WIDTH && tiles[gy][gx] === "grass";
   const clearCanopy = (gx: number, gy: number): boolean =>
     isGrass(gx, gy) && isGrass(gx - 1, gy) && isGrass(gx + 1, gy) && isGrass(gx, gy - 1) && isGrass(gx, gy + 1);
+  // Grass tile that touches a soil plot — keep the showier decor (bushes,
+  // flowers) OFF these so fields read with clean borders instead of being
+  // "fenced" by a ring of scatter.
+  const bordersField = (gx: number, gy: number): boolean =>
+    tiles[gy][gx - 1] === "soil" || tiles[gy][gx + 1] === "soil" ||
+    tiles[gy - 1][gx] === "soil" || tiles[gy + 1][gx] === "soil";
   for (let y = 1; y < MAP_HEIGHT - 1; y++) {
     for (let x = 1; x < MAP_WIDTH - 1; x++) {
       if (!isGrass(x, y)) continue;
@@ -471,8 +477,12 @@ export function generateMap(): MapData {
         const treeHit = forestCell ? (x * 11 + y * 7) % 6 === 0 : (x * 11 + y * 7) % 31 === 0;
         if (treeHit) { decor.push({ kind: "tree", pos: { x, y }, variant: (x + y) % 2 }); continue; }
       }
-      if ((x * 17 + y * 5) % 23 === 0) { decor.push({ kind: "bush", pos: { x, y }, variant: (x * 3 + y) % 3 }); continue; }
-      if ((x * 5 + y * 11) % 11 === 0) { decor.push({ kind: "flower", pos: { x, y }, variant: (x + y * 2) % 4 }); continue; }
+      const edge = bordersField(x, y);
+      if (!edge && (x * 17 + y * 5) % 23 === 0) { decor.push({ kind: "bush", pos: { x, y }, variant: (x * 3 + y) % 3 }); continue; }
+      // Flowers: DIAGONAL coprime hash (mod 13, both multipliers nonzero mod 13)
+      // so blossoms scatter naturally — the old (·)%11 with an ×11 term collapsed
+      // to x≡0 (mod 11), planting flowers in vertical COLUMNS that read as fences.
+      if (!edge && (x * 7 + y * 5) % 13 === 0) { decor.push({ kind: "flower", pos: { x, y }, variant: (x + y * 2) % 4 }); continue; }
       if ((x * 13 + y * 3) % 8 === 0) { decor.push({ kind: "grass", pos: { x, y }, variant: (x + y) % 3 }); continue; }
     }
   }

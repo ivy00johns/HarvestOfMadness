@@ -801,18 +801,69 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     // Kind-specific furnishing (props sit at prop depth above the floor; agents
     // y-sort over them). Placed on interior floor cells only.
     if (kind === "house") {
-      // 2×2 bed in the NW interior corner over the bedTile region.
-      if (hasFurn) {
-        put(ix0, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
-        put(ix0 + 1, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
-        put(ix0, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
-        put(ix0 + 1, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
-        // A small table + chair in the SE interior corner.
-        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
-        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      // DETERMINISTIC PER-HOUSE FURNISHING — Smallville's homes are each
+      // hand-furnished, so no two read identical. A footprint-seeded variant
+      // picks the bed corner + a distinct prop set; an occupancy set keeps props
+      // off the 2×2 bed and inside the interior, so small (4×4) homes degrade to
+      // just a bed and larger ones get the full arrangement. Frames are the
+      // existing house/furniture assets — no new art needed.
+      const occupied = new Set<string>();
+      const free = (cx: number, cy: number): boolean =>
+        cx >= ix0 && cx <= ix1 && cy >= iy0 && cy <= iy1 && !occupied.has(`${cx},${cy}`);
+      const mark = (cx: number, cy: number): void => void occupied.add(`${cx},${cy}`);
+      const prop = (cx: number, cy: number, texture: string, frame: number): void => {
+        if (free(cx, cy)) {
+          put(cx, cy, texture, frame, DEPTH_PROP);
+          mark(cx, cy);
+        }
+      };
+      const furnProp = (cx: number, cy: number, frame: number): void => {
+        if (hasFurn) prop(cx, cy, "furniture_wood", frame);
+      };
+      const placeBed = (cx: number, cy: number): void => {
+        if (!hasFurn) return;
+        if (free(cx, cy) && free(cx + 1, cy) && free(cx, cy + 1) && free(cx + 1, cy + 1)) {
+          put(cx, cy, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
+          put(cx + 1, cy, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
+          put(cx, cy + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
+          put(cx + 1, cy + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
+          mark(cx, cy); mark(cx + 1, cy); mark(cx, cy + 1); mark(cx + 1, cy + 1);
+        } else {
+          furnProp(cx, cy, FURNITURE_FRAMES.BED_HEAD_L); // tiny home: single tile
+        }
+      };
+      switch ((b.x0 * 7 + b.y0 * 13) % 5) {
+        case 0: // bed NW · shelf NE · dining table SE
+          placeBed(ix0, iy0);
+          prop(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF);
+          furnProp(ix1, iy1, FURNITURE_FRAMES.TABLE_SMALL);
+          furnProp(ix1 - 1, iy1, FURNITURE_FRAMES.CHAIR_L);
+          break;
+        case 1: // bed NE · cabinet NW · round table + chair S
+          placeBed(ix1 - 1, iy0);
+          prop(ix0, iy0, "interior", INTERIOR_FRAMES.CABINET);
+          furnProp(ix0, iy1, FURNITURE_FRAMES.TABLE_ROUND);
+          furnProp(ix0 + 1, iy1, FURNITURE_FRAMES.CHAIR_R);
+          break;
+        case 2: // bed SW · shelf NW · small table NE · pantry crate SE
+          placeBed(ix0, iy1 - 1);
+          prop(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF);
+          furnProp(ix1, iy0, FURNITURE_FRAMES.TABLE_SMALL);
+          prop(ix1, iy1, "farming", CRATE_FRAMES[1]);
+          break;
+        case 3: // bed NW · barrel NE · round table + chair SE
+          placeBed(ix0, iy0);
+          prop(ix1, iy0, "interior", INTERIOR_FRAMES.BARREL);
+          furnProp(ix1, iy1, FURNITURE_FRAMES.TABLE_ROUND);
+          furnProp(ix1 - 1, iy1, FURNITURE_FRAMES.CHAIR_L);
+          break;
+        default: // bed SE · cabinet NW · shelf NE · table SW
+          placeBed(ix1 - 1, iy1 - 1);
+          prop(ix0, iy0, "interior", INTERIOR_FRAMES.CABINET);
+          prop(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF);
+          furnProp(ix0, iy1, FURNITURE_FRAMES.TABLE_SMALL);
+          break;
       }
-      // A shelf on the back wall, NE interior corner.
-      put(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
     } else if (kind === "shop") {
       // Shelves/cabinet along the back wall; counter crates at the doorway.
       put(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);

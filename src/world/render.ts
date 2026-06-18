@@ -224,7 +224,11 @@ export function fenceFrame(
 export const DECOR_FRAMES = {
   tree: { texture: "fruit_trees", frames: [0, 10] as readonly number[], layer: "overhead" },
   bush: { texture: "plants", frames: [28, 37, 46] as readonly number[], layer: "ysort" },
-  flower: { texture: "plants", frames: [99, 100, 101, 102] as readonly number[], layer: "ground" },
+  // flowers.png — a 4-frame CC0 sheet of small flower tufts (red / yellow /
+  // purple / white). REPLACES the old "plants" frames 99-102, which were the
+  // crop sheet's HARVESTED PRODUCE (tomatoes/potatoes/carrots/cabbage) — those
+  // scattered on grass read as "vegetables used as a fence". See CREDITS.md.
+  flower: { texture: "flowers", frames: [0, 1, 2, 3] as readonly number[], layer: "ground" },
   grass: { texture: "tallgrass", frames: [15, 16, 17] as readonly number[], layer: "ground" },
 } as const;
 

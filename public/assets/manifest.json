@@ -431,6 +431,14 @@
       "tileHeight": 32,
       "purpose": "farming",
       "notes": "96x192, 3x6 tile grid. LPC tall-grass patches and tufts by Daniel Eddeland (daneeklu). Bottom rows (frames 15-17) are small grass clumps used for decorative ground tufts. CC-BY-SA 3.0."
+    },
+    {
+      "key": "flowers",
+      "path": "assets/lpc/farming/flowers.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "128x32, 4x1 tile grid (frames 0-3: red/yellow/purple/white flower tufts on green stems). Authored for this project to replace the crop sheet's harvested produce as decorative ground flowers. CC0 — see CREDITS.md."
     }
   ],
   "water": {
