@@ -18,6 +18,7 @@ import type {
   AssetManifest,
   CharacterAsset,
   Emotion,
+  Phase,
   RenderApi,
   Tile,
   Vec2,
@@ -34,6 +35,8 @@ import {
   EMOTE_DURATION_MS,
   EMOTION_STYLE,
   LABEL_FONT_SIZE,
+  PHASE_TINT_TWEEN_MS,
+  phaseTint,
   REG_ASSETS_ON,
   REG_ASSET_MANIFEST,
   SPEECH_DURATION_MS,
@@ -48,14 +51,21 @@ import {
 } from "../config";
 import { computeHud, FONT_SIZE_SMALL, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
 import type { Rect } from "../obs/layout";
-import { getWorld } from "../world/instance";
-import { BUILDINGS, WORLD_OBJECTS } from "../world/map";
+import { getTimeSystem, getWorld } from "../world/instance";
+import {
+  BENCH_POS,
+  BUILDINGS,
+  NOTICE_BOARD_POS,
+  WELL_POS,
+  WORLD_OBJECTS,
+} from "../world/map";
 import { activityEmoji } from "../obs/activityEmoji";
 import { buildingStyle } from "../obs/buildingStyle";
 import {
   COBBLE_PATH_FRAMES,
   FURNITURE_FRAMES,
   INTERIOR_FRAMES,
+  LANTERN_FRAMES,
   SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
@@ -122,6 +132,14 @@ const DEPTH_BASE = 0;
 const DEPTH_OVERLAY = 1;
 const DEPTH_FACADE = 2;
 const DEPTH_PROP = 3;
+/**
+ * Day/night ambient tint overlay sits above the world + agents (so it tints
+ * them) but BELOW the tree canopies (DEPTH_OVERHEAD) and speech bubbles
+ * (DEPTH_BUBBLE), which therefore stay bright. The HUD is a separate scene
+ * /camera and is structurally unreachable from here. Lit lanterns glow one
+ * notch above the wash (DEPTH_TINT + 1).
+ */
+const DEPTH_TINT = 9_000;
 const DEPTH_OVERHEAD = 10_000;
 const DEPTH_BUBBLE = 20_000;
 
@@ -167,6 +185,19 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   private readonly agentNames: string[] = [];
   private unsubscribeWorld: (() => void) | null = null;
 
+  // -- day/night ambient lighting (Wave 3b) -----------------------------------
+  /** Full-map overlay quad tinted per phase (created once in create()). */
+  private tintRect: Phaser.GameObjects.Rectangle | null = null;
+  /** Current overlay color/alpha (tween source on phase change). */
+  private currentTint: { color: number; alpha: number } = {
+    color: 0xffffff,
+    alpha: 0,
+  };
+  /** Lit-lantern images, shown evening/night, hidden morning/afternoon. */
+  private readonly lanterns: Phaser.GameObjects.Image[] = [];
+  /** TimeSystem.onChange unsubscribe (event-driven; nothing per-frame). */
+  private unsubscribeTime: (() => void) | null = null;
+
   // -- spectator camera (pan / wheel-zoom / click-to-follow) -----------------
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
   private wasd: Record<"up" | "down" | "left" | "right", Phaser.Input.Keyboard.Key> | null = null;
@@ -209,6 +240,20 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     // v3 — draw world object markers over the tile layer (both asset + placeholder modes).
     this.dressWorldObjects();
 
+    // v3 (Wave 3b) — day/night ambient lighting: one full-map overlay quad
+    // tinted per phase, plus lit lanterns at evening/night. Event-driven via
+    // TimeSystem.onChange (nothing per-frame); the first apply is instant.
+    this.tintRect = this.add
+      .rectangle(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setScrollFactor(1)
+      .setDepth(DEPTH_TINT);
+    this.dressLanterns();
+    this.applyPhaseLighting(world.time().phase, true);
+    this.unsubscribeTime = getTimeSystem().onChange((t) =>
+      this.applyPhaseLighting(t.phase),
+    );
+
     this.unsubscribeWorld = world.onChange((tiles) => {
       if (tiles === null) {
         this.redrawAll();
@@ -220,6 +265,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.frameCamera, this);
       this.unsubscribeWorld?.();
+      this.unsubscribeTime?.();
       setRenderApi(null);
     });
 
@@ -926,6 +972,88 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         marker(obj);
       }
     }
+  }
+
+  // -- day/night ambient lighting (Wave 3b) -----------------------------------
+
+  /**
+   * Place the lit lanterns once (assets mode only). One lantern hangs by each
+   * building's window column (mirrors dressBuildings' window logic) at the
+   * front (y1) row — 14 buildings — plus one at the well, notice board and
+   * bench: ~17 total. All start hidden; applyPhaseLighting toggles them on at
+   * evening/night. No-op (empty array) without the decorations sheet, so the
+   * ambient tint still works in degraded/placeholder rendering.
+   */
+  private dressLanterns(): void {
+    if (!this.useAssets || !this.textures.exists("decorations")) return;
+    const place = (tx: number, ty: number): void => {
+      const img = this.add
+        .image(
+          tx * TILE_SIZE + TILE_SIZE / 2,
+          (ty + 1) * TILE_SIZE,
+          "decorations",
+          LANTERN_FRAMES.LIT,
+        )
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_TINT + 1)
+        .setVisible(false);
+      this.lanterns.push(img);
+    };
+    for (const b of BUILDINGS) {
+      const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
+      place(windowX, b.y1);
+    }
+    place(WELL_POS.x, WELL_POS.y);
+    place(NOTICE_BOARD_POS.x, NOTICE_BOARD_POS.y);
+    place(BENCH_POS.x, BENCH_POS.y);
+  }
+
+  /**
+   * Apply the ambient overlay + lantern state for a phase. Lanterns light at
+   * evening/night. The overlay cross-fades over PHASE_TINT_TWEEN_MS by tweening
+   * a typed {t} proxy (interpolating color via Phaser's Color helper + alpha
+   * linearly) into tintRect.setFillStyle; the first/instant apply sets it
+   * directly. Night alpha is hard-capped at 0.40 by the PHASE_TINTS palette.
+   */
+  private applyPhaseLighting(phase: Phase, instant = false): void {
+    const lit = phase === "evening" || phase === "night";
+    for (const l of this.lanterns) l.setVisible(lit);
+
+    const rect = this.tintRect;
+    if (!rect) return;
+    const target = phaseTint(phase);
+
+    if (instant) {
+      this.currentTint = { color: target.color, alpha: target.alpha };
+      rect.setFillStyle(target.color, target.alpha);
+      return;
+    }
+
+    const from = { color: this.currentTint.color, alpha: this.currentTint.alpha };
+    const fromColor = Phaser.Display.Color.IntegerToColor(from.color);
+    const toColor = Phaser.Display.Color.IntegerToColor(target.color);
+    const proxy: { t: number } = { t: 0 };
+    this.tweens.add({
+      targets: proxy,
+      t: 1,
+      duration: PHASE_TINT_TWEEN_MS,
+      ease: "Linear",
+      onUpdate: () => {
+        const c = Phaser.Display.Color.Interpolate.ColorWithColor(
+          fromColor,
+          toColor,
+          1,
+          proxy.t,
+        );
+        const color = Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+        const alpha = from.alpha + (target.alpha - from.alpha) * proxy.t;
+        rect.setFillStyle(color, alpha);
+      },
+      onComplete: () => {
+        this.currentTint = { color: target.color, alpha: target.alpha };
+        rect.setFillStyle(target.color, target.alpha);
+      },
+    });
   }
 
   // -- placeholder tile rendering (v1 fallback, unchanged behavior) ----------

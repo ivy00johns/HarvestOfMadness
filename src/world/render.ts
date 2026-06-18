@@ -84,6 +84,18 @@ export const SIGN_FRAMES = {
 } as const;
 
 /**
+ * decorations-medieval.png lit lanterns/torches (manifest: cols 12-15). The
+ * lit-glow pair LIT/LIT_ALT are adjacent columns 12/13 on the same sheet row.
+ * frame = row*16 + col. Row 2 is the eyeball-confirmed glow row; the unit test
+ * pins only the col band (12-15) + adjacency, so a future row tweak won't
+ * redden the suite.
+ */
+export const LANTERN_FRAMES = {
+  LIT: 12 + 16 * 2, // 44 — col 12, row 2
+  LIT_ALT: 13 + 16 * 2, // 45 — col 13, row 2
+} as const;
+
+/**
  * interior.png — 16 frames/row. Open-roof room rendering: a tiled floor, a
  * back-wall strip, and a few built-in furnishings. frame = row*16 + col.
  */

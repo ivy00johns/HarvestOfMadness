@@ -8,6 +8,7 @@ import {
   FENCE_FRAMES,
   FURNITURE_FRAMES,
   INTERIOR_FRAMES,
+  LANTERN_FRAMES,
   SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
@@ -171,6 +172,19 @@ describe("town props frame constants (decorations + paths sheets, 16 frames/row)
     }
     // CHAIR_L / CHAIR_R are an adjacent pair on the same sheet row.
     expect(FURNITURE_FRAMES.CHAIR_R - FURNITURE_FRAMES.CHAIR_L).toBe(1);
+  });
+
+  it("lit-lantern frames are an adjacent pair in the lantern/torch col band (12-15), same row", () => {
+    expect(LANTERN_FRAMES.LIT).toBeGreaterThanOrEqual(0);
+    expect(LANTERN_FRAMES.LIT_ALT).toBeGreaterThanOrEqual(0);
+    // manifest: "Lanterns/torches cols 12-15"
+    expect(COL(LANTERN_FRAMES.LIT)).toBeGreaterThanOrEqual(12);
+    expect(COL(LANTERN_FRAMES.LIT)).toBeLessThanOrEqual(15);
+    expect(COL(LANTERN_FRAMES.LIT_ALT)).toBeGreaterThanOrEqual(12);
+    expect(COL(LANTERN_FRAMES.LIT_ALT)).toBeLessThanOrEqual(15);
+    // same sheet row, adjacent columns (pin band + adjacency, not the row)
+    expect(ROW(LANTERN_FRAMES.LIT)).toBe(ROW(LANTERN_FRAMES.LIT_ALT));
+    expect(LANTERN_FRAMES.LIT_ALT - LANTERN_FRAMES.LIT).toBe(1);
   });
 });
 

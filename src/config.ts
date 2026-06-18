@@ -5,7 +5,7 @@
  * Contract-authoritative values (map size, tile size, crop tables) live in
  * @contracts/types — re-exported here for convenience.
  */
-import type { Emotion, TileType } from "@contracts/types";
+import type { Emotion, Phase, TileType } from "@contracts/types";
 
 export {
   MAP_WIDTH,
@@ -140,3 +140,32 @@ export const EMOTION_STYLE: Record<
   excited: { symbol: "★", color: 0xffa726, cssColor: "#ffa726" },
   neutral: { symbol: "·", color: 0xe0e0e0, cssColor: "#e0e0e0" },
 };
+
+// ---------------------------------------------------------------------------
+// v3 (Wave 3b) — day/night ambient lighting palette (pure data; WorldScene
+// paints a single full-map overlay Rectangle tinted per phase). The night
+// alpha is HARD-CAPPED at 0.40 for legibility (labels use white+stroke3 so
+// they survive the wash; trees/bubbles render above the overlay and stay
+// bright). afternoon is a transparent no-op (full midday daylight).
+// ---------------------------------------------------------------------------
+
+/** A full-map ambient overlay color + opacity for one phase of the day. */
+export interface PhaseTint {
+  color: number;
+  alpha: number;
+}
+
+export const PHASE_TINTS: Record<Phase, PhaseTint> = {
+  morning: { color: 0x9fb8d8, alpha: 0.12 }, // cool dawn blue, light
+  afternoon: { color: 0xffffff, alpha: 0.0 }, // midday no-op
+  evening: { color: 0xff9a3c, alpha: 0.22 }, // warm amber
+  night: { color: 0x1b2a55, alpha: 0.4 }, // cool blue, HARD CAP 0.40
+};
+
+/** Pure lookup of the ambient overlay for a phase. */
+export function phaseTint(phase: Phase): PhaseTint {
+  return PHASE_TINTS[phase];
+}
+
+/** Cross-fade duration when the phase changes (instant on first apply). */
+export const PHASE_TINT_TWEEN_MS = 400;
