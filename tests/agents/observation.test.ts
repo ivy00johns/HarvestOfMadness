@@ -156,8 +156,8 @@ describe("buildObservation", () => {
     ]);
     // Landmarks are global knowledge (all returned regardless of position).
     const kinds = obs.nearby.landmarks.map((l) => l.kind);
-    expect(kinds.filter((k) => k === "bed").length).toBe(10);
-    expect(kinds.filter((k) => k === "house").length).toBe(10);
+    expect(kinds.filter((k) => k === "bed").length).toBe(12);
+    expect(kinds.filter((k) => k === "house").length).toBe(12);
     expect(kinds.filter((k) => k === "shop").length).toBe(1);
     expect(kinds.filter((k) => k === "tavern").length).toBe(1);
     expect(kinds.filter((k) => k === "water").length).toBe(1);
