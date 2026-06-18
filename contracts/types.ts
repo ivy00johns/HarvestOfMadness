@@ -124,8 +124,8 @@ export const STARTING_SEEDS = 5;
  */
 export const PHASE_DURATION_MS = 8_000;
 
-export const MAP_WIDTH = 64;
-export const MAP_HEIGHT = 40;
+export const MAP_WIDTH = 96;
+export const MAP_HEIGHT = 64;
 /** v2: LPC art is 32×32; world logic is tile-indexed and never uses pixels */
 export const TILE_SIZE = 32;
 export const OBSERVATION_RADIUS = 4;

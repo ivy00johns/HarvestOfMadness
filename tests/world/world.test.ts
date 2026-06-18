@@ -195,7 +195,7 @@ describe("Farm mutations — tile-level preconditions", () => {
     const notReady = w.harvest(SOIL);
     expect(notReady.ok).toBe(false);
     expect(notReady.reason).toContain("not ready");
-    expect(w.harvest({ x: 50, y: 50 }).reason).toContain("outside the map");
+    expect(w.harvest({ x: 99, y: 99 }).reason).toContain("outside the map");
   });
 });
 

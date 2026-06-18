@@ -17,7 +17,7 @@ export {
 } from "@contracts/types";
 
 /**
- * Default spectator camera zoom. The map is 64×40 tiles (2048×1280 world px).
+ * Default spectator camera zoom. The map is 96×64 tiles (3072×2048 world px).
  * At DEFAULT_ZOOM=1.5 a typical 1440-wide viewport shows ~24 tiles across —
  * agents and buildings are readable. GAME_ZOOM is kept as an alias so existing
  * code that imports it still compiles; new code should prefer DEFAULT_ZOOM.
@@ -28,11 +28,11 @@ export const GAME_ZOOM = DEFAULT_ZOOM;
 
 /**
  * Spectator camera zoom clamp.
- * MIN is set near the fit-to-map value for the 64×40 world on typical viewports
- * (~0.6) so the player can zoom out to see the whole town without endless void.
+ * MIN is set near the fit-to-map value for the 96×64 world on typical viewports
+ * (~0.4) so the player can zoom out to see the whole town without endless void.
  * MAX stays at 3 — good for close-up inspection.
  */
-export const CAMERA_ZOOM_MIN = 0.6;
+export const CAMERA_ZOOM_MIN = 0.4;
 export const CAMERA_ZOOM_MAX = 3;
 
 /**
@@ -61,10 +61,10 @@ export function zoomFactorForWheelDelta(
 }
 
 /** Keyboard pan speed (world px/sec at zoom 1, scaled by 1/zoom).
- *  Raised from 480→720 for the larger 64×40 map so panning the full width
- *  still takes a comfortable ~3s at zoom 1.
+ *  Raised for the larger 96×64 map so panning the full width still takes a
+ *  comfortable ~3s at zoom 1.
  */
-export const CAMERA_PAN_SPEED = 720;
+export const CAMERA_PAN_SPEED = 960;
 
 /** Camera follow lerp (per-axis) when tracking a clicked agent. */
 export const CAMERA_FOLLOW_LERP = 0.12;
