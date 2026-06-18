@@ -69,8 +69,9 @@ export const CAMERA_PAN_SPEED = 960;
 /** Camera follow lerp (per-axis) when tracking a clicked agent. */
 export const CAMERA_FOLLOW_LERP = 0.12;
 
-/** Page / letterbox background. */
-export const BACKGROUND_COLOR = "#101014";
+/** Page / letterbox background — a soft slate (not pure black) so the HUD
+ *  chrome reads as a calm dark-UI surface rather than a harsh terminal void. */
+export const BACKGROUND_COLOR = "#181b22";
 
 /** Placeholder tile colors (zero-asset fallback rendering). */
 export const TILE_COLORS: Record<TileType, number> = {

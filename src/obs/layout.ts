@@ -14,11 +14,22 @@
  */
 
 // -- contract rule 14: every HUD font ≥ 12 logical px ------------------------
-export const FONT_SIZE_SMALL = 12;
-export const FONT_SIZE_BASE = 13;
-export const FONT_SIZE_TITLE = 14;
-/** Family used across the HUD (monospace keeps clip math predictable). */
-export const HUD_FONT = "ui-monospace, Menlo, Consolas, monospace";
+// Readability polish: the whole scale is lifted ~15-25% over the old
+// 12/13/14 so dense cards and the feed read comfortably, while the smallest
+// size stays ≥ 12 (contract floor). Row pitch (line spacing) is widened at the
+// call sites that stack text (cards, feed, transcript) to match.
+export const FONT_SIZE_SMALL = 13;
+export const FONT_SIZE_BASE = 15;
+export const FONT_SIZE_TITLE = 17;
+/**
+ * Body family — a clean system sans for prose (names, labels, status) reads
+ * noticeably softer than a terminal mono. Numerals/code rows (gold, energy,
+ * meta, decision-trace JSON) keep MONO_FONT so columns stay aligned and the
+ * clip-char math (chars × px) remains predictable.
+ */
+export const HUD_FONT = "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif";
+/** Monospace family for numeric/code rows where column alignment matters. */
+export const MONO_FONT = "ui-monospace, Menlo, Consolas, monospace";
 
 export interface Rect {
   x: number;
@@ -45,29 +56,39 @@ export function unionRect(a: Rect, b: Rect): Rect {
 }
 
 // -- fixed design metrics (independent of viewport size) ---------------------
-export const TOPBAR_H = 24;
-export const BADGE_ROW_H = 20;
+// Readability polish: chrome rows and cards gained vertical room to match the
+// larger type scale (above) and a touch more line spacing.
+export const TOPBAR_H = 30;
+export const BADGE_ROW_H = 26;
 /** Total height of the two-row top chrome. */
-export const HUD_TOP_H = TOPBAR_H + BADGE_ROW_H; // 44
+export const HUD_TOP_H = TOPBAR_H + BADGE_ROW_H; // 56
 
-export const CARD_W = 236;
-export const CARD_GAP = 4;
-/** Full card: swatch+name, gold/energy, plan, goal, 2-line thought, action,
- *  3 relationship rows, meta. */
-export const CARD_H_NORMAL = 168;
-/** Compact (4+ agents): drops thought + 2 relationship rows. */
-export const CARD_H_COMPACT = 108;
+export const CARD_W = 250;
+export const CARD_GAP = 8;
+/** Full card (≤3 agents): swatch+name, gold/energy, plan, goal, 2-line thought,
+ *  action, 3 relationship rows, meta. Taller than v1 to fit the bigger type +
+ *  more line spacing; ≤3 agents leaves ample vertical room. */
+export const CARD_H_NORMAL = 200;
+/** Compact (4+ agents): drops thought + 2 relationship rows. Kept lean so the
+ *  cardHeight() clamp can grant near-full height even with 6-7 stacked cards;
+ *  rows stay 13px (≥ contract floor) at a tight pitch in this dense case. */
+export const CARD_H_COMPACT = 116;
 
 export const LOG_LINES = 10;
-export const LOG_LINE_H = 14;
-export const LOG_PAD_X = 6;
-export const LOG_PAD_Y = 5;
-export const LOG_H = LOG_LINES * LOG_LINE_H + 10; // 150 — fixed height
-/** ~7.3px/char at 12px monospace inside LOG_W − padding. */
+export const LOG_LINE_H = 17;
+export const LOG_PAD_X = 8;
+export const LOG_PAD_Y = 7;
+export const LOG_H = LOG_LINES * LOG_LINE_H + 12; // fixed height
+/** ~8.0px/char at 13px monospace inside LOG_W − padding. */
 export const LOG_MAX_CHARS = 68;
 
-export const PANEL_HEADER_H = 36;
+export const PANEL_HEADER_H = 42;
 export const PANEL_VISIBLE_TRACE = 5;
+
+/** Gutter reserved below the top chrome for the "AGENTS" / left-band section
+ *  headers, so labels sit clearly above the first card / panel instead of
+ *  crammed against the badge-row edge. */
+export const CARD_HEADER_H = 18;
 
 /** Minimum width the world stays visible at (cards never eat the whole screen). */
 const MIN_WORLD_W = 280;
@@ -88,6 +109,9 @@ export interface HudLayout {
   cardW: number;
   cardX: number;
   cardTop: number;
+  /** Baseline Y for the section-header labels ("AGENTS", left-band) drawn in
+   *  the gutter between the top chrome and the first card / panel. */
+  cardHeaderY: number;
   cardGap: number;
   logX: number;
   logY: number;
@@ -132,16 +156,16 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   // Cards shrink only if the window is too narrow to keep the world visible.
   const cardW = Math.min(CARD_W, Math.max(120, w - MIN_WORLD_W));
   const cardX = w - cardW - 4;
-  const cardTop = HUD_TOP_H + 4;
+  const cardTop = HUD_TOP_H + 4 + CARD_HEADER_H;
   const logH = LOG_H;
   const logY = h - logH - 4;
   const logX = 4;
   const logW = Math.max(120, cardX - 8);
   // Truncation must track the live feed width, not the old 768px design width:
-  // ~7.5px/char for the 12px monospace feed font (matches the design's 68 chars
+  // ~8.0px/char for the 13px monospace feed font (matches the design's 68 chars
   // over its ~508px usable width). Without this the feed clips early on wide
   // screens and leaves a large empty gutter.
-  const logMaxChars = Math.max(24, Math.floor((logW - 2 * LOG_PAD_X) / 7.5));
+  const logMaxChars = Math.max(24, Math.floor((logW - 2 * LOG_PAD_X) / 8.0));
   const panelX = 4;
   const panelY = cardTop;
   const panelW = Math.max(120, cardX - 8);
@@ -155,7 +179,7 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const partyX = panelX;
   const partyY = panelY;
   const partyW = panelW;
-  const partyH = Math.min(96, Math.max(60, panelH));
+  const partyH = Math.min(108, Math.max(68, panelH));
   const partyRect: Rect = { x: partyX, y: partyY, w: partyW, h: partyH };
 
   // v3 (Wave 2) — conversation transcript panel: docked BELOW the party strip
@@ -176,9 +200,12 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   };
 
   const cardHeight = (count: number): number => {
-    if (count <= 3) return CARD_H_NORMAL;
+    // Height that lets `count` cards (+ gaps) stack inside the column band.
     const fit = Math.floor((h - cardTop - 4) / count) - CARD_GAP;
-    return Math.max(40, Math.min(CARD_H_COMPACT, fit));
+    // ≤3 agents use the roomy NORMAL card, but never taller than the band
+    // allows (short frames like the 768×576 design size must still fit 3).
+    const cap = count <= 3 ? CARD_H_NORMAL : CARD_H_COMPACT;
+    return Math.max(40, Math.min(cap, fit));
   };
   const cardRect = (index: number, count: number): Rect => {
     const ch = cardHeight(count);
@@ -214,6 +241,7 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     cardW,
     cardX,
     cardTop,
+    cardHeaderY: HUD_TOP_H + 4,
     cardGap: CARD_GAP,
     logX,
     logY,

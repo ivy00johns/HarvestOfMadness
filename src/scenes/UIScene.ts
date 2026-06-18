@@ -43,6 +43,7 @@ import {
   FONT_SIZE_SMALL,
   FONT_SIZE_TITLE,
   HUD_FONT,
+  MONO_FONT,
   REG_HUD,
   computeHud,
   pointInRect,
@@ -65,22 +66,27 @@ const PX_SMALL = `${FONT_SIZE_SMALL}px`;
 const PX_BASE = `${FONT_SIZE_BASE}px`;
 const PX_TITLE = `${FONT_SIZE_TITLE}px`;
 
-const COLOR_TEXT = "#e6e6e6";
-const COLOR_DIM = "#9aa0aa";
-const COLOR_FAINT = "#6f7682";
-const COLOR_GOLD = "#ffd700";
-const COLOR_GOAL = "#73daca";
-const COLOR_PLAN = "#7aa2f7";
-const COLOR_OK = "#9ece6a";
-const COLOR_BAD = "#f7768e";
-const COLOR_CHROME = 0x101218;
-const COLOR_CARD_BG = 0x14161c;
-const COLOR_BORDER = 0x3d4456;
+// Readability palette: a calm slate/zinc dark-UI surface (not pure black),
+// higher-contrast off-white body text, and ONE restrained teal accent for the
+// primary highlight. Status greens/ambers/reds are softened a touch so they
+// read as muted UI tones rather than saturated neon-on-black.
+const COLOR_TEXT = "#eef1f6"; // near-white body — high contrast on slate
+const COLOR_DIM = "#a8b0be"; // secondary labels
+const COLOR_FAINT = "#7b8493"; // tertiary / meta
+const COLOR_GOLD = "#f2c560"; // muted amber (gold) — calmer than #ffd700
+const COLOR_GOAL = "#5ec8b8"; // restrained teal accent (the one highlight)
+const COLOR_PLAN = "#88a6e6"; // soft blue
+const COLOR_OK = "#84c878"; // muted green
+const COLOR_BAD = "#e8788c"; // muted red
+const COLOR_CHROME = 0x1c2027; // slate panel surface (not black)
+const COLOR_CARD_BG = 0x21262f; // slightly lifted card surface
+const COLOR_BORDER = 0x39414f; // subtle separator
+const COLOR_HEADER = "#9aa4b4"; // section-header label tone (AGENTS / EVENTS)
 
 const FSM_COLORS: Record<string, string> = {
-  IDLE: "#8a8f98",
-  THINKING: "#e0af68",
-  EXECUTING: "#9ece6a",
+  IDLE: "#8a93a2",
+  THINKING: "#dcae6b",
+  EXECUTING: "#84c878",
 };
 
 const PHASE_ICON: Record<string, string> = {
@@ -213,6 +219,7 @@ export class UIScene extends Phaser.Scene {
     this.hud = computeHud(this.scale.width, this.scale.height);
     this.buildTopBar();
     this.buildBadgeRow();
+    this.buildSectionHeaders();
     this.buildFeedChrome();
     this.buildPartyChrome();
     this.buildGovernanceChrome();
@@ -284,6 +291,7 @@ export class UIScene extends Phaser.Scene {
     this.transcriptVisible = false;
     this.buildTopBar();
     this.buildBadgeRow();
+    this.buildSectionHeaders();
     this.buildFeedChrome();
     this.buildPartyChrome();
     this.buildGovernanceChrome();
@@ -291,6 +299,28 @@ export class UIScene extends Phaser.Scene {
     this.refreshAll();
     if (reopen) this.toggleTracePanel(reopen);
     this.publishPanelRect();
+  }
+
+  /**
+   * Section-header labels drawn once in the gutter below the top chrome:
+   * "AGENTS" above the right-hand card column and "TOWN" above the left band
+   * (party/governance/transcript). Pure chrome — no state, recreated on relayout
+   * by children.removeAll(true). The feed's "EVENTS" header is drawn in
+   * buildFeedChrome (its gutter is at the bottom-left).
+   */
+  private buildSectionHeaders(): void {
+    const headerStyle: Phaser.Types.GameObjects.Text.TextStyle = {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      fontStyle: "bold",
+      color: COLOR_HEADER,
+    };
+    this.add
+      .text(this.hud.cardX + 2, this.hud.cardHeaderY, "AGENTS", headerStyle)
+      .setDepth(DEPTH_HUD_TEXT);
+    this.add
+      .text(this.hud.panelX + this.hud.logPadX, this.hud.cardHeaderY, "TOWN", headerStyle)
+      .setDepth(DEPTH_HUD_TEXT);
   }
 
   /** WorldScene reads this rect to ignore camera clicks over the open panel.
@@ -451,14 +481,20 @@ export class UIScene extends Phaser.Scene {
 
   private buildTopBar(): void {
     this.add
-      .rectangle(0, 0, this.hud.w, this.hud.topbarH, COLOR_CHROME, 0.92)
+      .rectangle(0, 0, this.hud.w, this.hud.topbarH, COLOR_CHROME, 0.94)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD);
+    // subtle separator under the top bar instead of a hard edge
+    this.add
+      .rectangle(0, this.hud.topbarH - 1, this.hud.w, 1, COLOR_BORDER, 0.7)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
 
-    let x = 4;
+    let x = 6;
+    const btnY = Math.round((this.hud.topbarH - (FONT_SIZE_BASE + 8)) / 2);
     const place = (label: string, onClick: () => void): Phaser.GameObjects.Text => {
-      const btn = this.makeButton(x, 3, label, onClick);
-      x = Math.round(btn.x + btn.width + 4);
+      const btn = this.makeButton(x, btnY, label, onClick);
+      x = Math.round(btn.x + btn.width + 6);
       return btn;
     };
 
@@ -479,7 +515,7 @@ export class UIScene extends Phaser.Scene {
     }
 
     this.statusText = this.add
-      .text(this.hud.statusX, 5, "", {
+      .text(this.hud.statusX, Math.round((this.hud.topbarH - FONT_SIZE_BASE) / 2) - 1, "", {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         color: COLOR_TEXT,
@@ -493,38 +529,44 @@ export class UIScene extends Phaser.Scene {
   /** Badge row under the top bar: kill-switch pinned left, state badges beside. */
   private buildBadgeRow(): void {
     this.add
-      .rectangle(0, this.hud.badgeRowY, this.hud.w, this.hud.badgeRowH, COLOR_CHROME, 0.92)
+      .rectangle(0, this.hud.badgeRowY, this.hud.w, this.hud.badgeRowH, COLOR_CHROME, 0.94)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
+    // subtle separator under the badge row
+    this.add
+      .rectangle(0, this.hud.badgeRowY + this.hud.badgeRowH - 1, this.hud.w, 1, COLOR_BORDER, 0.7)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD);
+    const badgeY = this.hud.badgeRowY + Math.round((this.hud.badgeRowH - (FONT_SIZE_SMALL + 8)) / 2);
     this.killBadge = this.add
-      .text(4, this.hud.badgeRowY + 2, "", {
+      .text(6, badgeY, "", {
         fontFamily: HUD_FONT,
-        fontSize: PX_BASE,
+        fontSize: PX_SMALL,
         fontStyle: "bold",
-        padding: { x: 8, y: 2 },
+        padding: { x: 9, y: 4 },
       })
       .setOrigin(0, 0)
       .setDepth(DEPTH_BADGE);
     this.pausedBadge = this.add
-      .text(0, this.hud.badgeRowY + 2, "PAUSED", {
+      .text(0, badgeY, "PAUSED", {
         fontFamily: HUD_FONT,
-        fontSize: PX_BASE,
+        fontSize: PX_SMALL,
         fontStyle: "bold",
-        color: "#ff5555",
-        backgroundColor: "#3a1418",
-        padding: { x: 6, y: 2 },
+        color: "#ff7a7a",
+        backgroundColor: "#3a1c20",
+        padding: { x: 8, y: 4 },
       })
       .setOrigin(0, 0)
       .setDepth(DEPTH_BADGE)
       .setVisible(false);
     this.budgetBadge = this.add
-      .text(0, this.hud.badgeRowY + 2, "BUDGET REACHED", {
+      .text(0, badgeY, "BUDGET REACHED", {
         fontFamily: HUD_FONT,
-        fontSize: PX_BASE,
+        fontSize: PX_SMALL,
         fontStyle: "bold",
-        color: "#ffb86c",
-        backgroundColor: "#3a2a14",
-        padding: { x: 6, y: 2 },
+        color: "#f2c560",
+        backgroundColor: "#3a2e18",
+        padding: { x: 8, y: 4 },
       })
       .setOrigin(0, 0)
       .setDepth(DEPTH_BADGE)
@@ -532,8 +574,8 @@ export class UIScene extends Phaser.Scene {
     // v3 — cognition-cost tally, right-aligned in the badge row, distinct from
     // the decision-layer model/latency/tokens shown on agent cards.
     this.cogMeter = this.add
-      .text(this.hud.w - 6, this.hud.badgeRowY + 3, "", {
-        fontFamily: HUD_FONT,
+      .text(this.hud.w - 6, this.hud.badgeRowY + Math.round((this.hud.badgeRowH - FONT_SIZE_SMALL) / 2), "", {
+        fontFamily: MONO_FONT,
         fontSize: PX_SMALL,
         color: COLOR_DIM,
       })
@@ -581,8 +623,8 @@ export class UIScene extends Phaser.Scene {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         color: COLOR_TEXT,
-        backgroundColor: "#2a2f3a",
-        padding: { x: 6, y: 2 },
+        backgroundColor: "#2c333f",
+        padding: { x: 8, y: 4 },
       })
       .setDepth(DEPTH_HUD_TEXT)
       .setInteractive({ useHandCursor: true });
@@ -614,8 +656,8 @@ export class UIScene extends Phaser.Scene {
     for (const [s, btn] of this.speedBtns) {
       const active = s === speed;
       btn.setStyle({
-        backgroundColor: active ? "#73daca" : "#2a2f3a",
-        color: active ? "#101014" : COLOR_TEXT,
+        backgroundColor: active ? COLOR_GOAL : "#2c333f",
+        color: active ? "#10141a" : COLOR_TEXT,
       });
     }
   }
@@ -624,10 +666,20 @@ export class UIScene extends Phaser.Scene {
 
   private buildFeedChrome(): void {
     this.add
-      .rectangle(this.hud.logX, this.hud.logY, this.hud.logW, this.hud.logH, COLOR_CHROME, 0.85)
+      .rectangle(this.hud.logX, this.hud.logY, this.hud.logW, this.hud.logH, COLOR_CHROME, 0.9)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD);
+    // Section header in the gutter just above the feed rect — gives the eye a
+    // clear "EVENTS" region marker without eating any feed-line space.
+    this.add
+      .text(this.hud.logX + this.hud.logPadX, this.hud.logY - FONT_SIZE_SMALL - 5, "EVENTS", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        fontStyle: "bold",
+        color: COLOR_HEADER,
+      })
+      .setDepth(DEPTH_HUD_TEXT);
     for (let i = 0; i < this.hud.logLines; i++) {
       this.logTexts.push(
         this.add
@@ -636,7 +688,7 @@ export class UIScene extends Phaser.Scene {
             this.hud.logY + this.hud.logPadY + i * this.hud.logLineH,
             "",
             {
-              fontFamily: HUD_FONT,
+              fontFamily: MONO_FONT,
               fontSize: PX_SMALL,
               color: COLOR_DIM,
             },
@@ -675,7 +727,7 @@ export class UIScene extends Phaser.Scene {
   private buildPartyChrome(): void {
     const r = this.hud.partyRect;
     this.partyBg = this.add
-      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.92)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD)
@@ -685,33 +737,33 @@ export class UIScene extends Phaser.Scene {
       style: Phaser.Types.GameObjects.Text.TextStyle,
     ): Phaser.GameObjects.Text =>
       this.add
-        .text(r.x + 8, r.y + dy, "", style)
+        .text(r.x + 10, r.y + dy, "", style)
         .setDepth(DEPTH_HUD_TEXT)
         .setVisible(false);
 
-    this.partyTitle = mk(5, {
+    this.partyTitle = mk(8, {
       fontFamily: HUD_FONT,
       fontSize: PX_BASE,
       fontStyle: "bold",
       color: COLOR_GOAL,
     });
-    this.partyMeta = mk(22, {
+    this.partyMeta = mk(30, {
       fontFamily: HUD_FONT,
       fontSize: PX_SMALL,
       color: COLOR_DIM,
     });
-    this.partyKnow = mk(40, {
+    this.partyKnow = mk(52, {
       fontFamily: HUD_FONT,
       fontSize: PX_SMALL,
       color: COLOR_TEXT,
     });
-    this.partyInvited = mk(58, {
+    this.partyInvited = mk(74, {
       fontFamily: HUD_FONT,
       fontSize: PX_SMALL,
       color: COLOR_PLAN,
     });
     this.partyArrived = this.add
-      .text(r.x + r.w - 8, r.y + 58, "", {
+      .text(r.x + r.w - 10, r.y + 74, "", {
         fontFamily: HUD_FONT,
         fontSize: PX_SMALL,
         color: COLOR_OK,
@@ -777,7 +829,7 @@ export class UIScene extends Phaser.Scene {
   private buildGovernanceChrome(): void {
     const r = this.hud.partyRect;
     this.govBg = this.add
-      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.92)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD)
@@ -787,22 +839,22 @@ export class UIScene extends Phaser.Scene {
       style: Phaser.Types.GameObjects.Text.TextStyle,
     ): Phaser.GameObjects.Text =>
       this.add
-        .text(r.x + 8, r.y + dy, "", style)
+        .text(r.x + 10, r.y + dy, "", style)
         .setDepth(DEPTH_HUD_TEXT)
         .setVisible(false);
-    this.govTitle = mk(5, {
+    this.govTitle = mk(8, {
       fontFamily: HUD_FONT,
       fontSize: PX_BASE,
       fontStyle: "bold",
       color: COLOR_PLAN,
     });
-    this.govMeta = mk(22, {
+    this.govMeta = mk(30, {
       fontFamily: HUD_FONT,
       fontSize: PX_SMALL,
       color: COLOR_DIM,
     });
-    this.govTally = mk(40, {
-      fontFamily: HUD_FONT,
+    this.govTally = mk(52, {
+      fontFamily: MONO_FONT,
       fontSize: PX_SMALL,
       color: COLOR_TEXT,
     });
@@ -859,31 +911,31 @@ export class UIScene extends Phaser.Scene {
   private buildTranscriptChrome(): void {
     const r = this.hud.transcriptRect;
     this.transcriptBg = this.add
-      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.92)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD)
       .setVisible(false);
     this.transcriptTitle = this.add
-      .text(r.x + 8, r.y + 4, "Conversation", {
+      .text(r.x + 10, r.y + 6, "CONVERSATION", {
         fontFamily: HUD_FONT,
-        fontSize: PX_BASE,
+        fontSize: PX_SMALL,
         fontStyle: "bold",
-        color: COLOR_TEXT,
+        color: COLOR_HEADER,
       })
       .setDepth(DEPTH_HUD_TEXT)
       .setVisible(false);
     this.transcriptRows = [];
-    const rowTop = r.y + 22;
-    const rowH = FONT_SIZE_SMALL + 2;
+    const rowTop = r.y + 26;
+    const rowH = FONT_SIZE_SMALL + 4;
     for (let i = 0; i < UIScene.TRANSCRIPT_MAX_LINES; i++) {
       this.transcriptRows.push(
         this.add
-          .text(r.x + 8, rowTop + i * rowH, "", {
-            fontFamily: HUD_FONT,
+          .text(r.x + 10, rowTop + i * rowH, "", {
+            fontFamily: MONO_FONT,
             fontSize: PX_SMALL,
             color: COLOR_TEXT,
-            wordWrap: { width: r.w - 16 },
+            wordWrap: { width: r.w - 20 },
           })
           .setDepth(DEPTH_HUD_TEXT)
           .setVisible(false),
@@ -925,9 +977,9 @@ export class UIScene extends Phaser.Scene {
     this.setTranscriptVisible(true);
   }
 
-  /** Rough char budget for a transcript row at 12px monospace in the panel. */
+  /** Rough char budget for a transcript row at 13px monospace in the panel. */
   private transcriptLineMaxChars(): number {
-    return Math.max(20, Math.floor((this.hud.transcriptW - 16) / 7.5));
+    return Math.max(20, Math.floor((this.hud.transcriptW - 20) / 8.0));
   }
 
   private setTranscriptVisible(visible: boolean): void {
@@ -982,7 +1034,11 @@ export class UIScene extends Phaser.Scene {
   /** Flat absolute-positioned children — no containers (Phaser 4.1 gotcha). */
   private createCard(x: number, y: number, cardH: number, compact: boolean): CardUi {
     const cardW = this.hud.cardW;
+    // Sans body for labels; mono for the numeric/code rows (gold, energy, meta)
+    // so columns stay aligned. More generous left padding + line pitch than v1.
+    const padX = 10;
     const small = { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
+    const smallMono = { fontFamily: MONO_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
     const text = (
       tx: number,
       ty: number,
@@ -991,75 +1047,94 @@ export class UIScene extends Phaser.Scene {
       this.add.text(tx, ty, "", style).setDepth(DEPTH_HUD_TEXT);
 
     const bg = this.add
-      .rectangle(x, y, cardW, cardH, COLOR_CARD_BG, 0.93)
+      .rectangle(x, y, cardW, cardH, COLOR_CARD_BG, 0.95)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, 0x2a2f3a, 1)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD);
 
     // visual sprite link (v1 defect c): swatch in the agent's sprite color
     const swatch = this.add
-      .rectangle(x + 6, y + 6, 11, 11, 0xffffff, 1)
+      .rectangle(x + padX, y + 9, 12, 12, 0xffffff, 1)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, 0xffffff, 0.6)
+      .setStrokeStyle(1, 0xffffff, 0.5)
       .setDepth(DEPTH_HUD_TEXT);
 
-    const rowGold = y + 20;
-    const rowPlan = y + 34;
-    const rowGoal = y + 48;
-    const rowThought = y + 62; // 2 wrapped lines reserved (normal mode)
-    const rowAction = compact ? y + 62 : y + 90;
+    // Rows are laid out from the card's ACTUAL height so they distribute evenly
+    // and never collide — even when many agents force the cardHeight() clamp to
+    // shrink the card. Each mode has a fixed ordered row list; the pitch is the
+    // remaining height after the header divided across the rows, capped at a
+    // comfortable max so roomy cards don't spread rows too far apart.
+    const headerH = 24; // name/fsm band
+    // Ordered body rows top→bottom, by slot. Normal mode reserves an extra slot
+    // for the 2nd wrapped thought line plus 2 extra relationship rows.
+    //   compact (6): gold,plan,goal,action,rel,meta
+    //   normal (10): gold,plan,goal,thoughtL1,thoughtL2,action,rel0,rel1,rel2,meta
+    const bodyRows = compact ? 6 : 10;
+    const avail = cardH - headerH - 4;
+    const pitch = Math.min(18, Math.max(13, Math.floor(avail / bodyRows)));
+    const rowY = (slot: number): number => y + headerH + slot * pitch;
+
+    const rowGold = rowY(0);
+    const rowPlan = rowY(1);
+    const rowGoal = rowY(2);
+    const rowThought = rowY(3); // normal: 2 wrapped lines occupy slots 3-4
+    const rowAction = compact ? rowY(3) : rowY(5);
     const relRowCount = compact ? 1 : 3;
-    const rowRel = compact ? y + 76 : y + 104;
-    const rowMeta = compact ? y + 90 : y + 146;
+    const rowRel = compact ? rowY(4) : rowY(6);
+    const relStep = pitch;
+    const rowMeta = compact ? rowY(5) : rowY(9);
+
+    const barW = Math.round(cardW * 0.38);
+    const barX = x + cardW - barW - 30;
 
     const relRows: Phaser.GameObjects.Text[] = [];
     for (let i = 0; i < relRowCount; i++) {
-      relRows.push(text(x + 6, rowRel + i * 14, { ...small }));
+      relRows.push(text(x + padX, rowRel + i * relStep, { ...small }));
     }
 
     return {
       bg,
       swatch,
-      name: text(x + 22, y + 4, {
+      name: text(x + padX + 18, y + 6, {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         color: "#ffffff",
         fontStyle: "bold",
       }),
-      fsm: text(x + cardW - 6, y + 4, { ...small }).setOrigin(1, 0),
-      gold: text(x + 6, rowGold, {
-        fontFamily: HUD_FONT,
+      fsm: text(x + cardW - padX, y + 8, { ...small }).setOrigin(1, 0),
+      gold: text(x + padX, rowGold, {
+        fontFamily: MONO_FONT,
         fontSize: PX_SMALL,
         color: COLOR_GOLD,
       }),
       energyBg: this.add
-        .rectangle(x + 76, rowGold + 3, 90, 8, 0x30343c, 1)
+        .rectangle(barX, rowGold + 3, barW, 9, 0x323844, 1)
         .setOrigin(0, 0)
         .setDepth(DEPTH_HUD_TEXT),
       energyFill: this.add
-        .rectangle(x + 76, rowGold + 3, 90, 8, 0x9ece6a, 1)
+        .rectangle(barX, rowGold + 3, barW, 9, 0x84c878, 1)
         .setOrigin(0, 0)
         .setDepth(DEPTH_HUD_TEXT),
-      energyText: text(x + cardW - 6, rowGold, { ...small }).setOrigin(1, 0),
-      plan: text(x + 6, rowPlan, { ...small, color: COLOR_PLAN }),
-      goal: text(x + 6, rowGoal, { ...small, color: COLOR_GOAL }),
+      energyText: text(x + cardW - padX, rowGold, { ...smallMono }).setOrigin(1, 0),
+      plan: text(x + padX, rowPlan, { ...small, color: COLOR_PLAN }),
+      goal: text(x + padX, rowGoal, { ...small, color: COLOR_GOAL }),
       // Wave 3a — intrinsic-drive bars, right-aligned on the goal row; empty
       // when the agent carries no needs vector (additive, never overlaps text).
-      needs: text(x + cardW - 6, rowGoal, { ...small, color: COLOR_DIM }).setOrigin(1, 0),
+      needs: text(x + cardW - padX, rowGoal, { ...smallMono }).setOrigin(1, 0),
       thought: compact
         ? null
-        : text(x + 6, rowThought, {
+        : text(x + padX, rowThought, {
             ...small,
-            color: "#c8ccd4",
-            wordWrap: { width: cardW - 12 },
+            color: "#cdd3dd",
+            wordWrap: { width: cardW - 2 * padX },
           }),
-      action: text(x + 6, rowAction, {
+      action: text(x + padX, rowAction, {
         fontFamily: HUD_FONT,
         fontSize: PX_SMALL,
         color: COLOR_OK,
       }),
       relRows,
-      meta: text(x + 6, rowMeta, { ...small, color: COLOR_FAINT }),
+      meta: text(x + padX, rowMeta, { ...smallMono, color: COLOR_FAINT }),
     };
   }
 
@@ -1124,9 +1199,10 @@ export class UIScene extends Phaser.Scene {
 
   private updateEnergy(ui: CardUi, energy: number): void {
     const ratio = Phaser.Math.Clamp(energy, 0, 100) / 100;
-    ui.energyFill.setSize(Math.max(1, Math.round(90 * ratio)), 8);
+    const fullW = ui.energyBg.width;
+    ui.energyFill.setSize(Math.max(1, Math.round(fullW * ratio)), 9);
     ui.energyFill.setFillStyle(
-      ratio > 0.5 ? 0x9ece6a : ratio > 0.25 ? 0xe0af68 : 0xf7768e,
+      ratio > 0.5 ? 0x84c878 : ratio > 0.25 ? 0xdcae6b : 0xe8788c,
     );
     ui.energyText.setText(`E${Math.round(energy)}`);
   }
@@ -1164,12 +1240,12 @@ export class UIScene extends Phaser.Scene {
     // v1 defect d: text sat directly on the map — the panel now has a
     // near-opaque backing rect plus a visible border.
     const bg = this.add
-      .rectangle(this.hud.panelX, this.hud.panelY, this.hud.panelW, this.hud.panelH, 0x0e1016, 0.96)
+      .rectangle(this.hud.panelX, this.hud.panelY, this.hud.panelW, this.hud.panelH, 0x191d24, 0.97)
       .setOrigin(0, 0)
       .setStrokeStyle(2, COLOR_BORDER, 1)
       .setDepth(DEPTH_PANEL);
     const title = this.add
-      .text(this.hud.panelX + 8, this.hud.panelY + 4, `${name} — decision trace`, {
+      .text(this.hud.panelX + 10, this.hud.panelY + 6, `${name} — decision trace`, {
         fontFamily: HUD_FONT,
         fontSize: PX_TITLE,
         fontStyle: "bold",
@@ -1179,8 +1255,8 @@ export class UIScene extends Phaser.Scene {
     const agent = (this.conn?.controls.agents() ?? []).find((a) => a.name === name);
     const subtitle = this.add
       .text(
-        this.hud.panelX + 8,
-        this.hud.panelY + 21,
+        this.hud.panelX + 10,
+        this.hud.panelY + 26,
         this.clip(
           `${agent ? personaText(agent.persona) : ""} · click a row to expand · wheel scrolls`,
           70,
@@ -1189,7 +1265,7 @@ export class UIScene extends Phaser.Scene {
       )
       .setDepth(DEPTH_PANEL + 1);
     const close = this.add
-      .text(this.hud.panelX + this.hud.panelW - 8, this.hud.panelY + 4, "✕", {
+      .text(this.hud.panelX + this.hud.panelW - 10, this.hud.panelY + 6, "✕", {
         fontFamily: HUD_FONT,
         fontSize: PX_TITLE,
         color: COLOR_BAD,
@@ -1230,19 +1306,19 @@ export class UIScene extends Phaser.Scene {
         ? `▾ ${formatTraceSummary(entry, 68)}\n${this.indent(formatTraceEntry(entry))}`
         : `▸ ${formatTraceSummary(entry, 68)}`;
       const textObj = this.add
-        .text(this.hud.panelX + 8, 0, content, {
-          fontFamily: HUD_FONT,
+        .text(this.hud.panelX + 10, 0, content, {
+          fontFamily: MONO_FONT,
           fontSize: PX_SMALL,
-          color: expanded ? "#c8ccd4" : COLOR_DIM,
+          color: expanded ? "#cdd3dd" : COLOR_DIM,
           // advanced wrap: raw JSON has no spaces, must hard-break long runs
-          wordWrap: { width: this.hud.panelW - 16, useAdvancedWrap: true },
+          wordWrap: { width: this.hud.panelW - 20, useAdvancedWrap: true },
         })
         .setDepth(DEPTH_PANEL + 1);
       this.panelEntryTexts.push(textObj);
     }
     if (entries.length === 0) {
       const empty = this.add
-        .text(this.hud.panelX + 8, 0, "(no decisions yet)", {
+        .text(this.hud.panelX + 10, 0, "(no decisions yet)", {
           fontFamily: HUD_FONT,
           fontSize: PX_SMALL,
           color: COLOR_FAINT,
