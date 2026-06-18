@@ -47,6 +47,15 @@ Get to Smallville-level: **city size, character density, structure details, item
 - **03:2x** Mortality (15a69bd): death/suicide/murder, deterministic + conservative. 1065 green.
 - **03:3x** Visual confirmation: full 96×64 town renders with 26 agents + lush foliage + dirt roads (artifacts/overnight-full-town.png). No regressions.
 
+## SESSION — morning feedback round 2 (2026-06-18, after studying generative_agents)
+Re-read the actual Smallville frontend (`generative_agents/.../demo/main_script.html` + `demo.html`). Key lesson: **Smallville renders NO sentence text in the world** — each agent shows only a tiny `INITIALS: emoji` pronunciatio balloon; all words (action, location, conversation) live in side panels with click-to-focus. That was the root of the "I can't read this madness" soup. Six user-driven fixes shipped, each visually verified via Playwright (artifacts/ui-scroll-wrap-verify.png, world-interiors-flowers-verify.png), suite 1073 green:
+1. **In-world text soup killed** (5d736ea) — dropped the per-agent plan-step line + 160-char speech bubbles; world shows emoji only, words go to the panels.
+2. **Scrollable agent roster** (5d736ea) — kept the rich cards the user liked but windowed them into a horizontally SCROLLABLE strip (wheel / header ◀ N–M ▶), so all 26 are reachable (was 4 + "+22 more"). NOTE: first tried compact chips → user rejected ("I liked the original cards, it can scroll"); reverted to cards + scroll.
+3. **Conversation panel word-wraps** (5d736ea) — full utterances reflow by height instead of clipping to "Good to se…".
+4. **Varied house interiors** (478e805) — 26 identical bed+table rooms → footprint-seeded furniture variants (cabinet/shelf/barrel/crate, round/small tables, varied bed corner).
+5. **Real flowers, no veg fence** (478e805) — the "flower" decor was plants.png HARVESTED PRODUCE (tomatoes/carrots); authored CC0 flowers.png + fixed the (·)%11 hash that planted them in vertical COLUMNS (a literal fence) → diagonal mod-13 scatter, kept off field borders.
+6. **Livelier mock afternoon** (791d8c4) — default farmers no longer all run the identical even/odd chore; 4 deterministic per-persona activities. (The start-of-day tavern convergence is the *party* feature, not a bug — now legible since the soup is gone. Mock dialogue was already persona-varied.)
+
 ## MORNING SUMMARY (read me first)
 **Six features shipped tonight on `feat/world-dressing`, every one fully test-verified + adversarially checked. Suite grew 933 → 1065 green; tsc clean throughout.**
 1. **City size** 64×40 → **96×64** (3× area).
