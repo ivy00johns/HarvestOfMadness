@@ -204,6 +204,9 @@ export class UIScene extends Phaser.Scene {
   private cardNames: string[] = [];
   /** horizontal scroll: index of the FIRST agent shown in the strip window */
   private cardScroll = 0;
+  /** accumulated wheel delta — trackpads fire many small events, so we only
+   *  advance one card per WHEEL_NOTCH of travel (no "flying through" blur). */
+  private cardScrollAccum = 0;
 
   // trace panel
   private selectedAgent: string | null = null;
@@ -1445,10 +1448,20 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onWheel(pointer: Phaser.Input.Pointer, deltaY: number): void {
-    // Bottom agent strip: wheel scrolls the card row horizontally (one card per
-    // notch), so all 26 agents are reachable without shrinking the cards.
+    // Bottom agent strip: wheel scrolls the card row horizontally. Accumulate
+    // delta and advance ONE card per notch of travel so trackpads (which fire a
+    // burst of small deltas) step smoothly instead of flying through the cards.
     if (pointer.y >= this.hud.stripY && pointer.x < this.hud.rightX) {
-      this.scrollCards(deltaY > 0 ? 1 : -1);
+      const WHEEL_NOTCH = 80;
+      this.cardScrollAccum += deltaY;
+      while (this.cardScrollAccum >= WHEEL_NOTCH) {
+        this.cardScrollAccum -= WHEEL_NOTCH;
+        this.scrollCards(1);
+      }
+      while (this.cardScrollAccum <= -WHEEL_NOTCH) {
+        this.cardScrollAccum += WHEEL_NOTCH;
+        this.scrollCards(-1);
+      }
       return;
     }
     if (!this.selectedAgent) return;
