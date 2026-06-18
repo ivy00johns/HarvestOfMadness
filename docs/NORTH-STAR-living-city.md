@@ -182,12 +182,14 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 
 **Phase A — World re-layout to Option C (140×100)** — _the agreed next build_
 - [x] A0. Bump dims (140×100), reach budget 40→100, retune camera. ✓ `7fc770c` — 1073 green, tsc clean; town clusters NW (expected intermediate).
-- [ ] A1. Road network (spine y=50, two residential roads, three trunks).
-- [ ] A2. Civic hub `COMMONS` (5 buildings straddling the spine + well/board).
-- [ ] A3. 12 homesteads (4 hamlets × 3), TDD-converge against map + party tests.
+- [x] A1. Road network (spine y=50, two residential roads, three trunks). ✓ `9961b4b`
+- [x] A2. Civic hub `COMMONS` (5 buildings straddling the spine + well/board). ✓ `9961b4b`
+- [x] A3. 12 homesteads (4 hamlets × 3), TDD-converged against map + party tests. ✓ `9961b4b` — personas 10→12 (clem, moss); all 12 doors ≤96 A* to tavern.
 - [ ] A4. 14 reserve lots + new `reserve-lots.test.ts`; document future-hamlet ground.
-- [ ] A5. Park + pond, ~500 decor (kill the 16-cap), ~1,300 interior pieces.
-- [ ] A6. Reach budget 40→100 **floor only** (per decision). _Distance-weighted attendance deferred to a fast-follow — see Phase C._
+- [ ] A5. **Park/pond relocation** (east, spine-connected) + ~500 decor (kill the 16-cap) + ~1,300 interior pieces. _(park/pond/decor were left in place during A1.)_
+- [x] A6. Reach budget 40→100 **floor only** — shipped inside A0 (`7fc770c`). _Distance-weighted attendance deferred to Phase C._
+
+**A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Remaining in Phase A: A4 (reserve lots) + A5 (park move + decor + interiors).**
 
 **Phase B — UI overhaul (SpaceCon HUD)** — _design finalized in [`docs/design_handoff_sim_hud/`](./design_handoff_sim_hud/); builds on the 140×100 world_
 - [ ] B1. **Gathering legibility (world side only):** spread agent **bodies**
