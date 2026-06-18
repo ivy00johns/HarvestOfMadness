@@ -49,7 +49,7 @@ import {
   WATER_ANIM_MS,
   zoomFactorForWheelDelta,
 } from "../config";
-import { computeHud, FONT_SIZE_SMALL, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
+import { computeHud, FONT_SIZE_SMALL, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
 import type { Rect } from "../obs/layout";
 import { getTimeSystem, getWorld } from "../world/instance";
 import {
@@ -319,11 +319,14 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
    */
   private frameCamera(): void {
     const cam = this.cameras.main;
-    const w = this.scale.width;
-    const viewH = Math.max(1, this.scale.height - HUD_TOP_H);
+    // v4 — the world camera frames the map within the (smaller) center-left
+    // map rect: inset below the top chrome, left of the right conversation/
+    // events panel, and above the bottom agent strip.
+    const hud = computeHud(this.scale.width, this.scale.height);
+    const view = hud.mapRect;
     const mapW = MAP_WIDTH * TILE_SIZE;
     const mapH = MAP_HEIGHT * TILE_SIZE;
-    cam.setViewport(0, HUD_TOP_H, w, viewH);
+    cam.setViewport(view.x, view.y, view.w, view.h);
     cam.setBounds(0, 0, mapW, mapH);
     // Use the configured DEFAULT_ZOOM for a readable starting view, but clamp
     // it so we never zoom in tighter than the map fills the viewport (no void),

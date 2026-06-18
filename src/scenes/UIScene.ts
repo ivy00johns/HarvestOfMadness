@@ -184,8 +184,9 @@ export class UIScene extends Phaser.Scene {
   private transcriptBg: Phaser.GameObjects.Rectangle | null = null;
   private transcriptTitle: Phaser.GameObjects.Text | null = null;
   private transcriptRows: Phaser.GameObjects.Text[] = [];
-  /** rows the transcript panel can show (one Text per line) */
-  private static readonly TRANSCRIPT_MAX_LINES = 6;
+  /** rows the transcript panel can show (one Text per line). The right-panel
+   *  conversation region is tall now, so we show a deeper backlog. */
+  private static readonly TRANSCRIPT_MAX_LINES = 14;
   /** latest conversation parsed off the bus, rendered when no panel overlays it */
   private latestConversation: Conversation | null = null;
   /** Whether the transcript panel is currently shown — gates HUD click-through. */
@@ -289,6 +290,7 @@ export class UIScene extends Phaser.Scene {
     this.transcriptTitle = null;
     this.transcriptRows = [];
     this.transcriptVisible = false;
+    this.agentsHeader = null;
     this.buildTopBar();
     this.buildBadgeRow();
     this.buildSectionHeaders();
@@ -301,25 +303,54 @@ export class UIScene extends Phaser.Scene {
     this.publishPanelRect();
   }
 
+  /** Live "AGENTS · N" count label above the bottom strip (updated as agents
+   *  appear). Created in buildSectionHeaders, refreshed in renderCards. */
+  private agentsHeader: Phaser.GameObjects.Text | null = null;
+
   /**
-   * Section-header labels drawn once in the gutter below the top chrome:
-   * "AGENTS" above the right-hand card column and "TOWN" above the left band
-   * (party/governance/transcript). Pure chrome — no state, recreated on relayout
-   * by children.removeAll(true). The feed's "EVENTS" header is drawn in
-   * buildFeedChrome (its gutter is at the bottom-left).
+   * Persistent chrome for the new v4 regions:
+   *  - a full-height backing rect + top divider for the RIGHT conversation /
+   *    events panel,
+   *  - a backing rect + top divider for the BOTTOM agent strip,
+   *  - the section-header labels: "CONVERSATION" (top of the right panel),
+   *    "AGENTS · N" (above the bottom strip). The "EVENTS" header is drawn in
+   *    buildFeedChrome (its gutter sits just above the feed in the right panel).
+   * Pure chrome — recreated on relayout by children.removeAll(true).
    */
   private buildSectionHeaders(): void {
+    const r = this.hud.rightRect;
+    // Right panel backing surface (full height under the top chrome).
+    this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD);
+    this.add
+      .rectangle(r.x, r.y, 1, r.h, COLOR_BORDER, 0.8)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD);
+    // Bottom strip backing surface.
+    this.add
+      .rectangle(0, this.hud.stripY, this.hud.rightX, this.hud.stripH, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD);
+    this.add
+      .rectangle(0, this.hud.stripY, this.hud.rightX, 1, COLOR_BORDER, 0.8)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD);
+
     const headerStyle: Phaser.Types.GameObjects.Text.TextStyle = {
       fontFamily: HUD_FONT,
       fontSize: PX_SMALL,
       fontStyle: "bold",
       color: COLOR_HEADER,
     };
+    // CONVERSATION label at the very top of the right panel.
     this.add
-      .text(this.hud.cardX + 2, this.hud.cardHeaderY, "AGENTS", headerStyle)
+      .text(r.x + 10, r.y + 6, "CONVERSATION", headerStyle)
       .setDepth(DEPTH_HUD_TEXT);
-    this.add
-      .text(this.hud.panelX + this.hud.logPadX, this.hud.cardHeaderY, "TOWN", headerStyle)
+    // AGENTS · N label above the bottom strip.
+    this.agentsHeader = this.add
+      .text(8, this.hud.stripHeaderY, "AGENTS", headerStyle)
       .setDepth(DEPTH_HUD_TEXT);
   }
 
@@ -916,18 +947,21 @@ export class UIScene extends Phaser.Scene {
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD)
       .setVisible(false);
+    // The persistent "CONVERSATION" header (buildSectionHeaders) labels this
+    // region; a slim "now speaking" caption sits at the top of the panel body.
     this.transcriptTitle = this.add
-      .text(r.x + 10, r.y + 6, "CONVERSATION", {
+      .text(r.x + 10, r.y + 6, "", {
         fontFamily: HUD_FONT,
         fontSize: PX_SMALL,
-        fontStyle: "bold",
-        color: COLOR_HEADER,
+        color: COLOR_FAINT,
       })
       .setDepth(DEPTH_HUD_TEXT)
       .setVisible(false);
     this.transcriptRows = [];
-    const rowTop = r.y + 26;
-    const rowH = FONT_SIZE_SMALL + 4;
+    const rowTop = r.y + 28;
+    // Single-line rows (the render clips each composed line to the panel width),
+    // comfortably spaced now that the conversation region fills the right panel.
+    const rowH = FONT_SIZE_SMALL + 8;
     for (let i = 0; i < UIScene.TRANSCRIPT_MAX_LINES; i++) {
       this.transcriptRows.push(
         this.add
@@ -935,7 +969,6 @@ export class UIScene extends Phaser.Scene {
             fontFamily: MONO_FONT,
             fontSize: PX_SMALL,
             color: COLOR_TEXT,
-            wordWrap: { width: r.w - 20 },
           })
           .setDepth(DEPTH_HUD_TEXT)
           .setVisible(false),
@@ -961,12 +994,17 @@ export class UIScene extends Phaser.Scene {
       this.setTranscriptVisible(false);
       return;
     }
-    const [p0] = view.participants;
+    const [p0, p1] = view.participants;
+    this.transcriptTitle?.setText(
+      this.clip(`${p0 ?? ""}${p1 ? ` ↔ ${p1}` : ""}`, 40),
+    );
     for (let i = 0; i < this.transcriptRows.length; i++) {
       const row = this.transcriptRows[i];
       const line = view.lines[i];
       if (line) {
-        row.setText(this.clip(`[${line.speaker}]: ${line.text}`, 64));
+        // Clip the COMPOSED "[speaker]: text" line to the panel width so each
+        // row stays single-line and rows never collide.
+        row.setText(this.clip(`[${line.speaker}]: ${line.text}`, this.transcriptLineMaxChars()));
         row.setColor(line.speaker === p0 ? COLOR_GOAL : COLOR_PLAN);
         row.setVisible(true);
       } else {
@@ -997,23 +1035,42 @@ export class UIScene extends Phaser.Scene {
 
   private renderCards(): void {
     const agents = this.conn?.controls.agents() ?? [];
-    const compact = agents.length >= 4;
-    const layoutKey = `${compact ? "c" : "n"}:${agents.map((a) => a.name).join(",")}`;
+    // v4 — cards lay out LEFT→RIGHT in the bottom strip. Only the cards that
+    // fit left of the right panel are created; the rest are off-strip. The
+    // "AGENTS · N" header reports the full count so off-screen agents are
+    // accounted for. Width changes (resize) re-key the layout via `visible`.
+    let visible = 0;
+    for (let i = 0; i < agents.length; i++) {
+      const r = this.hud.cardRect(i, agents.length);
+      if (r.x + r.w > this.hud.rightX) break; // only fully-visible cards
+      visible++;
+    }
+    const layoutKey = `${agents.length}/${visible}:${agents.map((a) => a.name).join(",")}`;
     if (layoutKey !== this.cardLayoutKey) {
       this.destroyCards();
       this.cardLayoutKey = layoutKey;
       this.cardNames = agents.map((a) => a.name);
-      agents.forEach((agent, i) => {
+      for (let i = 0; i < visible; i++) {
+        const agent = agents[i];
         const rect = this.hud.cardRect(i, agents.length);
-        this.cards.set(
-          agent.name,
-          this.createCard(rect.x, rect.y, rect.h, compact),
-        );
-      });
+        this.cards.set(agent.name, this.createCard(rect.x, rect.y, rect.h, true));
+      }
     }
     for (const agent of agents) {
       const ui = this.cards.get(agent.name);
       if (ui) this.updateCard(ui, buildAgentCard(agent));
+    }
+    // Update the "AGENTS · N" header (with a "+k more" hint when clipped).
+    if (this.agentsHeader) {
+      const total = agents.length;
+      const hidden = total - visible;
+      const label =
+        total === 0
+          ? "AGENTS"
+          : hidden > 0
+            ? `AGENTS · ${total}  (+${hidden} more)`
+            : `AGENTS · ${total}`;
+      this.agentsHeader.setText(label);
     }
   }
 
@@ -1031,12 +1088,21 @@ export class UIScene extends Phaser.Scene {
     this.cardNames = [];
   }
 
-  /** Flat absolute-positioned children — no containers (Phaser 4.1 gotcha). */
-  private createCard(x: number, y: number, cardH: number, compact: boolean): CardUi {
+  /**
+   * v4 — COMPACT bottom-strip card. Flat absolute-positioned children (no
+   * containers — Phaser 4.1 gotcha) laid out in a fixed vertical stack inside a
+   * ~212×162 card. Preserves ALL the information the old vertical card showed —
+   * just condensed to single lines: header (swatch + name·role + FSM), a
+   * gold/energy row with the progress bar, plan, goal (+ needs), one thought
+   * line, action, the top relationship row, and the meta row. The full decision
+   * trace / persona still opens on click via the right-panel trace panel.
+   *
+   * The `compact` flag is retained for signature stability but the layout is
+   * always the compact strip card now.
+   */
+  private createCard(x: number, y: number, cardH: number, _compact: boolean): CardUi {
     const cardW = this.hud.cardW;
-    // Sans body for labels; mono for the numeric/code rows (gold, energy, meta)
-    // so columns stay aligned. More generous left padding + line pitch than v1.
-    const padX = 10;
+    const padX = 9;
     const small = { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
     const smallMono = { fontFamily: MONO_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
     const text = (
@@ -1047,61 +1113,46 @@ export class UIScene extends Phaser.Scene {
       this.add.text(tx, ty, "", style).setDepth(DEPTH_HUD_TEXT);
 
     const bg = this.add
-      .rectangle(x, y, cardW, cardH, COLOR_CARD_BG, 0.95)
+      .rectangle(x, y, cardW, cardH, COLOR_CARD_BG, 0.97)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD);
 
-    // visual sprite link (v1 defect c): swatch in the agent's sprite color
+    // visual sprite link: swatch in the agent's sprite color
     const swatch = this.add
-      .rectangle(x + padX, y + 9, 12, 12, 0xffffff, 1)
+      .rectangle(x + padX, y + 8, 12, 12, 0xffffff, 1)
       .setOrigin(0, 0)
       .setStrokeStyle(1, 0xffffff, 0.5)
       .setDepth(DEPTH_HUD_TEXT);
 
-    // Rows are laid out from the card's ACTUAL height so they distribute evenly
-    // and never collide — even when many agents force the cardHeight() clamp to
-    // shrink the card. Each mode has a fixed ordered row list; the pitch is the
-    // remaining height after the header divided across the rows, capped at a
-    // comfortable max so roomy cards don't spread rows too far apart.
-    const headerH = 24; // name/fsm band
-    // Ordered body rows top→bottom, by slot. Normal mode reserves an extra slot
-    // for the 2nd wrapped thought line plus 2 extra relationship rows.
-    //   compact (6): gold,plan,goal,action,rel,meta
-    //   normal (10): gold,plan,goal,thoughtL1,thoughtL2,action,rel0,rel1,rel2,meta
-    const bodyRows = compact ? 6 : 10;
-    const avail = cardH - headerH - 4;
-    const pitch = Math.min(18, Math.max(13, Math.floor(avail / bodyRows)));
+    // Fixed vertical stack — 8 single-line body rows spaced by a comfortable
+    // pitch that fits the ~174px card body without collision.
+    const headerH = 22;
+    const pitch = Math.min(19, Math.max(15, Math.floor((cardH - headerH - 4) / 8)));
     const rowY = (slot: number): number => y + headerH + slot * pitch;
 
     const rowGold = rowY(0);
     const rowPlan = rowY(1);
     const rowGoal = rowY(2);
-    const rowThought = rowY(3); // normal: 2 wrapped lines occupy slots 3-4
-    const rowAction = compact ? rowY(3) : rowY(5);
-    const relRowCount = compact ? 1 : 3;
-    const rowRel = compact ? rowY(4) : rowY(6);
-    const relStep = pitch;
-    const rowMeta = compact ? rowY(5) : rowY(9);
+    const rowNeeds = rowY(3); // intrinsic-drive bars on their OWN full-width row
+    const rowThought = rowY(4);
+    const rowAction = rowY(5);
+    const rowRel = rowY(6);
+    const rowMeta = rowY(7);
 
-    const barW = Math.round(cardW * 0.38);
-    const barX = x + cardW - barW - 30;
-
-    const relRows: Phaser.GameObjects.Text[] = [];
-    for (let i = 0; i < relRowCount; i++) {
-      relRows.push(text(x + padX, rowRel + i * relStep, { ...small }));
-    }
+    const barW = Math.round(cardW * 0.32);
+    const barX = x + cardW - barW - 34;
 
     return {
       bg,
       swatch,
-      name: text(x + padX + 18, y + 6, {
+      name: text(x + padX + 18, y + 5, {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         color: "#ffffff",
         fontStyle: "bold",
       }),
-      fsm: text(x + cardW - padX, y + 8, { ...small }).setOrigin(1, 0),
+      fsm: text(x + cardW - padX, y + 7, { ...small }).setOrigin(1, 0),
       gold: text(x + padX, rowGold, {
         fontFamily: MONO_FONT,
         fontSize: PX_SMALL,
@@ -1118,22 +1169,18 @@ export class UIScene extends Phaser.Scene {
       energyText: text(x + cardW - padX, rowGold, { ...smallMono }).setOrigin(1, 0),
       plan: text(x + padX, rowPlan, { ...small, color: COLOR_PLAN }),
       goal: text(x + padX, rowGoal, { ...small, color: COLOR_GOAL }),
-      // Wave 3a — intrinsic-drive bars, right-aligned on the goal row; empty
-      // when the agent carries no needs vector (additive, never overlaps text).
-      needs: text(x + cardW - padX, rowGoal, { ...smallMono }).setOrigin(1, 0),
-      thought: compact
-        ? null
-        : text(x + padX, rowThought, {
-            ...small,
-            color: "#cdd3dd",
-            wordWrap: { width: cardW - 2 * padX },
-          }),
+      // Wave 3a — intrinsic-drive bars on their own left-aligned row (full width).
+      needs: text(x + padX, rowNeeds, { ...smallMono }),
+      thought: text(x + padX, rowThought, {
+        ...small,
+        color: "#cdd3dd",
+      }),
       action: text(x + padX, rowAction, {
         fontFamily: HUD_FONT,
         fontSize: PX_SMALL,
         color: COLOR_OK,
       }),
-      relRows,
+      relRows: [text(x + padX, rowRel, { ...small })],
       meta: text(x + padX, rowMeta, { ...smallMono, color: COLOR_FAINT }),
     };
   }
@@ -1142,18 +1189,20 @@ export class UIScene extends Phaser.Scene {
     if (typeof card.color === "number") ui.swatch.setFillStyle(card.color, 1);
     // Wave 4a — append the derived role to the name only when non-default.
     const roleTag = card.role && card.role !== "farmer" ? ` · ${card.role}` : "";
-    ui.name.setText(this.clip(`${card.name}${roleTag}`, 22));
+    // Clip the name short so the right-aligned FSM chip never collides with it.
+    ui.name.setText(this.clip(`${card.name}${roleTag}`, 19));
     ui.fsm.setText(card.fsm).setColor(FSM_COLORS[card.fsm] ?? "#8a8f98");
     ui.gold.setText(`${card.gold}g`);
     this.updateEnergy(ui, card.energy);
 
-    // v2: current plan step ("PLAN: water east plot") — hidden when absent
+    // v2: current plan step ("PLAN: water east plot") — hidden when absent.
+    // Clip lengths tuned to the ~246px strip card (≈30 chars usable).
     ui.plan.setText(card.planStep ? this.clip(`PLAN: ${card.planStep}`, 30) : "");
     ui.goal.setText(this.clip(`goal: ${card.goal ?? "—"}`, 30));
-    // Wave 3a — intrinsic-drive bars (empty when the agent has no needs vector)
+    // Wave 3a — intrinsic-drive bars on their own row (empty when no needs vector)
     ui.needs.setText(card.needs ? formatNeedsRow(card.needs) : "");
-    // ~30 wrapped chars/line at 12px in cardW-12 → clip to guarantee ≤2 lines
-    ui.thought?.setText(card.lastThought ? this.clip(card.lastThought, 58) : "…");
+    // single thought line in the compact card (full thought in the trace panel)
+    ui.thought?.setText(card.lastThought ? `“${this.clip(card.lastThought, 28)}”` : "…");
 
     if (card.lastAction) {
       const { action, ok, reason } = card.lastAction;
@@ -1192,7 +1241,7 @@ export class UIScene extends Phaser.Scene {
     ui.meta.setText(
       this.clip(
         `${card.model ?? "—"} ${card.latencyMs ?? "—"}ms${tok} d${card.decisionsToday}/${card.decisionsTotal} M:${mem} R:${refl}`,
-        30,
+        32,
       ),
     );
   }
