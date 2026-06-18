@@ -682,6 +682,41 @@ export interface AssetManifest {
 //   "event_arrived"         payload { eventId, agentName }
 
 // ---------------------------------------------------------------------------
+// v3 (Wave 2) — Readable multi-turn conversations
+// ---------------------------------------------------------------------------
+
+/** One spoken line in a back-and-forth conversation. */
+export interface ConversationTurn {
+  speaker: string;
+  text: string;
+}
+
+/**
+ * A complete multi-turn exchange between two agents (≤ MAX_TURNS utterances,
+ * strict alternation starting with the opener's speaker). The full transcript
+ * lives in the "conversation" WorldEvent payload — NOT in the memory stream
+ * (only one legacy reply pair is written per conversation; see Conversation.ts).
+ */
+export interface Conversation {
+  id: string;
+  participants: [string, string];
+  turns: ConversationTurn[];
+  day: number;
+  phase: Phase;
+}
+
+// "conversation" WorldEvent payload (open union — documented, not enforced):
+//   payload {
+//     speaker: string,            // A (opener)
+//     listener: string,           // B
+//     say: string,                // A's opener (turns[0].text)
+//     reply: string,              // B's first reply (turns[1].text), legacy field
+//     turns: ConversationTurn[],  // full alternating transcript (length 2..MAX_TURNS)
+//     conversationId: string,     // "${A}|${B}|${day}|${phase}"
+//   }
+// text stays "A: \"…\"  —  B: \"…\"" (backward compatible feed line).
+
+// ---------------------------------------------------------------------------
 // v3 — Seeded social events (smallville party-emergence design)
 // ---------------------------------------------------------------------------
 

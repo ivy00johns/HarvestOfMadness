@@ -247,6 +247,7 @@ export async function runDecisionCycle(
   const renderApi = getRenderApi();
   (renderApi as { setActivityEmoji?: (n: string, a: string, e?: string) => void })
     ?.setActivityEmoji?.(agent.name, action.action, action.emotion);
+  (renderApi as { setActivityLabel?: (n: string, t: string | null) => void })?.setActivityLabel?.(agent.name, agent.planStep);
 
   if (action.say) {
     renderApi?.showSpeech(agent.name, action.say, action.emotion ?? "neutral");

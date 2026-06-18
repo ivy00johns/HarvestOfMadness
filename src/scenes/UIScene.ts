@@ -45,10 +45,13 @@ import {
   REG_HUD,
   computeHud,
   pointInRect,
+  unionRect,
   type HudLayout,
 } from "../obs/layout";
 import { formatCognitionMeter } from "../obs/CognitionMeter";
 import { buildPartyPanel } from "../obs/PartyPanel";
+import { buildTranscript, conversationFromEvent } from "../obs/Transcript";
+import type { Conversation } from "@contracts/types";
 import type { ObsConnection } from "../obs/wiring";
 import { connectObservability } from "../obs/wiring";
 import { startAgents } from "../agents/bootstrap";
@@ -159,6 +162,17 @@ export class UIScene extends Phaser.Scene {
    *  Scene state — survives relayout(); arrivals live in Cognition, not EventBoard. */
   private readonly arrivedByEvent = new Map<string, Set<string>>();
 
+  // v3 (Wave 2) — conversation transcript panel (left band, below the party strip)
+  private transcriptBg: Phaser.GameObjects.Rectangle | null = null;
+  private transcriptTitle: Phaser.GameObjects.Text | null = null;
+  private transcriptRows: Phaser.GameObjects.Text[] = [];
+  /** rows the transcript panel can show (one Text per line) */
+  private static readonly TRANSCRIPT_MAX_LINES = 6;
+  /** latest conversation parsed off the bus, rendered when no panel overlays it */
+  private latestConversation: Conversation | null = null;
+  /** Whether the transcript panel is currently shown — gates HUD click-through. */
+  private transcriptVisible = false;
+
   // event feed
   private logTexts: Phaser.GameObjects.Text[] = [];
   /** feed item behind each rendered line (click → trace panel) */
@@ -189,6 +203,7 @@ export class UIScene extends Phaser.Scene {
     this.buildBadgeRow();
     this.buildFeedChrome();
     this.buildPartyChrome();
+    this.buildTranscriptChrome();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
       this.onPointerDown(p.x, p.y),
     );
@@ -242,25 +257,38 @@ export class UIScene extends Phaser.Scene {
     this.partyKnow = null;
     this.partyInvited = null;
     this.partyArrived = null;
+    // removeAll(true) destroyed the transcript chrome too — drop the stale refs;
+    // buildTranscriptChrome() recreates them. latestConversation is sim state, kept.
+    this.transcriptBg = null;
+    this.transcriptTitle = null;
+    this.transcriptRows = [];
+    this.transcriptVisible = false;
     this.buildTopBar();
     this.buildBadgeRow();
     this.buildFeedChrome();
     this.buildPartyChrome();
+    this.buildTranscriptChrome();
     this.refreshAll();
     if (reopen) this.toggleTracePanel(reopen);
     this.publishPanelRect();
   }
 
   /** WorldScene reads this rect to ignore camera clicks over the open panel.
-   *  Priority: an open trace panel (covers the whole band) > the visible party
-   *  strip (same band, shorter) > nothing. Without the party case, clicks on the
-   *  visible strip fall through and pan/follow the world map underneath. */
+   *  Priority: an open trace panel (covers the whole band) > the visible left-band
+   *  chrome (party strip and/or transcript panel, combined via unionRect) >
+   *  nothing. Without these cases, clicks on the visible chrome fall through and
+   *  pan/follow the world map underneath. */
   private publishPanelRect(): void {
-    const rect = this.selectedAgent
-      ? this.hud.panelRect
-      : this.partyVisible
-        ? this.hud.partyRect
-        : null;
+    let rect = null;
+    if (this.selectedAgent) {
+      rect = this.hud.panelRect;
+    } else if (this.partyVisible && this.transcriptVisible) {
+      rect = unionRect(this.hud.partyRect, this.hud.transcriptRect);
+    } else if (this.partyVisible) {
+      rect = this.hud.partyRect;
+    } else if (this.transcriptVisible) {
+      rect = this.hud.transcriptRect;
+    }
     this.registry.set(REG_HUD, rect);
   }
 
@@ -292,6 +320,10 @@ export class UIScene extends Phaser.Scene {
     if (e.kind === "budget_reached") this.budgetReached = true;
     if (this.killSwitch.apply(e.kind)) this.renderBadgeRow();
     this.accumulateArrival(e);
+    if (e.kind === "conversation") {
+      const conv = conversationFromEvent(e);
+      if (conv) this.latestConversation = conv;
+    }
     this.markDirty();
   }
 
@@ -332,6 +364,7 @@ export class UIScene extends Phaser.Scene {
     this.renderFeed();
     this.renderCards();
     this.renderParty();
+    this.renderTranscript();
     if (this.selectedAgent) this.rebuildPanelEntries();
   }
 
@@ -707,6 +740,99 @@ export class UIScene extends Phaser.Scene {
     this.publishPanelRect();
   }
 
+  // -- conversation transcript panel ---------------------------------------------
+
+  /**
+   * Build the standing transcript panel chrome (backing rect + bold title +
+   * fixed row of wrapped Text lines) at hud.transcriptRect. Starts hidden;
+   * renderTranscript() fills + shows it when there is a conversation to display
+   * and no trace panel overlays the band. No nested containers (Phaser 4.1).
+   */
+  private buildTranscriptChrome(): void {
+    const r = this.hud.transcriptRect;
+    this.transcriptBg = this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
+      .setDepth(DEPTH_HUD)
+      .setVisible(false);
+    this.transcriptTitle = this.add
+      .text(r.x + 8, r.y + 4, "Conversation", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        color: COLOR_TEXT,
+      })
+      .setDepth(DEPTH_HUD_TEXT)
+      .setVisible(false);
+    this.transcriptRows = [];
+    const rowTop = r.y + 22;
+    const rowH = FONT_SIZE_SMALL + 2;
+    for (let i = 0; i < UIScene.TRANSCRIPT_MAX_LINES; i++) {
+      this.transcriptRows.push(
+        this.add
+          .text(r.x + 8, rowTop + i * rowH, "", {
+            fontFamily: HUD_FONT,
+            fontSize: PX_SMALL,
+            color: COLOR_TEXT,
+            wordWrap: { width: r.w - 16 },
+          })
+          .setDepth(DEPTH_HUD_TEXT)
+          .setVisible(false),
+      );
+    }
+  }
+
+  /**
+   * Render the latest conversation into the transcript panel. Hides the panel
+   * when there is no conversation (empty) OR while a trace panel is open (it
+   * overlays the same left band). Each line shows "[speaker]: text" with the two
+   * participants' lines in alternating colors. Event-driven via the markDirty()
+   * → refreshAll() throttle — not per-frame.
+   */
+  private renderTranscript(): void {
+    if (this.destroyed || !this.transcriptBg) return;
+    const view = buildTranscript(
+      this.latestConversation,
+      UIScene.TRANSCRIPT_MAX_LINES,
+      this.transcriptLineMaxChars(),
+    );
+    if (view.empty || this.selectedAgent) {
+      this.setTranscriptVisible(false);
+      return;
+    }
+    const [p0] = view.participants;
+    for (let i = 0; i < this.transcriptRows.length; i++) {
+      const row = this.transcriptRows[i];
+      const line = view.lines[i];
+      if (line) {
+        row.setText(this.clip(`[${line.speaker}]: ${line.text}`, 64));
+        row.setColor(line.speaker === p0 ? COLOR_GOAL : COLOR_PLAN);
+        row.setVisible(true);
+      } else {
+        if (row.text !== "") row.setText("");
+        row.setVisible(false);
+      }
+    }
+    this.setTranscriptVisible(true);
+  }
+
+  /** Rough char budget for a transcript row at 12px monospace in the panel. */
+  private transcriptLineMaxChars(): number {
+    return Math.max(20, Math.floor((this.hud.transcriptW - 16) / 7.5));
+  }
+
+  private setTranscriptVisible(visible: boolean): void {
+    this.transcriptVisible = visible;
+    this.transcriptBg?.setVisible(visible);
+    this.transcriptTitle?.setVisible(visible);
+    if (!visible) {
+      for (const row of this.transcriptRows) row.setVisible(false);
+    }
+    // Keep the click-through guard in sync with what's actually drawn.
+    this.publishPanelRect();
+  }
+
   // -- agent cards ----------------------------------------------------------------
 
   private renderCards(): void {
@@ -915,6 +1041,7 @@ export class UIScene extends Phaser.Scene {
       this.rebuildPanelEntries();
     }
     this.renderParty(); // hide the party strip behind the open panel
+    this.renderTranscript(); // hide the transcript panel behind the open panel
     this.publishPanelRect();
   }
 
@@ -966,6 +1093,7 @@ export class UIScene extends Phaser.Scene {
     for (const obj of this.panelObjects) obj.destroy();
     this.panelObjects = [];
     this.renderParty(); // restore the party strip once the panel closes
+    this.renderTranscript(); // restore the transcript panel once the panel closes
     this.publishPanelRect();
   }
 

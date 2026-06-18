@@ -191,6 +191,47 @@ Respond with ONLY a JSON array of at most 5 objects shaped {"insight": string, "
 }
 
 /**
+ * v3 (Wave 2) — multi-turn conversation reply (fast tier).
+ *
+ * Builds the prompt for ONE in-character reply continuing an ongoing exchange.
+ * The transcript tail (the most recent lines, oldest-first) gives the model
+ * just enough context to stay coherent without bloating the request. The
+ * speaker continues with a single short sentence and is invited to wrap up
+ * naturally when it fits (so the engine's CLOSER_RE can end the conversation).
+ *
+ * Output is PLAIN TEXT — one spoken sentence, no quotes, no action tags.
+ * Consumed by ConversationSystem; no decision-prompt JSON contract applies.
+ */
+export function buildReplyPrompt(opts: {
+  selfPersona: string;
+  selfName: string;
+  otherName: string;
+  affinitySummary: string;
+  transcriptTail: { speaker: string; text: string }[];
+}): { system: string; user: string } {
+  const { selfPersona, selfName, otherName, affinitySummary, transcriptTail } =
+    opts;
+
+  const system = `You are ${selfName}, a farmer. Your persona: ${selfPersona}
+
+You are talking with ${otherName}. Continue with ONE short in-character sentence (≤ 15 words); wrap up naturally (say goodbye) if it fits. No action tags, no quotes around your reply, just the spoken sentence.`;
+
+  const convo =
+    transcriptTail.length > 0
+      ? transcriptTail.map((t) => `${t.speaker}: ${t.text}`).join("\n")
+      : `${otherName} greets you.`;
+
+  const user = `Conversation so far:
+${convo}${
+    affinitySummary ? `\n\nYour relationship with ${otherName}: ${affinitySummary}` : ""
+  }
+
+Your one-sentence reply as ${selfName} (plain text, no quotes):`;
+
+  return { system, user };
+}
+
+/**
  * Morning daily plan (smart tier): exactly 4 steps, one per phase
  * morning/afternoon/evening/night. Model must answer with ONLY the JSON
  * object {steps:[{phase, goal, targetLandmark?}]}.

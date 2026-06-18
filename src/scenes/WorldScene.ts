@@ -46,7 +46,7 @@ import {
   WATER_ANIM_MS,
   zoomFactorForWheelDelta,
 } from "../config";
-import { computeHud, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
+import { computeHud, FONT_SIZE_SMALL, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
 import type { Rect } from "../obs/layout";
 import { getWorld } from "../world/instance";
 import { BUILDINGS, WORLD_OBJECTS } from "../world/map";
@@ -136,6 +136,8 @@ interface AgentSprite {
   label: Phaser.GameObjects.Text;
   /** Smallville "pronunciatio" — persistent activity emoji above the name label */
   activityLabel: Phaser.GameObjects.Text;
+  /** v3 (Wave 2) — readable activity text (current plan step) below the name */
+  activityText: Phaser.GameObjects.Text;
   charKey: string | null;
   facing: Dir;
   tilePos: Vec2;
@@ -465,6 +467,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         lift += lineH; // stack downward, away from the HUD band
       }
       a.label.setY(Math.round(lift));
+      // Keep the readable activity text glued just under the de-collided name.
+      a.activityText.setY(Math.round(lift + LABEL_FONT_SIZE + 2));
     }
   }
 
@@ -1090,12 +1094,27 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       })
       .setOrigin(0.5, 1)
       .setDepth(DEPTH_PROP);
+    // v3 (Wave 2) — readable activity text (current plan step) pinned just below
+    // the name label. De-collided downward with the name in restackLabels().
+    const activityText = this.add
+      .text(0, Math.round(this.labelLift()) + LABEL_FONT_SIZE + 2, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: `${FONT_SIZE_SMALL}px`,
+        color: "#cdd6e4",
+        stroke: "#000000",
+        strokeThickness: 3,
+        wordWrap: { width: TILE_SIZE * 5 },
+        align: "center",
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(DEPTH_PROP);
     const [cx, cy] = this.tileCenter(pos);
     const container = this.add.container(cx, cy, [
       ...(sprite ? [sprite] : []),
       ...(circle ? [circle] : []),
       label,
       activityLabel,
+      activityText,
     ]);
     container.setDepth(cy + TILE_SIZE / 2);
     this.agents.set(name, {
@@ -1104,6 +1123,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       circle,
       label,
       activityLabel,
+      activityText,
       charKey: null,
       facing: "down",
       tilePos: { ...pos },
@@ -1183,7 +1203,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: `${SPEECH_FONT_SIZE}px`,
         color: "#101014",
-        wordWrap: { width: 230 },
+        wordWrap: { width: 260 },
       })
       .setOrigin(0.5, 0.5);
     const bounds = label.getBounds();
@@ -1234,6 +1254,24 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       emotion as Parameters<typeof activityEmoji>[1],
     );
     agent.activityLabel.setText(emoji);
+  }
+
+  /**
+   * v3 (Wave 2) — readable activity label: set the persistent plan-step text
+   * below an agent's name (Smallville "what they're doing"). Called by
+   * AgentRuntime after each decision with the agent's current planStep. Null or
+   * empty renders nothing; longer text is truncated to ~40 chars.
+   */
+  setActivityLabel(name: string, text: string | null): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    if (!text) {
+      agent.activityText.setText("");
+      return;
+    }
+    const flat = text.replace(/\s+/g, " ");
+    const shown = flat.length > 40 ? `${flat.slice(0, 39)}…` : flat;
+    agent.activityText.setText(shown);
   }
 
   /** v2 — transient ~2s emote symbol floating up above the sprite. */

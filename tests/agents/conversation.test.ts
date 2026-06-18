@@ -225,6 +225,29 @@ describe("conversation exchange — memory and bus event via onTalk", () => {
     expect(convEvent!.text).toContain("See you at the shop!");
     expect(convEvent!.text).toContain("—");
   });
+
+  it("'conversation' payload carries the full turns[] transcript (length 2..4)", async () => {
+    const { cog, events } = makeCognition();
+    const alice = makeAgent("Alice", { x: 5, y: 5 });
+    const bob = makeAgent("Bob", { x: 5, y: 6 });
+    cog.registerAgent(alice);
+    cog.registerAgent(bob);
+
+    cog.onTalk(alice, bob, "Lovely weather today!");
+    await new Promise((r) => setTimeout(r, 40));
+
+    const convEvent = events.find((e) => e.kind === "conversation");
+    expect(convEvent).toBeDefined();
+    const turns = convEvent!.payload?.turns as { speaker: string; text: string }[];
+    expect(Array.isArray(turns)).toBe(true);
+    expect(turns.length).toBeGreaterThanOrEqual(2);
+    expect(turns.length).toBeLessThanOrEqual(4);
+    // Turn 0 is A's opener verbatim; turn 1 is B's reply.
+    expect(turns[0]).toEqual({ speaker: "Alice", text: "Lovely weather today!" });
+    expect(turns[1].speaker).toBe("Bob");
+    // A stable conversationId is published alongside.
+    expect(typeof convEvent!.payload?.conversationId).toBe("string");
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -31,6 +31,19 @@ export function pointInRect(px: number, py: number, r: Rect): boolean {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
 
+/**
+ * Smallest axis-aligned rect covering both inputs. Used to publish a single
+ * click-through guard rect when the party strip AND the transcript panel are
+ * both visible in the left band. Integer pixels (inputs are already integers).
+ */
+export function unionRect(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  const right = Math.max(a.x + a.w, b.x + b.w);
+  const bottom = Math.max(a.y + a.h, b.y + b.h);
+  return { x, y, w: right - x, h: bottom - y };
+}
+
 // -- fixed design metrics (independent of viewport size) ---------------------
 export const TOPBAR_H = 24;
 export const BADGE_ROW_H = 20;
@@ -99,6 +112,13 @@ export interface HudLayout {
   partyW: number;
   partyH: number;
   partyRect: Rect;
+  /** v3 (Wave 2) — conversation transcript panel, docked below the party strip
+   *  and above the feed, in the left band */
+  transcriptX: number;
+  transcriptY: number;
+  transcriptW: number;
+  transcriptH: number;
+  transcriptRect: Rect;
   cardHeight(count: number): number;
   cardRect(index: number, count: number): Rect;
   feedLineRect(i: number): Rect;
@@ -137,6 +157,23 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const partyW = panelW;
   const partyH = Math.min(96, Math.max(60, panelH));
   const partyRect: Rect = { x: partyX, y: partyY, w: partyW, h: partyH };
+
+  // v3 (Wave 2) — conversation transcript panel: docked BELOW the party strip
+  // and ABOVE the feed, reusing the left band's x/width. Height is clamped to the
+  // gap actually left above the feed (cap 120px). No min-floor: a 60px floor
+  // would push the bottom past logY and overlap the feed at viewport heights
+  // below ~362px. At the design size this is the full 120px. The trace panel is
+  // transient and overlays this band when open.
+  const transcriptX = panelX;
+  const transcriptY = partyY + partyH + 4;
+  const transcriptW = panelW;
+  const transcriptH = Math.max(0, Math.min(120, logY - transcriptY - 4));
+  const transcriptRect: Rect = {
+    x: transcriptX,
+    y: transcriptY,
+    w: transcriptW,
+    h: transcriptH,
+  };
 
   const cardHeight = (count: number): number => {
     if (count <= 3) return CARD_H_NORMAL;
@@ -200,6 +237,11 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     partyW,
     partyH,
     partyRect,
+    transcriptX,
+    transcriptY,
+    transcriptW,
+    transcriptH,
+    transcriptRect,
     cardHeight,
     cardRect,
     feedLineRect,
