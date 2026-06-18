@@ -229,8 +229,8 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 - [x] A2. Civic hub `COMMONS` (5 buildings straddling the spine + well/board). ✓ `9961b4b`
 - [x] A3. 12 homesteads (4 hamlets × 3), TDD-converged against map + party tests. ✓ `9961b4b` — personas 10→12 (clem, moss); all 12 doors ≤96 A* to tavern.
 - [x] A6b. **Camera fit-to-map** — zoom-out floor now frames the whole town (no clipped corners). ✓ `c3a7044`, visually verified.
-- [ ] A4. 14 reserve lots + new `reserve-lots.test.ts`; document future-hamlet ground.
-- [~] A5. **Bigger multi-room homes (8×8/9×8) + per-home storage cabinet + ~14–16-prop interiors + natural copse decor** (killed the diagonal tree-rows). ✓ `df10580` — visually verified. _Remaining: park/pond relocation east (still NW-center) + the functional storage **deposit** mechanic (Phase D-adjacent)._
+- [x] A4. 14 reserve lots + new `reserve-lots.test.ts`; document future-hamlet ground. ✓ `3a9fcc2` — lots stamp nothing (pure capacity); strict validity test; 3 adversarial critics + 1079 green.
+- [~] A5. **Bigger multi-room homes (8×8/9×8) + per-home storage cabinet + ~14–16-prop interiors + natural copse decor** (killed the diagonal tree-rows). ✓ `df10580` — visually verified. **Park/pond relocated east** (4-wide pond kept; pathfinding invariant unchanged) ✓ `3a9fcc2`. _Remaining: the functional storage **deposit** mechanic (Phase D-adjacent) — in progress._
 - [x] A6. Reach budget 40→100 **floor only** — shipped inside A0 (`7fc770c`). _Distance-weighted attendance deferred to Phase C._
 
 **A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Remaining in Phase A: A4 (reserve lots) + A5 (bigger homes + storage + park move + natural decor + interiors).**
