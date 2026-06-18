@@ -168,9 +168,15 @@ export const HOMESTEAD_DOORS: Record<string, Vec2> = Object.fromEntries(
  * tiles, adds no landmark, binds no persona — pure capacity the agents layer
  * can later activate (add a persona + promote to HOMESTEADS) with no re-survey.
  *
- * The original fourteen lots have all been PROMOTED into occupied HOMESTEADS
- * (the 26-townsfolk expansion), so this array is now empty. The type + export
- * are retained so future capacity can be reserved again with no re-survey.
+ * FOURTEEN such lots are reserved here as future-hamlet ground: visible room to
+ * grow that the agents layer can activate later (add a persona + promote to
+ * HOMESTEADS) with no re-survey. They line the countryside ring and the
+ * center-trunk corridor — the open road stretches between the four occupied
+ * corner hamlets — holding space for whole future hamlets along the north
+ * (y=20) and south (y=80) residential roads. Each lot's footprint + plot land
+ * entirely on grass, its door exterior drops onto a road path, and its plot
+ * sits within OBSERVATION_RADIUS of the door, so a lot is a drop-in homestead
+ * the moment a persona binds to it (see tests/world/reserve-lots.test.ts).
  */
 export interface ReserveLot {
   id: string;
@@ -181,7 +187,25 @@ export interface ReserveLot {
   plot: { x0: number; y0: number; x1: number; y1: number };
 }
 
-export const RESERVE_LOTS: ReserveLot[] = [];
+export const RESERVE_LOTS: ReserveLot[] = [
+  // NORTH road (y=20), homes ABOVE it (door side S at y=19, exterior y=20 = road)
+  { id: "lot_n1", house: { x0: 26,  y0: 15, x1: 30,  y1: 19 }, bed: { x: 28,  y: 17 }, door: { x: 28,  y: 19 }, doorSide: "S", plot: { x0: 31,  y0: 16, x1: 33,  y1: 19 } },
+  { id: "lot_n2", house: { x0: 34,  y0: 15, x1: 38,  y1: 19 }, bed: { x: 36,  y: 17 }, door: { x: 36,  y: 19 }, doorSide: "S", plot: { x0: 39,  y0: 16, x1: 41,  y1: 19 } },
+  { id: "lot_n3", house: { x0: 42,  y0: 15, x1: 46,  y1: 19 }, bed: { x: 44,  y: 17 }, door: { x: 44,  y: 19 }, doorSide: "S", plot: { x0: 47,  y0: 16, x1: 49,  y1: 19 } },
+  { id: "lot_n4", house: { x0: 76,  y0: 15, x1: 80,  y1: 19 }, bed: { x: 78,  y: 17 }, door: { x: 78,  y: 19 }, doorSide: "S", plot: { x0: 81,  y0: 16, x1: 83,  y1: 19 } },
+  { id: "lot_n5", house: { x0: 84,  y0: 15, x1: 88,  y1: 19 }, bed: { x: 86,  y: 17 }, door: { x: 86,  y: 19 }, doorSide: "S", plot: { x0: 89,  y0: 16, x1: 91,  y1: 19 } },
+  { id: "lot_n6", house: { x0: 92,  y0: 15, x1: 96,  y1: 19 }, bed: { x: 94,  y: 17 }, door: { x: 94,  y: 19 }, doorSide: "S", plot: { x0: 97,  y0: 16, x1: 99,  y1: 19 } },
+  { id: "lot_n7", house: { x0: 100, y0: 15, x1: 104, y1: 19 }, bed: { x: 102, y: 17 }, door: { x: 102, y: 19 }, doorSide: "S", plot: { x0: 105, y0: 16, x1: 107, y1: 19 } },
+  // NORTH road, homes BELOW it (door side N at y=21, exterior y=20 = road)
+  { id: "lot_n8", house: { x0: 30,  y0: 21, x1: 34,  y1: 25 }, bed: { x: 32,  y: 23 }, door: { x: 32,  y: 21 }, doorSide: "N", plot: { x0: 35,  y0: 22, x1: 37,  y1: 25 } },
+  { id: "lot_n9", house: { x0: 88,  y0: 21, x1: 92,  y1: 25 }, bed: { x: 90,  y: 23 }, door: { x: 90,  y: 21 }, doorSide: "N", plot: { x0: 93,  y0: 22, x1: 95,  y1: 25 } },
+  // SOUTH road (y=80), homes BELOW it (door side N at y=81, exterior y=80 = road)
+  { id: "lot_s1", house: { x0: 26,  y0: 81, x1: 30,  y1: 85 }, bed: { x: 28,  y: 83 }, door: { x: 28,  y: 81 }, doorSide: "N", plot: { x0: 31,  y0: 81, x1: 33,  y1: 84 } },
+  { id: "lot_s2", house: { x0: 34,  y0: 81, x1: 38,  y1: 85 }, bed: { x: 36,  y: 83 }, door: { x: 36,  y: 81 }, doorSide: "N", plot: { x0: 39,  y0: 81, x1: 41,  y1: 84 } },
+  { id: "lot_s3", house: { x0: 76,  y0: 81, x1: 80,  y1: 85 }, bed: { x: 78,  y: 83 }, door: { x: 78,  y: 81 }, doorSide: "N", plot: { x0: 81,  y0: 81, x1: 83,  y1: 84 } },
+  { id: "lot_s4", house: { x0: 84,  y0: 81, x1: 88,  y1: 85 }, bed: { x: 86,  y: 83 }, door: { x: 86,  y: 81 }, doorSide: "N", plot: { x0: 89,  y0: 81, x1: 91,  y1: 84 } },
+  { id: "lot_s5", house: { x0: 92,  y0: 81, x1: 96,  y1: 85 }, bed: { x: 94,  y: 83 }, door: { x: 94,  y: 81 }, doorSide: "N", plot: { x0: 97,  y0: 81, x1: 99,  y1: 84 } },
+];
 
 // -- road network ------------------------------------------------------------
 // A hand-authored set of road SEGMENTS (each a 1-wide horizontal or vertical
@@ -276,14 +300,15 @@ const SHOP_TILE: Vec2 = { ...SHOP_SPEC.specialTile! };
 
 // -- park --------------------------------------------------------------------
 // An open green region (NOT a walled room): mostly walkable grass with an inner
-// pond (water) and a few benches/trees. Sits in the open SE flat, clear of the
-// rooms and roads. The pond is ≥4 wide with grass flanks (pathfinding pond
-// detour test). WATER_POS is the pond's NW corner.
-export const PARK = { x0: 74, y0: 24, x1: 84, y1: 34 };
-/** Inner pond: exactly 4 wide (x0..x0+3), grass border inside the park region.
- *  The 4-wide invariant is load-bearing — tests/world/pathfinding.test.ts derives
- *  the pond's east grass flank as WATER_POS.x + 4 (= x1 + 1). */
-const POND = { x0: 77, y0: 27, x1: 80, y1: 30 };
+// pond (water) and a few benches/trees. Sits EAST of the civic hub, its south
+// edge running just above the spine (y=50), clear of the rooms and roads. The
+// pond is exactly 4 wide with grass flanks (pathfinding pond detour test).
+// WATER_POS is the pond's NW corner.
+export const PARK = { x0: 96, y0: 40, x1: 109, y1: 49 };
+/** Inner pond: exactly 4 wide (x0..x0+3 = 99..102), grass border inside the park
+ *  region. The 4-wide invariant is load-bearing — tests/world/pathfinding.test.ts
+ *  derives the pond's east grass flank as WATER_POS.x + 4 (= x1 + 1 = 103). */
+const POND = { x0: 99, y0: 43, x1: 102, y1: 46 };
 
 // -- v3: world object positions (plaza + park) -------------------------------
 // Well: on the central plaza between the shop (x≤57) and the tavern (x≥62),
@@ -292,10 +317,10 @@ export const WELL_POS: Vec2 = { x: 59, y: 49 };
 // Notice board: one step east of the well (same row) — objects.test geometry
 // pins board = well + (1,0).
 export const NOTICE_BOARD_POS: Vec2 = { x: 60, y: 49 };
-// Bench: on park grass immediately west of the pond (adjacent to water).
-export const BENCH_POS: Vec2 = { x: 75, y: 28 };
-// A second bench INSIDE the park (typology park-bench test), east of the pond.
-const PARK_BENCH_POS: Vec2 = { x: 83, y: 28 };
+// Bench: on park grass, west side of the park, inside PARK (left of the pond).
+export const BENCH_POS: Vec2 = { x: 97, y: 48 };
+// A second bench INSIDE the park (typology park-bench test), east side of PARK.
+const PARK_BENCH_POS: Vec2 = { x: 106, y: 45 };
 
 /** The usable world objects placed in the town (well, board, two benches). */
 export const WORLD_OBJECTS: WorldObject[] = [
