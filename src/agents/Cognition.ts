@@ -40,6 +40,7 @@ import { getEventBus } from "./events";
 import { InMemoryMemoryStore } from "./memory/MemoryStore";
 import { rateImportance } from "./memory/importance";
 import { ReflectionEngineImpl } from "./Reflection";
+import { DiarySystem } from "./Diary";
 import { PlannerImpl } from "./Planner";
 import { RelationshipStoreImpl } from "./Relationships";
 import { EventBoard } from "./EventBoard";
@@ -195,6 +196,8 @@ export interface CognitionMetrics {
 export class CognitionSystem implements ExecutorCognitionHooks {
   readonly memory: InMemoryMemoryStore;
   readonly reflection: ReflectionEngineImpl;
+  /** Additive — end-of-day first-person journal entries (modeled on reflection). */
+  readonly diary: DiarySystem;
   readonly planner: PlannerImpl;
   readonly relationships: RelationshipStoreImpl;
   /** v3 — seeded social events + knowledge diffusion (EventBoard). */
@@ -262,6 +265,14 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       router: this.router,
       now: this.now,
       onLiveCall: () => this.metrics.reflectionCalls++,
+    });
+
+    this.diary = new DiarySystem({
+      store: this.memory,
+      bus: this.bus,
+      live: this.live,
+      router: this.router,
+      now: this.now,
     });
 
     this.planner = new PlannerImpl({
@@ -1013,6 +1024,10 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         .finally(() => {
           void this.ensurePlan(agent).catch(() => {});
         });
+      // End-of-day journal: summarise the day that just ended from the memory
+      // stream. Fire-and-forget AFTER the needs/goal/plan prewarm so it never
+      // blocks the morning warm-up; guarded one-entry-per-agent-per-day inside.
+      void this.diary.writeEntry(agent.name).catch(() => {});
     }
   }
 
