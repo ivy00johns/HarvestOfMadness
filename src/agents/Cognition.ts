@@ -29,6 +29,7 @@ import type {
   MemoryType,
   Observation,
   Router,
+  SimEvent,
   WorldApi,
 } from "@contracts/types";
 import { liveRouter } from "../llm/router";
@@ -41,7 +42,13 @@ import { rateImportance } from "./memory/importance";
 import { ReflectionEngineImpl } from "./Reflection";
 import { PlannerImpl } from "./Planner";
 import { RelationshipStoreImpl } from "./Relationships";
+import { EventBoard } from "./EventBoard";
 import type { ExecutorCognitionHooks } from "./ActionExecutor";
+import { ConversationSystem } from "./Conversation";
+import { NeedsSystem } from "./Needs";
+import { GoalsSystem } from "./Goals";
+import { RolesSystem } from "./Roles";
+import { Governance } from "./Governance";
 
 /** Memory texts injected into prompts are truncated to this many chars. */
 export const MEMORY_TEXT_MAX_CHARS = 200;
@@ -50,11 +57,112 @@ export const DEFAULT_RETRIEVAL_QUERY = "what should I do now";
 /** Importance pinned for gifts, both sides (spec rule 9). */
 export const GIFT_IMPORTANCE = 7;
 
+// ---------------------------------------------------------------------------
+// Wave 4b — bounded multi-hop gossip (termination is non-negotiable)
+// ---------------------------------------------------------------------------
+
+/**
+ * Hard hop ceiling — the load-bearing terminator. A gossip memory at
+ * hop >= GOSSIP_MAX_HOPS is NEVER re-relayed, so the relay chain is at most
+ * A(first-hand) → hop1 → hop2 → hop3 and then stops.
+ */
+export const GOSSIP_MAX_HOPS = 3;
+/** Belief-decay factor applied to the source importance on each relay hop. */
+export const GOSSIP_DECAY = 0.6;
+/** Importance pinned for a hop-1 (first-hand) gossip listener memory. */
+export const GOSSIP_BASE_IMPORTANCE = 4;
+/** Decay backstop: a relay is suppressed once decayed importance drops below this. */
+export const GOSSIP_MIN_RELAY_IMPORTANCE_FLOOR = 1;
+
+/** Deterministic round-then-clamp into the [1,10] importance band. */
+function clampRoundImportance(v: number): number {
+  return Math.min(10, Math.max(1, Math.round(v)));
+}
+
+/** djb2 — deterministic non-negative string hash (mirrors mock.ts/Governance). */
+function govHash(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 33) ^ s.charCodeAt(i);
+  }
+  return h >>> 0;
+}
+
+// ---------------------------------------------------------------------------
+// Wave 4c — governance importance hints + the deterministic open-gate.
+// ---------------------------------------------------------------------------
+
+/** Importance of the proposer's own "I proposed a town rule" memory. */
+export const GOVERNANCE_PROPOSE_IMPORTANCE = 8;
+/** Importance of a "I heard about the proposed rule" memory (notice board / talk). */
+export const GOVERNANCE_HEARD_IMPORTANCE = 7;
+/** Importance of a relayed-via-talk "X told me about the proposed rule" memory. */
+export const GOVERNANCE_DIFFUSE_IMPORTANCE = 6;
+/** Importance of the adopted-norm memory written to every aware agent. */
+export const GOVERNANCE_NORM_IMPORTANCE = 7;
+/**
+ * Open-gate divisor — a notice-board interaction opens a NEW proposal only when
+ * `hash(name + day) % GOVERNANCE_OPEN_GATE_N === 0` (rare + replayable, no RNG),
+ * AND no proposal is currently open. Tuned so a proposal opens occasionally over
+ * a multi-day sim rather than on every board read.
+ */
+export const GOVERNANCE_OPEN_GATE_N = 4;
+
+/**
+ * Wave 4b — strip the gossip wrapper to recover the bounded core story, so the
+ * relayed text does NOT grow across hops. Matches both the hop-1 legacy prefix
+ * `"<Name> mentioned: "` and the hop>=2 provenance prefix
+ * `"<Name> mentioned (heard from <Y>): "`. Returns the text unchanged when it
+ * is not a gossip-wrapped memory.
+ */
+export function gossipCore(text: string): string {
+  const m = /^[A-Za-z][^:]*? mentioned(?: \(heard from [^)]*\))?:\s*/.exec(text);
+  return m ? text.slice(m[0].length) : text;
+}
+
+/**
+ * Wave 4b — extract the prior teller name from a gossip-wrapped memory text.
+ * For a hop-1 memory `"<Teller> mentioned: ..."` returns `<Teller>`; for a
+ * hop>=2 memory `"<Relayer> mentioned (heard from <Origin>): ..."` returns
+ * `<Relayer>` (the immediate prior teller). Returns null when not gossip text.
+ */
+export function gossipTeller(text: string): string | null {
+  const m = /^([A-Za-z][^:]*?) mentioned(?: \(heard from [^)]*\))?:\s*/.exec(text);
+  return m ? m[1] : null;
+}
+
 /** VITE_MODEL_MODE, read defensively (absent under plain node) — mirrors getRouter(). */
 function detectModelMode(): string | undefined {
   return typeof import.meta !== "undefined" && import.meta.env
     ? (import.meta.env.VITE_MODEL_MODE as string | undefined)
     : undefined;
+}
+
+/**
+ * Phase ordering for past-event filtering. morning < afternoon < evening < night.
+ * Used by isPastEvent to decide whether an event is in the past relative to now.
+ */
+export const PHASE_INDEX: Record<import("@contracts/types").Phase, number> = {
+  morning: 0,
+  afternoon: 1,
+  evening: 2,
+  night: 3,
+};
+
+/**
+ * Returns true when the event is strictly in the past relative to `now`.
+ * "Past" = event.day < today, OR (event.day === today AND event.phase is
+ * strictly before now.phase in morning < afternoon < evening < night order).
+ * Events happening NOW (same day+phase) or in the future are NOT past.
+ */
+export function isPastEvent(
+  event: { day: number; phase: import("@contracts/types").Phase },
+  now: import("@contracts/types").GameStamp,
+): boolean {
+  if (event.day < now.day) return true;
+  if (event.day > now.day) return false;
+  // same day — compare phases
+  return PHASE_INDEX[event.phase] < PHASE_INDEX[now.phase];
 }
 
 function truncateText(text: string, max: number): string {
@@ -80,6 +188,8 @@ export interface CognitionMetrics {
   reflectionCalls: number;
   relationshipCalls: number;
   importanceCalls: number;
+  /** Wave 3a — live smart-tier goal-synthesis calls (~1/agent/day). */
+  goalCalls: number;
 }
 
 export class CognitionSystem implements ExecutorCognitionHooks {
@@ -87,17 +197,41 @@ export class CognitionSystem implements ExecutorCognitionHooks {
   readonly reflection: ReflectionEngineImpl;
   readonly planner: PlannerImpl;
   readonly relationships: RelationshipStoreImpl;
+  /** v3 — seeded social events + knowledge diffusion (EventBoard). */
+  readonly events = new EventBoard();
+  /** Wave 4c — town governance: one active proposal, diffusion, voting, tally. */
+  readonly governance = new Governance();
   /** live cognition LLM calls, by purpose (budget visibility) */
   readonly metrics: CognitionMetrics = {
     planCalls: 0,
     reflectionCalls: 0,
     relationshipCalls: 0,
     importanceCalls: 0,
+    goalCalls: 0,
   };
+  /** Wave 3a — intrinsic drives (PIANO keystone): event-sourced, no global tick. */
+  readonly needs = new NeedsSystem();
+  /** Wave 3a — needs-driven standing-goal synthesis (cached, cadence-gated). */
+  readonly goals: GoalsSystem;
+  /** Wave 4a — emergent role specialization (action-histogram, hysteresis-gated). */
+  readonly roles = new RolesSystem();
+  /** v3 — back-and-forth conversation reply generator */
+  private conversation!: ConversationSystem;
 
   private readonly agents = new Map<string, Agent>();
   private readonly seenActivity = new Set<string>();
   private readonly heardSpeech = new Set<string>();
+  /** v3 — tracks arrivals logged per agent+event to avoid duplicate feed events */
+  private readonly arrivedAtEvent = new Set<string>();
+  /**
+   * Wave 4b — origin-dedup state: per agent, the set of story-origin ids that
+   * agent already holds. A relay to listener L happens ONLY if L is not already
+   * in knownOrigins[origin]; the write immediately marks L. This is the
+   * absorbing storm guard that REPLACES the v3 single-hop hearsay block —
+   * with N agents there are at most N−1 writes per origin (each agent learns an
+   * origin at most once), so the relay process provably reaches a fixed point.
+   */
+  private readonly knownOrigins = new Map<string, Set<string>>();
 
   private readonly bus: EventBus;
   private readonly router: Router;
@@ -151,6 +285,22 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       write: (agentName, text, importance) =>
         this.write(agentName, "plan", text, importance),
       onLiveCall: () => this.metrics.planCalls++,
+      // Wave 3a — the synthesized standing goal (cache first, then the agent's
+      // transient action.goal) feeds the plan prompt as an INPUT only.
+      goalOf: (name) => this.goals.current(name) ?? this.agents.get(name)?.goal ?? null,
+      // Wave 5b — derived role (cached sync read, then the agent's stored role)
+      // routes a purposeful agent to its functional building in the mock plan.
+      roleOf: (name) => this.roles.role(name) ?? this.agents.get(name)?.role ?? null,
+    });
+
+    this.goals = new GoalsSystem({
+      live: this.live,
+      router: this.router,
+      now: this.now,
+      persona: (name) => this.personaOf(name),
+      needs: (name) => this.needs.state(name),
+      topMemories: (name) => this.topMemoryTexts(name),
+      onLiveCall: () => this.metrics.goalCalls++,
     });
 
     this.relationships = new RelationshipStoreImpl({
@@ -162,6 +312,29 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       onChange: (name) => this.refreshRelationshipRows(name),
       onLiveCall: () => this.metrics.relationshipCalls++,
     });
+
+    this.conversation = new ConversationSystem({
+      bus: this.bus,
+      now: this.now,
+      live: this.live,
+      router: this.router,
+      affinityText: (bName, aName) => {
+        try {
+          const rel = this.relationships.get(bName, aName);
+          return rel?.summary ?? "";
+        } catch {
+          return "";
+        }
+      },
+      writeMemory: (agentName, text, importance) => {
+        this.writeObservation(agentName, text, importance);
+      },
+    });
+  }
+
+  /** Read-only snapshot of cognition LLM spend. Never mutates. */
+  metricsSnapshot(): Readonly<CognitionMetrics> {
+    return { ...this.metrics };
   }
 
   // -- agent registry --------------------------------------------------------
@@ -172,6 +345,49 @@ export class CognitionSystem implements ExecutorCognitionHooks {
 
   private personaOf(name: string): string {
     return this.agents.get(name)?.persona.description ?? "a farmer";
+  }
+
+  /** Top few memory texts (highest importance) for the goal prompt. Defensive. */
+  private topMemoryTexts(name: string, k = 5): string[] {
+    try {
+      return this.memory
+        .all(name)
+        .slice()
+        .sort((a, b) => b.importance - a.importance)
+        .slice(0, k)
+        .map((m) => truncateText(m.text, MEMORY_TEXT_MAX_CHARS));
+    } catch {
+      return [];
+    }
+  }
+
+  // -- v3 event seeding + diffusion ------------------------------------------
+
+  /**
+   * Seed a social event: the host knows it, gets a high-importance memory,
+   * and the feed receives an event_seeded WorldEvent.
+   */
+  seedEvent(event: SimEvent): void {
+    try {
+      this.events.seed(event);
+      void this.write(
+        event.host,
+        "observation",
+        `I am hosting ${event.description} on day ${event.day} (${event.phase})`,
+        8,
+      ).catch(() => {});
+      const t = this.now();
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "event_seeded",
+        agentName: event.host,
+        text: `${event.host} is planning ${event.description}`,
+        payload: { eventId: event.id, host: event.host, description: event.description },
+      });
+    } catch {
+      /* defensive — never throw into callers */
+    }
   }
 
   // -- memory writing (rule 9 discipline) ------------------------------------
@@ -187,6 +403,7 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     text: string,
     importance: number,
     sourceIds?: string[],
+    meta?: { origin?: string; hop?: number },
   ): Promise<MemoryEntry | null> {
     try {
       const clamped = Math.min(10, Math.max(1, Math.round(importance)));
@@ -197,6 +414,10 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         importance: clamped,
         createdAt: this.now(),
         ...(sourceIds && sourceIds.length > 0 ? { sourceIds } : {}),
+        // Wave 4b — additive gossip provenance; MemoryStore.append spreads
+        // ...e so these flow through unchanged when present.
+        ...(meta?.origin !== undefined ? { origin: meta.origin } : {}),
+        ...(meta?.hop !== undefined ? { hop: meta.hop } : {}),
       });
 
       const agent = this.agents.get(agentName);
@@ -225,6 +446,24 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     }
   }
 
+  /**
+   * Wave 4b — has `agentName` already heard the story with this `origin`?
+   * Used to suppress re-telling (origin-dedup, the absorbing storm guard).
+   */
+  private knowsOrigin(agentName: string, origin: string): boolean {
+    return this.knownOrigins.get(agentName)?.has(origin) ?? false;
+  }
+
+  /** Wave 4b — record that `agentName` now holds the story with this `origin`. */
+  private markOrigin(agentName: string, origin: string): void {
+    let set = this.knownOrigins.get(agentName);
+    if (!set) {
+      set = new Set<string>();
+      this.knownOrigins.set(agentName, set);
+    }
+    set.add(origin);
+  }
+
   /** Heuristic-first importance, then hint, then (live only) fast-tier LLM. */
   private async importanceFor(text: string, hint?: number): Promise<number> {
     return rateImportance(text, hint, {
@@ -250,6 +489,21 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     action: AgentAction,
     result: { ok: boolean; reason?: string },
   ): void {
+    // Wave 3a — refill intrinsic drives on the outcome (rule-10 try-wrapped,
+    // runs even for GIVE_GIFT-ok so social drive is satisfied by gifting).
+    try {
+      this.needs.onOutcome(agent, action, result);
+    } catch {
+      /* defensive — needs bookkeeping must never block a decision */
+    }
+    // Wave 4a — histogram the (successful, role-bucketed) action toward the
+    // emergent role. Runs BEFORE the GIVE_GIFT early-return so gifts count
+    // toward the socialite bucket. Try-wrapped (rule 10).
+    try {
+      this.roles.onOutcome(agent, action, result);
+    } catch {
+      /* defensive — role bookkeeping must never block a decision */
+    }
     if (action.action === "GIVE_GIFT" && result.ok) return;
     const text = outcomeText(action, result);
     const hint = result.ok
@@ -296,6 +550,209 @@ export class CognitionSystem implements ExecutorCognitionHooks {
 
   // -- executor hooks (ExecutorCognitionHooks) -------------------------------
 
+  /**
+   * v3 — Object interaction: write a memory for the actor and, for the
+   * notice_board, teach the agent about any active seeded event they don't
+   * yet know (passive information diffusion without conversation).
+   */
+  onUseObject(agent: Agent, objectId: string, objectKind: string): void {
+    try {
+      let memText: string;
+      let importance: number;
+
+      switch (objectKind) {
+        case "well":
+          memText = `I drew water at the well`;
+          importance = 2;
+          break;
+        case "bench":
+          memText = `I rested on the bench by the pond`;
+          importance = 2;
+          break;
+        case "notice_board": {
+          memText = `I read the town notice board`;
+          importance = 3;
+          // Passive event diffusion: teach the agent any active (non-past) event
+          // they don't yet know. Mirrors the isPastEvent helper inline.
+          try {
+            const t = this.now();
+            for (const event of this.events.all()) {
+              if (isPastEvent(event, t)) continue;
+              const isNew = this.events.markKnows(event.id, agent.name);
+              if (isNew) {
+                const announcement = `The town notice board announces: ${event.description} on day ${event.day} (${event.phase})`;
+                void this.write(agent.name, "observation", announcement, 7).catch(() => {});
+                this.bus.emit({
+                  day: t.day,
+                  phase: t.phase,
+                  kind: "event_heard",
+                  agentName: agent.name,
+                  text: `${agent.name} read about ${event.description} on the notice board`,
+                  payload: { eventId: event.id, from: "notice_board", to: agent.name },
+                });
+              }
+            }
+          } catch {
+            /* defensive — diffusion must not interrupt the interaction */
+          }
+          // Wave 4c — governance rides the notice board (no PROPOSE ActionType):
+          // open a new proposal (rare, hash-gated) or learn the open one.
+          try {
+            this.maybeOpenOrLearn(agent);
+          } catch {
+            /* defensive — governance must not interrupt the interaction */
+          }
+          break;
+        }
+        default:
+          memText = `I used the ${objectKind} (${objectId})`;
+          importance = 2;
+      }
+
+      this.writeObservation(agent.name, memText, importance);
+    } catch {
+      /* rule 10: never block a decision on cognition */
+    }
+  }
+
+  // -- Wave 4c governance ----------------------------------------------------
+
+  /**
+   * Notice-board governance seam. With NO open proposal AND a deterministic gate
+   * firing (`hash(name+day) % N === 0`, rare + replayable), the agent OPENS a new
+   * proposal: composeRule from its role + dominant drive, emit `proposal_opened`,
+   * write an importance-8 memory. Otherwise, if there is an open proposal the
+   * agent does not yet know, it LEARNS it: markAware + importance-7 memory +
+   * `proposal_heard`. Fire-and-forget; never throws.
+   */
+  private maybeOpenOrLearn(agent: Agent): void {
+    const t = this.now();
+    if (!this.governance.hasOpen()) {
+      // Deterministic, rare open-gate — no RNG, replayable.
+      if (govHash(`${agent.name}:${t.day}`) % GOVERNANCE_OPEN_GATE_N !== 0) return;
+      let drive: string;
+      try {
+        drive = this.needs.dominant(agent.name);
+      } catch {
+        drive = "social";
+      }
+      const role = typeof agent.role === "string" ? agent.role : "farmer";
+      const ruleText = Governance.composeRule(role, drive, t.day);
+      const proposal = this.governance.open({
+        id: `prop-${agent.name}-d${t.day}`,
+        proposer: agent.name,
+        ruleText,
+        day: t.day,
+        phase: t.phase,
+        closeDay: t.day + 1,
+        closePhase: "evening",
+        status: "open",
+      });
+      if (!proposal) return; // a proposal opened concurrently — nothing to do
+      void this.write(
+        agent.name,
+        "observation",
+        `I proposed a town rule: ${ruleText}`,
+        GOVERNANCE_PROPOSE_IMPORTANCE,
+      ).catch(() => {});
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "proposal_opened",
+        agentName: agent.name,
+        text: `${agent.name} proposed a town rule: ${ruleText}`,
+        payload: {
+          proposalId: proposal.id,
+          proposer: agent.name,
+          ruleText,
+        },
+      });
+      return;
+    }
+
+    // There is an open proposal — learn it if this agent doesn't know it yet.
+    const open = this.governance.current();
+    if (!open) return;
+    const isNew = this.governance.markAware(open.id, agent.name);
+    if (!isNew) return;
+    void this.write(
+      agent.name,
+      "observation",
+      `I read on the notice board a proposed town rule: ${open.ruleText}`,
+      GOVERNANCE_HEARD_IMPORTANCE,
+    ).catch(() => {});
+    this.bus.emit({
+      day: t.day,
+      phase: t.phase,
+      kind: "proposal_heard",
+      agentName: agent.name,
+      text: `${agent.name} read about the proposed rule on the notice board`,
+      payload: { proposalId: open.id, from: "notice_board", to: agent.name },
+    });
+  }
+
+  /**
+   * Executor hook (ExecutorCognitionHooks.onVote). Records the agent's vote
+   * (first vote sticks), writes an importance-4 memory, and lazily resolves the
+   * tally. Voting an unknown/closed proposal is a silent no-op. Never throws.
+   */
+  onVote(agent: Agent, proposalId: string, support: boolean): void {
+    try {
+      const recorded = this.governance.vote(proposalId, agent.name, support);
+      if (recorded) {
+        const open = this.governance.get(proposalId);
+        const ruleText = open?.ruleText ?? "the town rule";
+        this.writeObservation(
+          agent.name,
+          `I voted ${support ? "for" : "against"} the proposed rule: ${ruleText}`,
+          4,
+        );
+      }
+      this.maybeResolve();
+    } catch {
+      /* rule 10: never block a decision on cognition */
+    }
+  }
+
+  /**
+   * Lazy tally resolution (no global tick). On a terminal transition emits
+   * `proposal_resolved` and, on adopt, writes a norm memory to every aware
+   * agent. Idempotent (resolveIfDue returns null after the first transition).
+   * Fire-and-forget; never throws.
+   */
+  private maybeResolve(): void {
+    try {
+      const now = this.now();
+      const r = this.governance.resolveIfDue(now);
+      if (!r) return;
+      this.bus.emit({
+        day: now.day,
+        phase: now.phase,
+        kind: "proposal_resolved",
+        text: `The town ${r.adopted ? "adopted" : "rejected"} the rule: ${r.tally.ruleText} (yes ${r.tally.yes}, no ${r.tally.no})`,
+        payload: {
+          proposalId: r.id,
+          adopted: r.adopted,
+          yes: r.tally.yes,
+          no: r.tally.no,
+          awareCount: r.tally.awareCount,
+        },
+      });
+      if (r.adopted) {
+        for (const name of this.governance.awareNames(r.id)) {
+          void this.write(
+            name,
+            "observation",
+            `The town adopted a new rule: ${r.tally.ruleText}`,
+            GOVERNANCE_NORM_IMPORTANCE,
+          ).catch(() => {});
+        }
+      }
+    } catch {
+      /* defensive — resolution must never throw into the decision loop */
+    }
+  }
+
   /** Gift resolved: high-importance memories + recordInteraction, BOTH sides. */
   onGift(giver: Agent, receiver: Agent, itemId: string): void {
     this.writeObservation(
@@ -322,7 +779,7 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     );
   }
 
-  /** Conversation resolved: affinity both ways + the listener's memory. */
+  /** Conversation resolved: affinity both ways + the listener's memory + B's reply. */
   onTalk(speaker: Agent, listener: Agent, say: string | null): void {
     const topic = say ?? "a friendly chat";
     this.relationships.recordInteraction(speaker.name, listener.name, "TALK_TO", topic);
@@ -334,6 +791,183 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         `${speaker.name} stopped to chat with me`,
         5,
       );
+    }
+
+    // v3 — generate B's reply (fire-and-forget; never blocks or throws).
+    if (say !== null && say.trim() !== "") {
+      try {
+        this.conversation.handleReply(speaker, listener, say);
+      } catch {
+        /* defensive: reply generation must never interrupt the talk hook */
+      }
+    }
+
+    // v3 — event diffusion: for each event the speaker knows that the listener
+    // does not, mark the listener as knowing it and write a high-importance
+    // observation memory. This is the one-hop cascade mechanism.
+    try {
+      const t = this.now();
+      for (const event of this.events.knownBy(speaker.name)) {
+        const isNew = this.events.markKnows(event.id, listener.name);
+        if (isNew) {
+          void this.write(
+            listener.name,
+            "observation",
+            `${speaker.name} told me about ${event.description} on day ${event.day} (${event.phase}) at the tavern`,
+            7,
+          ).catch(() => {});
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "event_heard",
+            agentName: listener.name,
+            text: `${speaker.name} invited ${listener.name} to ${event.description}`,
+            payload: { eventId: event.id, from: speaker.name, to: listener.name },
+          });
+        }
+      }
+    } catch {
+      /* defensive — event diffusion must never interrupt the talk hook */
+    }
+
+    // Wave 4b — bounded multi-hop gossip with origin tracking + belief decay.
+    // The speaker shares their single most salient story (first-hand OR a held
+    // relayable rumor) with the listener, UNLESS the listener already knows that
+    // story's origin. Termination rests on two monotone bounds: (1) origin-dedup
+    // is absorbing (a listener learns an origin at most once → ≤ N−1 writes per
+    // origin); (2) the hard hop cap GOSSIP_MAX_HOPS=3 (a hop>=cap memory is never
+    // re-relayed). Belief decay (importance × GOSSIP_DECAY^hop, floored at
+    // GOSSIP_MIN_RELAY_IMPORTANCE_FLOOR) is for narrative fade, not termination —
+    // at the default 4/0.6/floor-1 it bottoms out at 1 without crossing the floor,
+    // so the hop cap is what stops a chain. No feedback loop: a relayed memory
+    // carries the SAME origin, so re-sharing to any knower is suppressed.
+    try {
+      const speakerMems = this.memory.all(speaker.name);
+
+      // Build relay candidates. A candidate exposes the SOURCE memory (for
+      // salience + provenance), the propagated origin id, the listener's
+      // out-hop, and the (possibly decayed) out-importance.
+      type GossipCandidate = {
+        source: MemoryEntry;
+        origin: string;
+        outHop: number;
+        outImportance: number;
+      };
+      const candidates: GossipCandidate[] = [];
+      for (const m of speakerMems) {
+        if (m.type !== "observation") continue;
+        if (m.origin === undefined) {
+          // First-hand: the STRUCTURAL origin===undefined gate REPLACES the
+          // deleted hearsay regex. Origin id = this source memory's own id
+          // (deterministic — never a UUID). Hop-1 importance pinned to 4 and
+          // the listener text stays byte-identical to the legacy single-hop.
+          if (m.importance < 5) continue;
+          candidates.push({
+            source: m,
+            origin: m.id,
+            outHop: 1,
+            outImportance: GOSSIP_BASE_IMPORTANCE,
+          });
+        } else {
+          // Relay: only when the held memory is below the hop cap AND its
+          // decayed importance still clears the floor. Origin propagates
+          // unchanged; the out-hop strictly increases.
+          if (m.hop === undefined || m.hop >= GOSSIP_MAX_HOPS) continue;
+          const decayed = clampRoundImportance(m.importance * GOSSIP_DECAY);
+          if (decayed < GOSSIP_MIN_RELAY_IMPORTANCE_FLOOR) continue;
+          candidates.push({
+            source: m,
+            origin: m.origin,
+            outHop: m.hop + 1,
+            outImportance: decayed,
+          });
+        }
+      }
+
+      // Origin-dedup: never re-tell the listener a story they already hold.
+      const tellable = candidates.filter(
+        (c) => !this.knowsOrigin(listener.name, c.origin),
+      );
+
+      if (tellable.length > 0) {
+        // Salience by SOURCE importance; ties broken by later-in-array (the
+        // most recently appended), which keeps the frozen "treasure chest
+        // imp 9" + first-hand-preference assertions green.
+        let best = tellable[0];
+        for (const c of tellable) {
+          if (c.source.importance >= best.source.importance) best = c;
+        }
+
+        // Origin-dedup is absorbing: mark BOTH the speaker (who holds it) and
+        // the listener (who now holds it) so neither re-receives this origin.
+        this.markOrigin(speaker.name, best.origin);
+        this.markOrigin(listener.name, best.origin);
+
+        // gossipCore strips the wrapper so the relayed gist does NOT grow hop
+        // over hop; truncate to the legacy 100-char bound.
+        const gist = truncateText(gossipCore(best.source.text), 100);
+        const text =
+          best.outHop === 1
+            ? `${speaker.name} mentioned: ${gist}` // BYTE-IDENTICAL legacy
+            : `${speaker.name} mentioned (heard from ${
+                gossipTeller(best.source.text) ?? speaker.name
+              }): ${gist}`;
+
+        void this.write(
+          listener.name,
+          "observation",
+          text,
+          best.outImportance,
+          [best.source.id],
+          { origin: best.origin, hop: best.outHop },
+        ).catch(() => {});
+
+        const t = this.now();
+        this.bus.emit({
+          day: t.day,
+          phase: t.phase,
+          kind: "gossip",
+          agentName: speaker.name,
+          text: `${speaker.name} told ${listener.name} the news`,
+          payload: { origin: best.origin, hop: best.outHop },
+        });
+      }
+    } catch {
+      /* defensive — gossip must never throw into the decision loop */
+    }
+
+    // Wave 4c — governance diffusion: if the speaker knows the OPEN proposal and
+    // the listener does not, the listener learns it (markAware + importance-6
+    // memory + proposal_heard). Touches NO gossip/event sets — its own state and
+    // its own try/catch, so it can never perturb event-diffusion or gossip.
+    try {
+      const open = this.governance.current();
+      if (
+        open &&
+        this.governance.isAware(open.id, speaker.name) &&
+        !this.governance.isAware(open.id, listener.name)
+      ) {
+        const isNew = this.governance.markAware(open.id, listener.name);
+        if (isNew) {
+          void this.write(
+            listener.name,
+            "observation",
+            `${speaker.name} told me about the proposed town rule: ${open.ruleText}`,
+            GOVERNANCE_DIFFUSE_IMPORTANCE,
+          ).catch(() => {});
+          const t = this.now();
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "proposal_heard",
+            agentName: listener.name,
+            text: `${speaker.name} told ${listener.name} about the proposed rule`,
+            payload: { proposalId: open.id, from: speaker.name, to: listener.name },
+          });
+        }
+      }
+    } catch {
+      /* defensive — governance diffusion must never throw into the talk hook */
     }
   }
 
@@ -350,8 +984,35 @@ export class CognitionSystem implements ExecutorCognitionHooks {
 
   /** Pre-warm every registered agent's plan (day_advanced / bootstrap). */
   onDayAdvanced(): void {
+    // Wave 4c — a new day may cross a proposal's deadline; resolve lazily.
+    this.maybeResolve();
     for (const agent of this.agents.values()) {
-      void this.ensurePlan(agent).catch(() => {});
+      // Wave 3a — morning cadence: recompute derive-on-read drives, apply the
+      // daily regen pulse, force a goal refresh, THEN pre-warm the plan so the
+      // synthesized goal lands as a plan INPUT. Each step is fire-and-forget
+      // and try-wrapped; a failure degrades to the plain plan warm-up.
+      try {
+        this.needs.recomputeFromState(agent);
+        this.needs.onDayAdvanced(agent.name);
+      } catch {
+        /* defensive */
+      }
+      // Wave 4a — once/game-day role derivation (synchronous, no LLM): apply
+      // the hysteresis-gated update and cache the result on the agent.
+      try {
+        agent.role = this.roles.update(agent);
+      } catch {
+        /* defensive — role derivation must never block the morning warm-up */
+      }
+      void this.goals
+        .refresh(agent.name, { force: true })
+        .then((g) => {
+          agent.goal = g;
+        })
+        .catch(() => {})
+        .finally(() => {
+          void this.ensurePlan(agent).catch(() => {});
+        });
     }
   }
 
@@ -377,6 +1038,33 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         }));
       }
 
+      // Wave 3a — drives + standing goal. recomputeFromState refreshes the
+      // derive-on-read energy/wealth drives; the vector rides the obs + card.
+      // The goal refresh is fire-and-forget (cadence-gated; never blocks the
+      // decision), and the cached goal is read synchronously so the prompt
+      // always carries the freshest already-resolved goal. The transient LLM
+      // action.goal still wins for its own turn.
+      this.needs.recomputeFromState(agent);
+      const need = this.needs.state(agent.name);
+      obs.self.needs = need;
+      agent.needs = need;
+      void this.goals
+        .refresh(agent.name)
+        .then((g) => {
+          agent.goal = g;
+          obs.self.goal = g;
+        })
+        .catch(() => {});
+      const cachedGoal = this.goals.current(agent.name);
+      if (cachedGoal) obs.self.goal = cachedGoal;
+
+      // Wave 4a — surface the CACHED role (synchronous, deterministic; the
+      // hot path never re-derives — derivation happens once/game-day in
+      // onDayAdvanced). Keeps obs.self.role + the agent's cached role in sync.
+      const role = this.roles.role(agent.name);
+      obs.self.role = role;
+      agent.role = role;
+
       const query = step?.goal ?? DEFAULT_RETRIEVAL_QUERY;
       const memories = await this.memory.retrieve(agent.name, query);
       if (memories.length > 0) {
@@ -388,6 +1076,98 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       }
 
       this.recordNearbyActivity(agent, obs.nearby.agents);
+
+      // v3 — surface known events (isNow = event day+phase matches current time)
+      // Past events are excluded: only upcoming or currently-happening events are actionable.
+      const t = this.now();
+      const knownEvents = this.events
+        .knownBy(agent.name)
+        .filter((e) => !isPastEvent(e, t))
+        .map((e) => ({
+          ...e,
+          isNow: e.day === t.day && e.phase === t.phase,
+        }));
+      if (knownEvents.length > 0) {
+        obs.self.knownEvents = knownEvents;
+      }
+
+      // v3 — arrival logging: for each known isNow event the agent is at/adjacent to
+      try {
+        for (const ke of knownEvents) {
+          if (!ke.isNow) continue;
+          if (chebyshev(agent.pos, ke.location) > 1) continue;
+          const arrivalKey = `${agent.name}|${ke.id}`;
+          if (this.arrivedAtEvent.has(arrivalKey)) continue;
+          this.arrivedAtEvent.add(arrivalKey);
+          void this.write(
+            agent.name,
+            "observation",
+            `I arrived at ${ke.description}`,
+            6,
+          ).catch(() => {});
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "event_arrived",
+            agentName: agent.name,
+            text: `${agent.name} arrived at ${ke.description}`,
+            payload: { eventId: ke.id, agentName: agent.name },
+          });
+        }
+      } catch {
+        /* defensive — arrival logging must never interrupt enrichment */
+      }
+
+      // v3 — inviteTargets: for events this agent hosts that are NOT past, find agents who don't know yet
+      try {
+        const hostedEvents = this.events.all().filter((e) => e.host === agent.name && !isPastEvent(e, t));
+        if (hostedEvents.length > 0) {
+          const targets: { name: string; pos: { x: number; y: number } }[] = [];
+          for (const e of hostedEvents) {
+            for (const [, other] of this.agents) {
+              if (other.name === agent.name) continue;
+              if (this.events.knows(e.id, other.name)) continue;
+              targets.push({ name: other.name, pos: { x: other.pos.x, y: other.pos.y } });
+            }
+          }
+          if (targets.length > 0) {
+            obs.self.inviteTargets = targets;
+          }
+        }
+      } catch {
+        /* defensive — inviteTargets must never interrupt enrichment */
+      }
+
+      // Wave 4c — governance surfacing + VOTE injection. Additive: only fires
+      // when there is an OPEN proposal the agent is AWARE of, so frozen
+      // mock-determinism scenes (no proposal) stay byte-identical. VOTE is
+      // injected here (NOT in computeAvailableActions) only when the agent is
+      // aware + has not yet voted.
+      try {
+        const open = this.governance.current();
+        if (open && this.governance.isAware(open.id, agent.name)) {
+          const vote = this.governance.myVote(open.id, agent.name);
+          obs.self.activeProposal = {
+            id: open.id,
+            proposer: open.proposer,
+            ruleText: open.ruleText,
+            day: open.day,
+            awareCount: this.governance.awareCount(open.id),
+            yes: this.governance.yesCount(open.id),
+            no: this.governance.noCount(open.id),
+          };
+          if (vote !== undefined) {
+            obs.self.myVote = vote;
+          } else if (!obs.availableActions.includes("VOTE")) {
+            obs.availableActions = [...obs.availableActions, "VOTE"];
+          }
+        }
+      } catch {
+        /* defensive — governance surfacing must never interrupt enrichment */
+      }
+
+      // Wave 4c — lazy deadline/early-majority resolution on the hot path.
+      this.maybeResolve();
     } catch {
       /* rule 10: never block/break a decision on cognition */
     }
@@ -419,6 +1199,8 @@ const OK_IMPORTANCE_HINTS: Partial<Record<AgentAction["action"], number>> = {
   BUY: 2,
   SELL: 2,
   SLEEP: 2,
+  USE_OBJECT: 3,
+  VOTE: 4, // Wave 4c — a cast governance vote is a notable civic act
 };
 
 /** First-person memory text for a resolved action. */
@@ -427,7 +1209,16 @@ export function outcomeText(
   result: { ok: boolean; reason?: string },
 ): string {
   const t = action.target as
-    | { x?: number; y?: number; itemId?: string; qty?: number; agentName?: string }
+    | {
+        x?: number;
+        y?: number;
+        itemId?: string;
+        qty?: number;
+        agentName?: string;
+        objectId?: string;
+        proposalId?: string;
+        support?: boolean;
+      }
     | undefined;
   if (!result.ok) {
     return `I tried to ${action.action} but failed: ${result.reason ?? "unknown reason"}`;
@@ -455,6 +1246,10 @@ export function outcomeText(
       return `I showed how I felt (${action.emotion ?? "neutral"})`;
     case "SLEEP":
       return "I slept through the night; a new day begins";
+    case "USE_OBJECT":
+      return `I used the ${t?.objectId ?? "object"}`;
+    case "VOTE":
+      return `I voted ${t?.support ? "for" : "against"} the town proposal`;
     case "WAIT":
     default:
       return "I waited for a while";

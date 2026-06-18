@@ -5,6 +5,11 @@
  * ceiling, POST /api/agent/complete returns 429 budget_exceeded WITHOUT
  * calling upstream (contracts/openapi.yaml). The counter resets when the
  * UTC calendar day changes.
+ *
+ * A ceiling of `<= 0` means UNLIMITED (the default): FreeLLMAPI tokens are
+ * free, so the proxy does not self-throttle. tryConsume() still counts usage
+ * (for /api/health) but never refuses. Set a positive DAILY_CEILING only to
+ * deliberately cap a session.
  */
 
 export interface Budget {
@@ -39,7 +44,8 @@ export function createBudget(ceiling: number, now: () => number = Date.now): Bud
     },
     tryConsume() {
       rollDay();
-      if (count >= ceiling) return false;
+      // ceiling <= 0 → unlimited: count usage but never refuse.
+      if (ceiling > 0 && count >= ceiling) return false;
       count += 1;
       return true;
     },

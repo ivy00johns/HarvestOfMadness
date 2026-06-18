@@ -164,6 +164,155 @@ CHARACTER SPRITESHEETS
 
 ---
 
+============================================================================
+v3 ASSET PACKS (town / buildings / interiors / furniture / farm expansion)
+============================================================================
+
+FARMING TILESETS — EXPANDED
+  Files: assets/lpc/farming/farming_fishing.png, assets/lpc/farming/plants.png,
+         assets/lpc/farming/wheat.png, assets/lpc/farming/youngwheat.png,
+         assets/lpc/farming/tallgrass.png, assets/lpc/farming/reed.png,
+         assets/lpc/farming/sand.png, assets/lpc/farming/sandwater.png,
+         assets/lpc/farming/fence_alt.png,
+         assets/lpc/farming/preview-daneeklu-tilesets.png
+  Title: [LPC] Farming Tilesets, Magic Animations and UI Elements
+  Author: Daniel Eddeland (Daneeklu)
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-farming-tilesets-magic-animations-and-ui-elements
+
+MAGIC FX & UI ELEMENTS
+  Files: assets/lpc/fx/magic_firelion_big.png, assets/lpc/fx/magic_firelion_sheet.png,
+         assets/lpc/fx/magic_iceshield_sheet.png, assets/lpc/fx/magic_snakebite_sheet.png,
+         assets/lpc/fx/magic_torrentacle.png, assets/lpc/fx/turtleshell_front.png,
+         assets/lpc/fx/turtleshell_side.png, assets/lpc/fx/preview-magics.gif,
+         assets/lpc/ui/scrollsandblocks.png, assets/lpc/ui/preview-ui.png
+  Title: [LPC] Farming Tilesets, Magic Animations and UI Elements
+  Author: Daniel Eddeland (Daneeklu)
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-farming-tilesets-magic-animations-and-ui-elements
+
+CHARACTER ACTION ANIMATIONS
+  Files: assets/characters/anims/grab_sheet.png, assets/characters/anims/sword_sheet_128.png
+  Title: [LPC] Farming Tilesets, Magic Animations and UI Elements (character dir)
+  Author: Daniel Eddeland (Daneeklu)
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-farming-tilesets-magic-animations-and-ui-elements
+
+FARM STRUCTURES
+  Files: assets/lpc/farm/barn.png, assets/lpc/farm/blade.png,
+         assets/lpc/farm/blade-small.png, assets/lpc/farm/water-wheel.png,
+         assets/lpc/farm/water-wheel-ns.png
+  Title: [LPC] Farm
+  Author(s): bluecarrot16, Wolthera van Hövell tot Westerflier (TheraHedwig), Ivan Voirol
+  License: CC-BY 4.0 / GPL-3.0 / OGA-BY-3.0
+  Source: https://opengameart.org/content/lpc-farm
+
+HOUSE INTERIOR & DECORATIONS
+  Files: assets/lpc/interiors/interior.png, assets/lpc/interiors/preview-interior.png
+  Title: [LPC] House interior and decorations
+  Author(s): Tuomo Untinen (Reemax), Lanea Zimmerman (Sharm), Guido Bos,
+             Manuel Riecke (MrBeast), Hyptosis
+  License: CC-BY-SA 3.0 / GPL 3.0 / GPL 2.0
+  Source: https://opengameart.org/content/lpc-house-interior-and-decorations
+
+WOODEN FURNITURE
+  Files: assets/lpc/furniture/blonde-wood.png, assets/lpc/furniture/dark-wood.png,
+         assets/lpc/furniture/green-wood.png, assets/lpc/furniture/white-wood.png,
+         assets/lpc/furniture/layers/bedclothes.png, assets/lpc/furniture/layers/blackmetal.png,
+         assets/lpc/furniture/layers/blonde_wood.png, assets/lpc/furniture/layers/books.png,
+         assets/lpc/furniture/layers/dark_wood.png, assets/lpc/furniture/layers/glass_shadow.png,
+         assets/lpc/furniture/layers/green_wood.png, assets/lpc/furniture/layers/handles.png,
+         assets/lpc/furniture/layers/marble.png, assets/lpc/furniture/layers/non_wood.png,
+         assets/lpc/furniture/layers/tableware.png, assets/lpc/furniture/layers/white_wood.png
+  Title: [LPC] Wooden Furniture
+  Author(s): bluecarrot16, Baŝto, Lanea Zimmerman (Sharm), William Thompson,
+             Tuomo Untinen (Reemax), Janna/Lilius/Jannax
+  License: CC-BY-SA 3.0 / GPL 3.0 (Home Objects portion: CC0)
+  Source: https://opengameart.org/content/lpc-wooden-furniture
+
+MODULAR BUILDINGS (roofs / walls / windows & doors)
+  Files: assets/lpc/buildings/modular/roofs.png, assets/lpc/buildings/modular/walls.png,
+         assets/lpc/buildings/modular/windows-doors.png, assets/lpc/buildings/modular/doors.png,
+         assets/lpc/buildings/modular/windows.png, assets/lpc/buildings/modular/colonial.png,
+         assets/lpc/buildings/modular/previews/roofs-preview.png,
+         assets/lpc/buildings/modular/previews/roofs-preview-recolors.png
+  Titles: [LPC] Roofs; [LPC] Walls; [LPC] Windows & Doors
+  Author(s): bluecarrot16, Lanea Zimmerman (Sharm), Daniel Armstrong (HughSpectrum),
+             Michele Bucelli (Buch), Casper Nilsson, Xenodora, keith karnage, NaRNeRZz,
+             Talosaurus, William Thompson, Hyptosis, Zabin, Guido Bos,
+             Wolthera van Hövell tot Westerflier (TheraHedwig), Redshrike, and others
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Sources: https://opengameart.org/content/lpc-roofs
+           https://opengameart.org/content/lpc-walls
+           https://opengameart.org/content/lpc-windows-doors
+
+VICTORIAN BUILDINGS
+  Files: assets/lpc/buildings/victorian/victorian-mansion.png,
+         assets/lpc/buildings/victorian/victorian-tenement.png,
+         assets/lpc/buildings/victorian/victorian-accessories.png,
+         assets/lpc/buildings/victorian/victorian-windows-doors.png
+  Title: [LPC] Victorian Buildings
+  Author(s): bluecarrot16, Lanea Zimmerman (Sharm), Casper Nilsson,
+             Lyndsay Takacs (cyanowl), Redshrike
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-victorian-buildings
+
+ANCIENT ROMAN ARCHITECTURE
+  Files: assets/lpc/buildings/roman/LPC_Ancient_Rome_Architecture.png,
+         assets/lpc/buildings/roman/LPC_Ancient_Rome_Architecture_aquaduct.png,
+         assets/lpc/buildings/roman/LPC_Ancient_Rome_Architecture_therme.png
+  Title: LPC Compatible Ancient Roman Architecture
+  Author(s): Wolthera van Hövell tot Westerflier (TheraHedwig), Lanea Zimmerman (Sharm)
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-compatible-ancient-roman-architecture
+
+TOWN — CITY OUTSIDE (well, market booth, statues, obelisk, lamp post)
+  Files: assets/lpc/town/city_outside.png, assets/lpc/town/previews/city-outside-1.png,
+         assets/lpc/town/previews/city-outside-2.png, assets/lpc/town/previews/city-outside-3.png
+  Title: [LPC] City outside
+  Author(s): Reemax (Tuomo Untinen), Xenodora, Lanea Zimmerman (Sharm), Johann C,
+             Johannes Sjölund, Hyptosis, Guido Bos
+  License: CC-BY-SA 3.0 / GPL 3.0 / GPL 2.0
+  Source: https://opengameart.org/content/lpc-city-outside
+
+TOWN — MEDIEVAL VILLAGE DECORATIONS (signs, lamps, fences, well, statues)
+  Files: assets/lpc/town/decorations-medieval.png, assets/lpc/town/fence_medieval.png
+  Title: [LPC] Medieval Village Decorations
+  Author(s): Reemax (Tuomo Untinen), Lanea Zimmerman (Sharm), Xenodora, Nemisys, Curt,
+             Casper Nilsson, Hyptosis, Johann C, and others (see folder CREDITS)
+  License: CC-BY-SA 3.0 / GPL 3.0
+  Source: https://opengameart.org/content/lpc-medieval-village-decorations
+
+TOWN — COBBLESTONE PATHS & TOWN OBJECTS
+  Files: assets/lpc/town/PathAndObjects.png, assets/lpc/town/Artistinfo2.png
+  Title: RPG Tiles: Cobble stone paths & town objects
+  Author(s): Zabin, Daneeklu, Jetrel, Hyptosis, Redshrike, Bertram
+  License: CC-BY-SA 3.0 (Hyptosis grass/cliff/water elements: CC-BY 3.0)
+  Source: https://opengameart.org/content/rpg-tiles-cobble-stone-paths-town-objects
+  Note: Artistinfo2.png is the pack's required visual attribution diagram.
+
+---
+
+GENERATED TOWNSFOLK (12 distinct LPC characters)
+  Files: assets/characters/townsfolk_01.png, assets/characters/townsfolk_02.png,
+         assets/characters/townsfolk_03.png, assets/characters/townsfolk_04.png,
+         assets/characters/townsfolk_05.png, assets/characters/townsfolk_06.png,
+         assets/characters/townsfolk_07.png, assets/characters/townsfolk_08.png,
+         assets/characters/townsfolk_09.png, assets/characters/townsfolk_10.png,
+         assets/characters/townsfolk_11.png, assets/characters/townsfolk_12.png
+  Title: Universal LPC Spritesheet Character Generator (composited walkcycle layers:
+         body + legs + feet + torso + hair; clothing/hair hue-tinted via ImageMagick)
+  Author(s): the Liberated Pixel Cup (LPC) community and Universal-LPC-Spritesheet
+             contributors. Per-layer authors (body, hair, clothes, legs, feet) are
+             enumerated in assets/characters/CREDITS-townsfolk.csv (kept alongside).
+  License: CC-BY-SA 3.0 / GPL 3.0 / OGA-BY 3.0 (LPC union)
+  Source: https://github.com/LiberatedPixelCup/Universal-LPC-Spritesheet-Character-Generator
+  Modifications: For each character, composited the per-layer walk.png sheets
+                 (576x256, 9 frames x 4 directions) with ImageMagick +repage/-flatten;
+                 tinted hair and shirt layers with -fill/-colorize for variety.
+
+---
+
 CC-BY-SA 3.0 NOTICE
 ====================
 

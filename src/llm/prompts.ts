@@ -16,6 +16,7 @@ import {
   ENERGY_COSTS,
   STARTING_GOLD,
   type Landmark,
+  type NeedState,
   type Observation,
 } from "@contracts/types";
 
@@ -47,15 +48,17 @@ ${cropTable()}
 - BUY and SELL only work at the shop, with itemIds like "seed:parsnip" (buy) and "crop:parsnip" (sell). You need gold to buy seeds; you start with ${STARTING_GOLD} gold.
 - TALK_TO another agent only when they are within 1 tile. MOVE_TO takes a map coordinate. WAIT does nothing for one beat.
 - GIVE_GIFT hands 1 item from your inventory to an agent within 1 tile (builds friendship). EMOTE shows a feeling above your head; it is always allowed and changes nothing in the world.
+- USE_OBJECT interacts with a nearby world object (well, notice_board, bench): USE the well to draw water and refresh yourself; USE the notice_board to read town news (you may learn about upcoming events OR a proposed town rule); USE the bench to rest. Target: {"objectId": "<id>"}. Only available (in availableActions) when you are adjacent to a usable object.
+- VOTE casts your ballot on the one active TOWN RULE proposal: support it (true) or oppose it (false). It is town-wide — no adjacency, no energy cost. Target: {"proposalId": "<id>", "support": true|false}. Only available (in availableActions) when you know an open proposal and have not voted yet; vote once.
 - Your observation lists nearby tiles, agents, landmarks (shop, bed, water, house), your inventory, gold, energy, the result of your last action, and which actions are currently available. Choose ONLY from availableActions.
-- Your observation may also include MEMORIES (relevant past experiences), a CURRENT PLAN STEP (your goal for this phase of the day), and RELATIONSHIPS (how you feel about others). Let them guide your choice.
+- Your observation may also include MEMORIES (relevant past experiences), a CURRENT PLAN STEP (your goal for this phase of the day), RELATIONSHIPS (how you feel about others), and NEARBY OBJECTS (well/notice_board/bench within sight). Let them guide your choice.
 
 RESPONSE FORMAT — exactly one JSON object with this shape:
 {
   "thought": string,            // brief private reasoning
   "say": string | null,         // optional short spoken line
-  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE",
-  "target": {"x":number,"y":number} | {"itemId":string,"qty":number} | {"agentName":string} | {"agentName":string,"itemId":string,"qty":number},  // GIVE_GIFT uses {"agentName","itemId","qty":1}; omit for SLEEP/WAIT/EMOTE
+  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE"|"USE_OBJECT"|"VOTE",
+  "target": {"x":number,"y":number} | {"itemId":string,"qty":number} | {"agentName":string} | {"agentName":string,"itemId":string,"qty":number} | {"objectId":string} | {"proposalId":string,"support":boolean},  // GIVE_GIFT uses {"agentName","itemId","qty":1}; USE_OBJECT uses {"objectId":"..."}; VOTE uses {"proposalId":"...","support":true|false}; omit for SLEEP/WAIT/EMOTE
   "goal": string,               // optional, your current standing goal
   "emotion": "neutral"|"happy"|"annoyed"|"sad"|"excited"  // optional, defaults to "neutral"
 }
@@ -95,6 +98,75 @@ export function buildUserPrompt(obs: Observation): string {
           .map((r) => `- ${r.name}: affinity ${r.affinity}`)
           .join("\n"),
     );
+  }
+  // Wave 4a — emergent role. Advisory ONLY (never overrides the ladder), and
+  // gated on a non-default role so DEFAULT-role agents get a byte-identical
+  // prompt (mock-determinism + party-emergence stay green).
+  if (obs.self?.role && obs.self.role !== "farmer") {
+    sections.push(
+      `YOUR EMERGENT ROLE: the town sees you as a ${obs.self.role}. ` +
+        "Let it color your choices when nothing more urgent presses.",
+    );
+  }
+  if (obs.self?.knownEvents && obs.self.knownEvents.length > 0) {
+    const lines = obs.self.knownEvents.map(
+      (e) =>
+        `- ${e.description}, hosted by ${e.host}, on day ${e.day} (${e.phase}) at tile (${e.location.x},${e.location.y})${e.isNow ? " — HAPPENING NOW" : ""}`,
+    );
+    lines.push(
+      "If a gathering is HAPPENING NOW, strongly prefer MOVE_TO its location to attend (or EMOTE/WAIT if already there). " +
+        "If it is upcoming, mention it to nearby farmers via TALK_TO so word spreads.",
+    );
+    sections.push("Gatherings you know about:\n" + lines.join("\n"));
+  }
+  if (obs.self?.inviteTargets && obs.self.inviteTargets.length > 0) {
+    const lines = obs.self.inviteTargets.map(
+      (t) => `- ${t.name} at (${t.pos.x},${t.pos.y})`,
+    );
+    lines.push(
+      "Walk to each of them (MOVE_TO) then TALK_TO to invite them.",
+    );
+    sections.push(
+      "You are hosting a gathering — these folks haven't heard yet:\n" + lines.join("\n"),
+    );
+  }
+  // Wave 4c — surface the active town-rule proposal when the agent knows one.
+  // Byte-identical when absent (gated on obs.self.activeProposal), so frozen
+  // mock-determinism / party-emergence scenes are unaffected.
+  if (obs.self?.activeProposal) {
+    const ap = obs.self.activeProposal;
+    const lines = [
+      `- proposed by ${ap.proposer}: "${ap.ruleText}"`,
+      `- tally so far: ${ap.yes} yes / ${ap.no} no, ${ap.awareCount} aware`,
+    ];
+    if (obs.self.myVote !== undefined) {
+      lines.push(
+        `- you have already voted ${obs.self.myVote ? "YES" : "NO"} — you cannot vote again.`,
+      );
+    } else if (obs.availableActions.includes("VOTE")) {
+      lines.push(
+        `- cast a VOTE on proposal id "${ap.id}" — set target.proposalId to it and target.support to true or false.`,
+      );
+    }
+    sections.push("ACTIVE PROPOSAL (town rule up for a vote):\n" + lines.join("\n"));
+  }
+  // v3 — surface nearby world objects when present.
+  if (obs.nearby?.objects && obs.nearby.objects.length > 0) {
+    const OBJECT_DESCRIPTIONS: Record<string, string> = {
+      well:         "draw water (refreshes you)",
+      notice_board: "read town news (learn about upcoming events)",
+      bench:        "rest a while",
+    };
+    const lines = obs.nearby.objects.map(
+      (o) =>
+        `- ${o.kind} (id:"${o.id}") at (${o.pos.x},${o.pos.y}) — ${OBJECT_DESCRIPTIONS[o.kind] ?? "interact"}`,
+    );
+    if (obs.availableActions.includes("USE_OBJECT")) {
+      // Brace-free by design: a literal {...} here would be grabbed by the mock
+      // router's extractFirstJsonObject before the real observation JSON.
+      lines.push("You are adjacent to one of these — USE_OBJECT with objectId set to one of the ids listed above to interact.");
+    }
+    sections.push("NEARBY OBJECTS:\n" + lines.join("\n"));
   }
 
   const prefix = sections.length > 0 ? `${sections.join("\n")}\n` : "";
@@ -152,15 +224,61 @@ Respond with ONLY a JSON array of at most 5 objects shaped {"insight": string, "
 }
 
 /**
+ * v3 (Wave 2) — multi-turn conversation reply (fast tier).
+ *
+ * Builds the prompt for ONE in-character reply continuing an ongoing exchange.
+ * The transcript tail (the most recent lines, oldest-first) gives the model
+ * just enough context to stay coherent without bloating the request. The
+ * speaker continues with a single short sentence and is invited to wrap up
+ * naturally when it fits (so the engine's CLOSER_RE can end the conversation).
+ *
+ * Output is PLAIN TEXT — one spoken sentence, no quotes, no action tags.
+ * Consumed by ConversationSystem; no decision-prompt JSON contract applies.
+ */
+export function buildReplyPrompt(opts: {
+  selfPersona: string;
+  selfName: string;
+  otherName: string;
+  affinitySummary: string;
+  transcriptTail: { speaker: string; text: string }[];
+}): { system: string; user: string } {
+  const { selfPersona, selfName, otherName, affinitySummary, transcriptTail } =
+    opts;
+
+  const system = `You are ${selfName}, a farmer. Your persona: ${selfPersona}
+
+You are talking with ${otherName}. Continue with ONE short in-character sentence (≤ 15 words); wrap up naturally (say goodbye) if it fits. No action tags, no quotes around your reply, just the spoken sentence.`;
+
+  const convo =
+    transcriptTail.length > 0
+      ? transcriptTail.map((t) => `${t.speaker}: ${t.text}`).join("\n")
+      : `${otherName} greets you.`;
+
+  const user = `Conversation so far:
+${convo}${
+    affinitySummary ? `\n\nYour relationship with ${otherName}: ${affinitySummary}` : ""
+  }
+
+Your one-sentence reply as ${selfName} (plain text, no quotes):`;
+
+  return { system, user };
+}
+
+/**
  * Morning daily plan (smart tier): exactly 4 steps, one per phase
  * morning/afternoon/evening/night. Model must answer with ONLY the JSON
  * object {steps:[{phase, goal, targetLandmark?}]}.
+ *
+ * Plans should mix farm work with social/leisure/errand steps so the town
+ * feels inhabited: socialize at the tavern, stroll by the pond, browse the
+ * market, visit a neighbor, rest at home. Persona guides the mix.
  */
 export function buildDailyPlanPrompt(
   persona: string,
   day: number,
   reflectionTexts: string[],
   landmarks: Landmark[],
+  goal?: string | null,
 ): string {
   const reflections =
     reflectionTexts.length > 0
@@ -170,12 +288,71 @@ export function buildDailyPlanPrompt(
     landmarks.length > 0
       ? `LANDMARKS:\n${landmarks.map((l) => `- ${l.kind} at (${l.pos.x},${l.pos.y})`).join("\n")}\n\n`
       : "";
+  // Wave 3a — goal conditioning: when a synthesized standing goal is present,
+  // inject it so the plan bends toward it. Gated: omit/null → byte-identical
+  // to the v2 prompt (prompts-v2 buildDailyPlanPrompt tests stay green).
+  const goalBlock =
+    goal && goal.trim().length > 0 ? `YOUR CURRENT GOAL: ${goal.trim()}\n\n` : "";
   return `You are a farmer in a tiny farming world. It is the morning of day ${day}.
 
 PERSONA:
 ${persona}
 
-${reflections}${places}Plan your day. Produce exactly 4 steps, one for each phase in this order: morning, afternoon, evening, night. Each step has a short concrete goal (farming, shopping, socializing, resting). "targetLandmark" is optional and must be one of "shop", "bed", "water", "house" when used. The night step should normally end at the bed to sleep.
+${goalBlock}${reflections}${places}Plan your day. Produce exactly 4 steps, one for each phase in this order: morning, afternoon, evening, night. Each step has a short concrete goal. The plan should feel VARIED and persona-driven — mix farm work with social and leisure activities:
+
+- A social persona should find time at the tavern or chatting with farmers.
+- A dreamy or wandering persona should stroll by the pond or wander the paths.
+- A frugal persona should browse the market, check prices, haggle.
+- A grumbling or methodical persona sticks mostly to the field but may visit the tavern in the evening.
+- Let your town role guide where you spend your afternoon: a merchant spends time at the store, a socialite over coffee at the cafe, a banker at the office, a wanderer at the park.
+- The morning is usually for farm work; afternoon/evening can include socializing, the market, or the pond.
+- The night step should end at the bed to sleep.
+
+"targetLandmark" is optional and must be one of "shop", "bed", "water", "house", "tavern", "cafe", "office", "park" when used.
 
 Respond with ONLY one JSON object shaped {"steps":[{"phase":"morning"|"afternoon"|"evening"|"night","goal":string,"targetLandmark":string?}]} with exactly 4 steps — no prose, no fences.`;
+}
+
+// ---------------------------------------------------------------------------
+// Wave 3a — needs-driven goal synthesis (smart tier). PLAIN TEXT, one line.
+// ---------------------------------------------------------------------------
+
+/** Drive keys in display order; the higher the value the more pressing. */
+const GOAL_DRIVE_KEYS: (keyof NeedState)[] = [
+  "energy",
+  "wealth",
+  "social",
+  "novelty",
+  "purpose",
+];
+
+/**
+ * Standing-goal synthesis (smart tier): turn the agent's intrinsic drives +
+ * recent memories into ONE short standing goal. Output is PLAIN TEXT — a
+ * single sentence, no JSON, no quotes, no fences (consumed by GoalsSystem,
+ * which sanitizes to one line ≤120 chars and falls back to mockGoal on
+ * error/empty/over-long). Drives are listed strongest-first so the model
+ * leads with the most pressing need.
+ */
+export function buildGoalPrompt(
+  persona: string,
+  needs: NeedState,
+  topMemories: string[],
+): string {
+  const drives = GOAL_DRIVE_KEYS.slice()
+    .sort((a, b) => (needs?.[b] ?? 0) - (needs?.[a] ?? 0))
+    .map((k) => `- ${k}: ${(needs?.[k] ?? 0).toFixed(2)}`)
+    .join("\n");
+  const memories =
+    topMemories.length > 0
+      ? `\nRECENT MEMORIES:\n${topMemories.map((m) => `- ${m}`).join("\n")}\n`
+      : "";
+  return `You are a farmer. Persona: ${persona}
+
+YOUR INTRINSIC DRIVES (0 = satisfied, 1 = most pressing), strongest first:
+${drives}
+${memories}
+Given the drives and memories above, what is the single standing goal that should guide your day right now? Lead with your most pressing drive.
+
+Respond with ONLY one sentence (≤ 15 words) as plain text — no quotes, no JSON, no fences.`;
 }

@@ -90,8 +90,8 @@ describe("mockDailyPlan — rule 12 mock path", () => {
     const social = mockDailyPlan("Social Sam — loves a chat", 2);
     const diligent = mockDailyPlan("Diligent Dora", 2);
     expect(social.steps[2].goal).not.toBe(diligent.steps[2].goal);
-    // evening step always heads to the shop either way
-    expect(social.steps[2].targetLandmark).toBe("shop");
+    // social persona's evening step heads to the tavern (v4: richer plans)
+    expect(social.steps[2].targetLandmark).toBe("tavern");
   });
 
   it("never throws on empty persona", () => {

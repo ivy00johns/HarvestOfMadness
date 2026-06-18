@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 import type { AgentAction, Phase, Vec2 } from "@contracts/types";
 import { CROPS, ENERGY_START, STARTING_GOLD } from "@contracts/types";
 import { World } from "../../src/world/World";
-import { BED_POS, FIELD_RECT, SHOP_POS } from "../../src/world/map";
+import { BED_POS, FIELD_RECT, HOMESTEADS, SHOP_POS, WATER_POS } from "../../src/world/map";
 import { Agent, type Persona } from "../../src/agents/Agent";
 import { executeAction } from "../../src/agents/ActionExecutor";
 
@@ -39,13 +39,22 @@ function action(a: Partial<AgentAction> & { action: AgentAction["action"] }): Ag
 
 const INSTANT = { msPerTile: 0 };
 
-const SOIL: Vec2 = { x: FIELD_RECT.x0, y: FIELD_RECT.y0 }; // (8,8) soil
+const SOIL: Vec2 = { x: FIELD_RECT.x0, y: FIELD_RECT.y0 }; // first plot soil
 const SOIL_STAND: Vec2 = { x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 }; // adjacent
+// Open grass clear of all rooms/roads/plots (used as a generic "off the bed/shop" stand).
+const OPEN: Vec2 = { x: 3, y: 18 };
+// A house wall corner — the impassable room wall ring (replaces the old
+// `building` interior fixture; `building` is retained-but-unused).
+const HOUSE_WALL: Vec2 = { x: HOMESTEADS[0].house.x, y: HOMESTEADS[0].house.y };
+// A DEEP interior floor cell (interior corner, not the door-gap and not the
+// centre bed) — reachable ONLY by pathing in through the door, so MOVE_TO
+// succeeding here proves agents walk into the room, not merely onto the threshold.
+const INTERIOR_FLOOR: Vec2 = { x: HOMESTEADS[0].house.x + 1, y: HOMESTEADS[0].house.y + 1 };
 
 describe("SLEEP gate matrix: phase × position × energy", () => {
   const positions: Array<{ label: string; pos: Vec2; onBed: boolean }> = [
     { label: "on bed", pos: { ...BED_POS }, onBed: true },
-    { label: "off bed (path)", pos: { x: 3, y: 6 }, onBed: false },
+    { label: "off bed (open)", pos: { ...OPEN }, onBed: false },
   ];
 
   for (const phase of PHASES) {
@@ -301,15 +310,18 @@ describe("SELL edge matrix", () => {
 });
 
 describe("TALK_TO range edge matrix", () => {
+  // Talker stands on open grass (clear of every 5×5 room footprint). TALK_TO is
+  // range-only, so only the Chebyshev distances matter.
+  const TALKER: Vec2 = { x: 10, y: 18 };
   function pair(other: Vec2): { world: World; agent: Agent; others: Agent[] } {
     const world = new World();
-    const agent = makeAgent({ x: 10, y: 6 }, "Talker");
+    const agent = makeAgent({ ...TALKER }, "Talker");
     const buddy = makeAgent(other, "Buddy");
     return { world, agent, others: [buddy] };
   }
 
   it("Chebyshev 1 (diagonal) succeeds; Chebyshev 2 rejected", async () => {
-    const near = pair({ x: 11, y: 7 }); // diagonal = cheb 1
+    const near = pair({ x: TALKER.x + 1, y: TALKER.y - 1 }); // diagonal = cheb 1
     const r1 = await executeAction(
       near.agent,
       action({ action: "TALK_TO", target: { agentName: "Buddy" } }),
@@ -320,7 +332,7 @@ describe("TALK_TO range edge matrix", () => {
     expect(r1.ok).toBe(true);
     expect(near.agent.relationships["Buddy"]).toBe(1);
 
-    const far = pair({ x: 12, y: 6 }); // cheb 2
+    const far = pair({ x: TALKER.x + 2, y: TALKER.y }); // cheb 2
     const r2 = await executeAction(
       far.agent,
       action({ action: "TALK_TO", target: { agentName: "Buddy" } }),
@@ -334,7 +346,7 @@ describe("TALK_TO range edge matrix", () => {
   });
 
   it("talking to yourself and to ghosts is rejected", async () => {
-    const { world, agent, others } = pair({ x: 11, y: 6 });
+    const { world, agent, others } = pair({ x: TALKER.x + 1, y: TALKER.y });
     const self = await executeAction(
       agent,
       action({ action: "TALK_TO", target: { agentName: "Talker" } }),
@@ -373,18 +385,34 @@ describe("MOVE_TO hostile targets", () => {
     expect(agent.pos).toEqual({ x: 3, y: 6 });
   });
 
-  it("unreachable (inside-building) and impassable (water/wall) targets rejected", async () => {
+  it("impassable targets (house wall / water / map wall) rejected", async () => {
     const world = new World();
-    const agent = makeAgent({ x: 3, y: 6 });
+    const agent = makeAgent({ ...OPEN });
     for (const target of [
-      { x: 3, y: 3 }, // building interior
-      { x: 8, y: 3 }, // pond
-      { x: 0, y: 0 }, // wall
+      { ...HOUSE_WALL }, // a room's impassable wall ring (was a building interior)
+      { ...WATER_POS }, // pond corner (water)
+      { x: 0, y: 0 }, // map-border wall
     ]) {
       const r = await executeAction(agent, action({ action: "MOVE_TO", target }), world, [], INSTANT);
       expect(r.ok, JSON.stringify(target)).toBe(false);
       expect(r.reason, JSON.stringify(target)).toBeTruthy();
     }
+  });
+
+  it("walkable interiors: MOVE_TO an interior floor cell (the door-gap) succeeds", async () => {
+    // Walkable-interiors feature: with the wall ring + single floor door-gap, the
+    // room interior is reachable via A* (door-only entry comes for free).
+    const world = new World();
+    const agent = makeAgent({ ...OPEN });
+    const r = await executeAction(
+      agent,
+      action({ action: "MOVE_TO", target: { ...INTERIOR_FLOOR } }),
+      world,
+      [],
+      INSTANT,
+    );
+    expect(r.ok, JSON.stringify(INTERIOR_FLOOR)).toBe(true);
+    expect(agent.pos).toEqual(INTERIOR_FLOOR);
   });
 });
 
@@ -458,5 +486,100 @@ describe("unknown action from a hostile payload", () => {
     const r = await executeAction(agent, hostile, world, [], INSTANT);
     expect(r.ok).toBe(false);
     expect(r.reason).toContain("DELETE_FARM");
+  });
+});
+
+describe("VOTE precondition (Wave 4c — additive; target-shape only)", () => {
+  // VOTE has no adjacency and no energy cost (like EMOTE). The executor's only
+  // job is the {proposalId, support} target-shape gate + firing the onVote hook;
+  // awareness/open/idempotency live in the cognition layer (Governance).
+  it("valid {proposalId, support} → ok:true and the onVote hook is called", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    const calls: Array<{ name: string; proposalId: string; support: boolean }> = [];
+    const cognition = {
+      onGift: () => {},
+      onTalk: () => {},
+      onVote: (a: Agent, proposalId: string, support: boolean) =>
+        calls.push({ name: a.name, proposalId, support }),
+    };
+    const r = await executeAction(
+      agent,
+      action({ action: "VOTE", target: { proposalId: "prop-1", support: true } }),
+      world,
+      [],
+      { ...INSTANT, cognition },
+    );
+    expect(r.ok).toBe(true);
+    expect(calls).toEqual([{ name: "Probe", proposalId: "prop-1", support: true }]);
+  });
+
+  it("a NO vote forwards support:false to the hook", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    let captured: boolean | null = null;
+    const cognition = {
+      onGift: () => {},
+      onTalk: () => {},
+      onVote: (_a: Agent, _id: string, support: boolean) => {
+        captured = support;
+      },
+    };
+    const r = await executeAction(
+      agent,
+      action({ action: "VOTE", target: { proposalId: "prop-1", support: false } }),
+      world,
+      [],
+      { ...INSTANT, cognition },
+    );
+    expect(r.ok).toBe(true);
+    expect(captured).toBe(false);
+  });
+
+  it("malformed targets are rejected with a readable reason, hook never fires", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    let called = false;
+    const cognition = {
+      onGift: () => {},
+      onTalk: () => {},
+      onVote: () => {
+        called = true;
+      },
+    };
+    const attacks: Array<AgentAction["target"]> = [
+      undefined,
+      { proposalId: "prop-1" } as unknown as AgentAction["target"], // missing support
+      { support: true } as unknown as AgentAction["target"], // missing proposalId
+      { proposalId: 5, support: true } as unknown as AgentAction["target"], // wrong type
+      { proposalId: "prop-1", support: "yes" } as unknown as AgentAction["target"], // wrong type
+      { x: 1, y: 2 } as AgentAction["target"], // a tile target
+    ];
+    for (const target of attacks) {
+      const r = await executeAction(
+        agent,
+        action({ action: "VOTE", target }),
+        world,
+        [],
+        { ...INSTANT, cognition },
+      );
+      expect(r.ok, JSON.stringify(target)).toBe(false);
+      expect(r.reason, JSON.stringify(target)).toBeTruthy();
+      expect((r.reason ?? "").length, JSON.stringify(target)).toBeGreaterThan(10);
+    }
+    expect(called).toBe(false);
+  });
+
+  it("no cognition hooks → still ok:true on a valid target (never crashes)", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    const r = await executeAction(
+      agent,
+      action({ action: "VOTE", target: { proposalId: "prop-1", support: true } }),
+      world,
+      [],
+      INSTANT,
+    );
+    expect(r.ok).toBe(true);
   });
 });

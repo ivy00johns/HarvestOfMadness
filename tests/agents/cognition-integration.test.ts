@@ -112,6 +112,7 @@ describe("multi-day mock cognition", () => {
       reflectionCalls: 0,
       relationshipCalls: 0,
       importanceCalls: 0,
+      goalCalls: 0,
     });
 
     // -- and the kill-switch never fired (nothing live to go offline)

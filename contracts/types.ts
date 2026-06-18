@@ -26,7 +26,10 @@ export type TileType =
   | "water"
   | "tilled"
   | "soil"
-  | "building"
+  | "floor" // v3 — passable indoor floor (walkable house/tavern/shop interiors)
+  | "building" // retained-but-unused: no tile stamps it anymore, but it stays a
+  // valid impassable type so TILE_COLORS / placeholder / isPassable(building) need
+  // no churn (see docs/.../walkable-interiors-design.md §2).
   | "bedTile"
   | "shopTile"
   | "wall";
@@ -61,7 +64,23 @@ export interface InventoryEntry {
 }
 
 export interface Landmark {
-  kind: "shop" | "bed" | "water" | "house";
+  // "tavern" is landmark-only: a plain building footprint with no special
+  // tile type (social actions need only adjacency), unlike bed→bedTile /
+  // shop→shopTile. Wave 5a ADDITIVELY widens this with the new civic kinds
+  // ("cafe"/"office") and the green "park" region; these are environmental
+  // only — the mock router filter (src/llm/mock.ts) still drops them, so they
+  // stay inert to the brain until a later wave wires them in.
+  kind: "shop" | "bed" | "water" | "house" | "tavern" | "cafe" | "office" | "park";
+  pos: Vec2;
+}
+
+/**
+ * v3 — A placeable world object agents can perceive and interact with via
+ * USE_OBJECT. Exterior only; no interior objects.
+ */
+export interface WorldObject {
+  id: string;
+  kind: "well" | "notice_board" | "bench";
   pos: Vec2;
 }
 
@@ -94,6 +113,8 @@ export const ENERGY_COSTS: Record<ActionType, number> = {
   EMOTE: 0,
   SLEEP: 0,
   WAIT: 0,
+  USE_OBJECT: 0,
+  VOTE: 0, // Wave 4c — town-wide governance vote; free, no adjacency (like EMOTE)
 };
 export const STARTING_GOLD = 200;
 /** starting inventory: 5× "seed:parsnip" */
@@ -104,11 +125,50 @@ export const STARTING_SEEDS = 5;
  */
 export const PHASE_DURATION_MS = 8_000;
 
-export const MAP_WIDTH = 24;
-export const MAP_HEIGHT = 18;
+export const MAP_WIDTH = 64;
+export const MAP_HEIGHT = 40;
 /** v2: LPC art is 32×32; world logic is tile-indexed and never uses pixels */
 export const TILE_SIZE = 32;
 export const OBSERVATION_RADIUS = 4;
+
+// ---------------------------------------------------------------------------
+// Wave 3a — needs-driven goal generation (PIANO keystone)
+// ---------------------------------------------------------------------------
+
+/**
+ * Intrinsic drive vector (5 needs), each in [0,1] where HIGHER = more pressing
+ * (so the dominant drive is the argmax). Event-sourced inside the agent
+ * cognition layer (src/agents/Needs.ts); rides Observation.self.needs +
+ * AgentCardModel.needs purely as additive, optional surface data.
+ */
+export interface NeedState {
+  energy: number;
+  wealth: number;
+  social: number;
+  novelty: number;
+  purpose: number;
+}
+
+// ---------------------------------------------------------------------------
+// Wave 4a — emergent role specialization
+// ---------------------------------------------------------------------------
+
+/**
+ * Town-legible role vocabulary. Roles are DERIVED inside the cognition layer
+ * (src/agents/Roles.ts) from each agent's recent successful-action histogram
+ * (+ a banker gold overlay), never seeded. "farmer" is the default / fallback /
+ * seed role, so a fresh or below-sample agent reads as a "farmer".
+ */
+export const ROLE_VOCABULARY = [
+  "farmer",
+  "merchant",
+  "socialite",
+  "wanderer",
+  "banker",
+] as const;
+
+/** A derived, town-legible specialization. Default/fallback is "farmer". */
+export type DerivedRole = (typeof ROLE_VOCABULARY)[number];
 
 // ---------------------------------------------------------------------------
 // §4.1 Observation (mission verbatim)
@@ -118,16 +178,57 @@ export interface Observation {
   self: {
     name: string;
     persona: string;
+    /**
+     * Town-legible specialization. Wave 4a makes this DERIVED at runtime from
+     * the agent's recent-action histogram (src/agents/Roles.ts; one of
+     * ROLE_VOCABULARY). Type stays `string` (no narrowing → no breaking
+     * callers); "farmer" is the default. Advisory only — surfaced to the
+     * decision prompt to color choices, never to override them.
+     */
     role: string;
     pos: Vec2;
     energy: number;
     gold: number;
     inventory: InventoryEntry[];
+    /**
+     * Standing goal (type unchanged: string | null). Wave 3a makes it dynamic:
+     * synthesized from intrinsic drives (src/agents/Goals.ts) and fed to the
+     * planner as a prompt INPUT. The transient LLM action.goal still wins for
+     * its own turn.
+     */
     goal: string | null;
+    /** Wave 3a — intrinsic drive vector, surfaced when the needs system is active. */
+    needs?: NeedState;
     /** v2 — current DailyPlan step text, when the planner is active */
     currentPlanStep?: string | null;
     /** v2 — affinity snapshot for nearby/known agents, newest-first, cap 5 */
     relationships?: { name: string; affinity: number }[];
+    /** v3 — events this agent has heard about (for attend/spread behavior). */
+    knownEvents?: (SimEvent & { isNow: boolean })[];
+    /** v3 — for an event host: town agents who have NOT yet heard about it (with positions), so the host can go invite them. */
+    inviteTargets?: { name: string; pos: Vec2 }[];
+    /**
+     * Wave 4c — the one active town proposal this agent is AWARE of, surfaced so
+     * the decision prompt can show it and the agent can cast a VOTE. Additive +
+     * client-only (no server/wire change); absent when there is no open proposal
+     * the agent knows about. `yes`/`no` are the live tally; `awareCount` is how
+     * many agents have heard of it.
+     */
+    activeProposal?: {
+      id: string;
+      proposer: string;
+      ruleText: string;
+      day: number;
+      awareCount: number;
+      yes: number;
+      no: number;
+    };
+    /**
+     * Wave 4c — this agent's recorded stance on `activeProposal` (true = yes,
+     * false = no), or absent when the agent has not voted yet. Drives the
+     * VOTE-injection gate in Cognition.enrichObservation (no re-vote once set).
+     */
+    myVote?: boolean;
   };
   time: TimeState;
   nearby: {
@@ -139,6 +240,8 @@ export interface Observation {
     }[]; // radius ~4
     agents: { name: string; pos: Vec2; lastSeenDoing: string }[];
     landmarks: Landmark[];
+    /** v3 — world objects within OBSERVATION_RADIUS (well, notice_board, bench) */
+    objects?: WorldObject[];
   };
   lastAction: { action: string; ok: boolean; reason?: string } | null;
   availableActions: ActionType[];
@@ -163,7 +266,9 @@ export type ActionType =
   | "GIVE_GIFT" // v2 — target {agentName, itemId, qty:1}; adjacency + ownership required
   | "EMOTE" // v2 — always legal; renders a transient emote above the sprite
   | "SLEEP"
-  | "WAIT";
+  | "WAIT"
+  | "USE_OBJECT" // v3 — target {objectId: string}; adjacency to the object required
+  | "VOTE"; // Wave 4c — target {proposalId: string; support: boolean}; town-wide governance vote, no adjacency
 
 /** v2 — surfaced on speech bubbles and emotes */
 export type Emotion = "neutral" | "happy" | "annoyed" | "sad" | "excited";
@@ -176,7 +281,9 @@ export interface AgentAction {
     | Vec2
     | { itemId: string; qty: number }
     | { agentName: string }
-    | { agentName: string; itemId: string; qty: number }; // GIVE_GIFT
+    | { agentName: string; itemId: string; qty: number } // GIVE_GIFT
+    | { objectId: string } // USE_OBJECT — v3
+    | { proposalId: string; support: boolean }; // VOTE — Wave 4c
   goal?: string;
   /** v2 — optional; defaults to "neutral" */
   emotion?: Emotion;
@@ -239,14 +346,19 @@ export interface SchedulerConfig {
   maxConcurrentDecisions: number; // default 3
   /** per-agent ms between decision requests */
   decisionCooldownMs: number; // mock ~2500, live ~6000
-  /** hard daily ceiling; past it agents fall back to mock heuristic */
-  maxDecisionsPerDay: number; // default 200
+  /**
+   * Opt-in daily live-decision ceiling. `<= 0` means UNLIMITED (the default):
+   * FreeLLMAPI tokens are free, so we do not self-throttle. Set a positive
+   * value only to deliberately cap a session (e.g. a demo); past it agents
+   * fall back to the mock heuristic and a budget_reached event fires.
+   */
+  maxDecisionsPerDay: number; // 0 = unlimited (default)
 }
 
 export const SCHEDULER_DEFAULTS: SchedulerConfig = {
   maxConcurrentDecisions: 3,
   decisionCooldownMs: 2500,
-  maxDecisionsPerDay: 200,
+  maxDecisionsPerDay: 0, // unlimited — opt in to a cap via a positive value
 };
 
 // ---------------------------------------------------------------------------
@@ -265,6 +377,10 @@ export interface WorldApi {
   /** A* over passable tiles; null when unreachable */
   findPath(from: Vec2, to: Vec2): Vec2[] | null;
   landmarks(): Landmark[];
+  /** v3 — all world objects (well, notice_board, bench); defensive copy. */
+  objects(): WorldObject[];
+  /** v3 — find the closest world object adjacent to pos, if any. */
+  adjacentObject(pos: Vec2): WorldObject | null;
 
   time(): TimeState;
   /**
@@ -353,7 +469,12 @@ export interface AgentCardModel {
   persona: string;
   gold: number;
   energy: number;
+  /** Standing goal (Wave 3a: synthesized from drives; type unchanged). */
   goal: string | null;
+  /** Wave 3a — intrinsic drive vector for the card's needs row, when present. */
+  needs?: NeedState;
+  /** Wave 4a — derived role tag for the card (one of ROLE_VOCABULARY), when non-default. */
+  role?: string;
   lastThought: string | null;
   lastSay: string | null;
   lastAction: { action: string; ok: boolean; reason?: string } | null;
@@ -491,6 +612,19 @@ export interface MemoryEntry {
   embedding?: number[];
   /** reflections cite the memory ids they were inferred from */
   sourceIds?: string[];
+  /**
+   * Wave 4b — stable story-origin id for a relayed-gossip memory: the id of
+   * the first-hand source observation (e.g. "Alice-m3"), minted once and
+   * propagated UNCHANGED through every relay hop. Absent on non-gossip memories.
+   * Drives origin-dedup (a listener already knowing an origin is never re-told).
+   */
+  origin?: string;
+  /**
+   * Wave 4b — relay distance for a gossip memory: hop 1 = heard directly from
+   * the first-hand sharer; hop n+1 = relayed from a hop-n holder. Capped at
+   * GOSSIP_MAX_HOPS. Absent on non-gossip memories.
+   */
+  hop?: number;
 }
 
 export interface RetrievalConfig {
@@ -642,3 +776,120 @@ export interface AssetManifest {
 //   "agent_emote"           payload { emotion }
 //   "llm_offline"           payload { reason }   → HUD shows kill-switch badge
 //   "llm_recovered"
+// v3 EventKind additions (open union — documented, not enforced):
+//   "event_seeded"          payload { eventId, host, description }
+//   "event_heard"           payload { eventId, from, to }
+//   "event_arrived"         payload { eventId, agentName }
+
+// ---------------------------------------------------------------------------
+// v3 (Wave 2) — Readable multi-turn conversations
+// ---------------------------------------------------------------------------
+
+/** One spoken line in a back-and-forth conversation. */
+export interface ConversationTurn {
+  speaker: string;
+  text: string;
+}
+
+/**
+ * A complete multi-turn exchange between two agents (≤ MAX_TURNS utterances,
+ * strict alternation starting with the opener's speaker). The full transcript
+ * lives in the "conversation" WorldEvent payload — NOT in the memory stream
+ * (only one legacy reply pair is written per conversation; see Conversation.ts).
+ */
+export interface Conversation {
+  id: string;
+  participants: [string, string];
+  turns: ConversationTurn[];
+  day: number;
+  phase: Phase;
+}
+
+// "conversation" WorldEvent payload (open union — documented, not enforced):
+//   payload {
+//     speaker: string,            // A (opener)
+//     listener: string,           // B
+//     say: string,                // A's opener (turns[0].text)
+//     reply: string,              // B's first reply (turns[1].text), legacy field
+//     turns: ConversationTurn[],  // full alternating transcript (length 2..MAX_TURNS)
+//     conversationId: string,     // "${A}|${B}|${day}|${phase}"
+//   }
+// text stays "A: \"…\"  —  B: \"…\"" (backward compatible feed line).
+
+// ---------------------------------------------------------------------------
+// v3 — Seeded social events (smallville party-emergence design)
+// ---------------------------------------------------------------------------
+
+/** A planned social gathering that can diffuse through the agent network. */
+export interface SimEvent {
+  id: string;
+  /** Agent name of the host who seeded the event. */
+  host: string;
+  /** Where the gathering happens (e.g. the tavern door tile). */
+  location: Vec2;
+  day: number;
+  phase: Phase;
+  /** Human-readable description, e.g. "a gathering at the tavern". */
+  description: string;
+}
+
+// ---------------------------------------------------------------------------
+// Wave 4c — Governance v1 (propose + vote on a town rule). CLIENT-ONLY (no
+// server/wire change): the model lives entirely in src/agents/Governance.ts,
+// diffuses like an event, and surfaces additively on Observation.self. PROPOSE
+// rides USE_OBJECT on the notice_board; VOTE is the only new ActionType.
+// ---------------------------------------------------------------------------
+
+/**
+ * Lifecycle status of a town proposal. `open` is the only non-terminal state;
+ * `adopted`/`rejected` are absorbing (resolveIfDue guarantees termination via
+ * the dual rule: early majority OR deadline-with-quorum). Open union — consumers
+ * MUST tolerate unknown statuses.
+ */
+export type ProposalStatus = "open" | "adopted" | "rejected" | string;
+
+/**
+ * A proposed town rule (farming/economy conduct, NEVER a gathering — preserves
+ * the party kill-switch). Exactly one may be `open` at a time. The deadline is
+ * the evening of `day + 1` (closeDay/closePhase). In-memory only; never persisted.
+ */
+export interface TownProposal {
+  id: string;
+  /** Agent name who opened the proposal (auto-aware + auto-yes). */
+  proposer: string;
+  /** The conduct rule, e.g. "always water a neighbour's thirsty crop". */
+  ruleText: string;
+  /** Game-day the proposal opened. */
+  day: number;
+  /** Phase the proposal opened. */
+  phase: Phase;
+  /** Deadline day (openDay + 1) — at this day's evening the tally resolves. */
+  closeDay: number;
+  /** Deadline phase ("evening"). */
+  closePhase: Phase;
+  status: ProposalStatus;
+}
+
+/**
+ * Read-only tally snapshot for the observability HUD + the VOTE-injection gate.
+ * Pure data; arrays are fresh copies.
+ */
+export interface ProposalTally {
+  id: string;
+  proposer: string;
+  ruleText: string;
+  status: ProposalStatus;
+  yes: number;
+  no: number;
+  /** Agents who have heard of the proposal (proposer included). */
+  awareCount: number;
+  /** Agents who have cast a vote (yes or no). */
+  votedCount: number;
+  /** Names of agents who voted, newest-last. */
+  voterNames: string[];
+}
+
+// Wave 4c EventKind additions (open union — documented, not enforced):
+//   "proposal_opened"    payload { proposalId, proposer, ruleText }
+//   "proposal_heard"     payload { proposalId, from, to }
+//   "proposal_resolved"  payload { proposalId, adopted, yes, no, awareCount }

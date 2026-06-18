@@ -60,7 +60,15 @@ const RETRY_INSTRUCTION =
 /** Human-readable lastSeenDoing line for an accepted action. */
 export function describeAction(a: AgentAction): string {
   const t = a.target as
-    | { x?: number; y?: number; itemId?: string; qty?: number; agentName?: string }
+    | {
+        x?: number;
+        y?: number;
+        itemId?: string;
+        qty?: number;
+        agentName?: string;
+        proposalId?: string;
+        support?: boolean;
+      }
     | undefined;
   switch (a.action) {
     case "MOVE_TO":
@@ -85,6 +93,8 @@ export function describeAction(a: AgentAction): string {
       return `showing a ${a.emotion ?? "neutral"} face`;
     case "SLEEP":
       return "sleeping";
+    case "VOTE":
+      return `voting ${t?.support ? "yes" : "no"} on the town proposal`;
     case "WAIT":
     default:
       return "idling";
@@ -241,8 +251,16 @@ export async function runDecisionCycle(
     ...(action.target !== undefined ? { target: action.target } : {}),
   });
 
+  // Smallville "pronunciatio": update the persistent activity emoji above the
+  // agent sprite to reflect the newly chosen action. The RenderApi interface
+  // does not declare setActivityEmoji (render-only extension), so we duck-type.
+  const renderApi = getRenderApi();
+  (renderApi as { setActivityEmoji?: (n: string, a: string, e?: string) => void })
+    ?.setActivityEmoji?.(agent.name, action.action, action.emotion);
+  (renderApi as { setActivityLabel?: (n: string, t: string | null) => void })?.setActivityLabel?.(agent.name, agent.planStep);
+
   if (action.say) {
-    getRenderApi()?.showSpeech(agent.name, action.say, action.emotion ?? "neutral");
+    renderApi?.showSpeech(agent.name, action.say, action.emotion ?? "neutral");
     emit("agent_speech", `${agent.name}: ${action.say}`, { say: action.say });
     // Rule 9: everyone in earshot remembers what they heard.
     ctx.cognition?.recordSpeech(agent, action.say, others);

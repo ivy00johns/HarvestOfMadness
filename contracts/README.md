@@ -1,5 +1,15 @@
 # Harvest of Madness — Contracts (v2.1)
 
+> **Wave 4c (governance v1, additive + CLIENT-ONLY):** one new `ActionType` `VOTE` (target `{proposalId, support}`, `ENERGY_COSTS.VOTE = 0`, no adjacency — like EMOTE); PROPOSE rides the existing `USE_OBJECT` on the notice_board (no PROPOSE ActionType). `Observation.self` gains optional `activeProposal?` (`{id, proposer, ruleText, day, awareCount, yes, no}`) + `myVote?: boolean` — both additive, absent when no known open proposal, so frozen mock scenes stay byte-identical. New shared `TownProposal` + `ProposalStatus` + `ProposalTally`. The whole model lives in src/agents/Governance.ts (one active proposal; deadline = openDay+1 evening; dual termination — early adopt when `yes > aware/2` OR deadline adopt iff `yes > voted/2 AND voted >= 2`, else reject — guarantees no deadlock). Norms are farming/economy conduct, NEVER a tavern gathering (party kill-switch preserved). Open-union EventKind doc += `proposal_opened`/`proposal_heard`/`proposal_resolved`. NO server/wire change — `CompleteRequest`/`CompleteResponse`/openapi.yaml untouched.
+
+> **Wave 4b (multi-hop gossip, additive):** `MemoryEntry` gains optional `origin?: string` (stable first-hand source memory id) + `hop?: number` (relay distance, hop 1 = direct) — both absent on non-gossip memories; drives bounded multi-hop relay with origin-dedup, hop cap, and belief decay in src/agents/Cognition.ts.
+
+> **Wave 4a (emergent roles, additive):** `ROLE_VOCABULARY` + `DerivedRole`
+> (farmer/merchant/socialite/wanderer/banker) — roles are DERIVED at runtime
+> from the action histogram (src/agents/Roles.ts), never seeded.
+> `Observation.self.role` stays typed `string` (no narrowing); optional
+> `AgentCardModel.role` added. Advisory only — colors decisions, never overrides.
+
 > **v2.1 (M0 — LLM resilience, additive):** prep for the Smallville-scale build
 > (plans/cozy-toasting-russell.md). ADDITIVE only: `maxTokens` on
 > LlmRequest/CompleteRequest (decision retry boosts it on length/truncation);
@@ -76,10 +86,13 @@ Upstream: running FreeLLMAPI at `http://127.0.0.1:3001` (Docker), OpenAI-compati
 4. **Async, no global tick** — agent FSM `IDLE → THINKING → EXECUTING → IDLE`;
    world rendering never awaits a decision. Validation happens against
    *current* world state when the LLM response returns.
-5. **Budget kill-switch** — past `maxDecisionsPerDay` (client) or
-   `DAILY_CEILING` (server 429 `budget_exceeded`), the AgentManager switches
+5. **Opt-in budget kill-switch** — both ceilings (`maxDecisionsPerDay` client,
+   `DAILY_CEILING` server) default to **unlimited** (`<= 0`), since FreeLLMAPI
+   tokens are free. If you set a positive cap, past it the AgentManager switches
    that agent to the mock heuristic router and emits a `budget_reached` event;
-   the HUD shows a "budget reached" badge.
+   the HUD shows a "budget reached" badge. (Genuine upstream exhaustion is a
+   separate, always-on path: a `rate_limit_error` 429 drives the `LLM OFFLINE`
+   kill-switch with auto-recovery.)
 6. **Prompt contract** — system prompt ends with: respond with ONLY one JSON
    object, no prose, no fences. Parsing is always defensive (strip fences,
    first `{...}` block) regardless.

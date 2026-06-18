@@ -56,6 +56,75 @@ export const FENCE_FRAMES = {
   H_LEGS: 13,
 } as const;
 
+/**
+ * PathAndObjects.png — 16 frames/row. The path autotiles live in cols 0-11;
+ * rows 3-4 are the seamless full-bleed fill (no grass border) that tiles
+ * cleanly along a 1-wide road. Frames 48 and 50 are clean grey cobblestone
+ * (49 carries a decorative grass tuft, omitted so roads read uniform).
+ */
+export const COBBLE_PATH_FRAMES: readonly number[] = [48, 50];
+
+/**
+ * decorations-medieval.png — 16 frames/row. Stone well (cols 0-1) as a 2-wide
+ * block: rim row (rows 13), body row (row 14). frame = row*16 + col.
+ */
+export const WELL_FRAMES = {
+  RIM_L: 208, RIM_R: 209, // row 13: circular stone rim top
+  BODY_L: 224, BODY_R: 225, // row 14: stone body with the bucket opening
+} as const;
+
+/**
+ * decorations-medieval.png hanging signs (rows 0-1). Single 32×32 boards that
+ * hang from a top bar — used for the notice board and shop/tavern signage.
+ */
+export const SIGN_FRAMES = {
+  BOARD: 6, // plain wooden board (notice board / office)
+  JUG: 8, // jug/tankard — cafe (Wave 5a, row 0)
+  BREAD: 9, // loaf — general store / shop
+  BOOK: 22, // book — school (Wave 5a, row 1)
+  BEER: 23, // tankard — tavern
+} as const;
+
+/**
+ * decorations-medieval.png lit lanterns/torches (manifest: cols 12-15). The
+ * lit-glow pair LIT/LIT_ALT are adjacent columns 12/13 on the same sheet row.
+ * frame = row*16 + col. Row 2 is the eyeball-confirmed glow row; the unit test
+ * pins only the col band (12-15) + adjacency, so a future row tweak won't
+ * redden the suite.
+ */
+export const LANTERN_FRAMES = {
+  LIT: 12 + 16 * 2, // 44 — col 12, row 2
+  LIT_ALT: 13 + 16 * 2, // 45 — col 13, row 2
+} as const;
+
+/**
+ * interior.png — 16 frames/row. Open-roof room rendering: a tiled floor, a
+ * back-wall strip, and a few built-in furnishings. frame = row*16 + col.
+ */
+export const INTERIOR_FRAMES = {
+  FLOOR: 64, // c0r4 — stone/tile floor
+  // Back wall as a framed row: top-left corner, top edge, top-right corner.
+  // (frame 1 is a broken-wall hole — never use it.) Indexed left→right.
+  WALL: [0, 2, 4] as readonly number[],
+  SHELF: 96, // c0r6 — bookshelf
+  CABINET: 98, // c2r6 — cabinet
+  BAR: 100, // c4r6 — counter unit (tavern bar)
+  BARREL: 129, // c1r8 — barrel stack
+} as const;
+
+/**
+ * blonde-wood.png furniture — 16 frames/row. A double bed (2×2 block) and a
+ * round table for furnishing houses / the tavern.
+ */
+export const FURNITURE_FRAMES = {
+  BED_HEAD_L: 208, BED_HEAD_R: 209, // r13 — pillow end
+  BED_FOOT_L: 224, BED_FOOT_R: 225, // r14 — foot end
+  TABLE_ROUND: 125, // c13r7 — small round table
+  TABLE_SMALL: 124, // c12r7 — small square table (extra tavern/house table)
+  CHAIR_L: 110, // c14r6 — chair facing right (paired left of a table)
+  CHAIR_R: 111, // c15r6 — chair facing left (paired right of a table)
+} as const;
+
 /** 4-neighbour membership probe: same-type checks at (±1,0)/(0,±1). */
 export type NeighborProbe = (dx: number, dy: number) => boolean;
 

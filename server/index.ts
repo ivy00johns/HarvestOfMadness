@@ -35,8 +35,12 @@ const cfg: UpstreamConfig = {
   embedModel: process.env.FREELLMAPI_EMBED_MODEL || "auto",
 };
 
-const DAILY_CEILING = Number(process.env.DAILY_CEILING ?? 200);
-const budget = createBudget(Number.isFinite(DAILY_CEILING) && DAILY_CEILING > 0 ? DAILY_CEILING : 200);
+// Daily decision ceiling is OPT-IN. Unset or <= 0 means UNLIMITED — FreeLLMAPI
+// tokens are free, so the proxy never self-throttles by default. Set
+// DAILY_CEILING=<n> only to deliberately cap a session (e.g. a demo).
+const rawCeiling = Number(process.env.DAILY_CEILING ?? 0);
+const DAILY_CEILING = Number.isFinite(rawCeiling) && rawCeiling > 0 ? rawCeiling : 0;
+const budget = createBudget(DAILY_CEILING);
 
 const app = createApp(cfg, budget);
 
@@ -45,6 +49,7 @@ app.listen(port, () => {
   console.log(
     `[server] agent proxy on http://localhost:${port} → ${cfg.baseUrl} ` +
       `(model=${cfg.model}, fast=${cfg.modelFast}, smart=${cfg.modelSmart}, ` +
-      `embed=${cfg.embedModel}, key=${cfg.apiKey ? "present" : "MISSING"}, ceiling=${budget.ceiling})`,
+      `embed=${cfg.embedModel}, key=${cfg.apiKey ? "present" : "MISSING"}, ` +
+      `ceiling=${budget.ceiling > 0 ? budget.ceiling : "unlimited"})`,
   );
 });

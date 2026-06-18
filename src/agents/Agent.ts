@@ -6,7 +6,9 @@
 import type {
   AgentFsmState,
   DecisionTraceEntry,
+  DerivedRole,
   InventoryEntry,
+  NeedState,
   Vec2,
 } from "@contracts/types";
 import { ENERGY_START, STARTING_GOLD, STARTING_SEEDS } from "@contracts/types";
@@ -29,7 +31,12 @@ export const TRACE_CAP = 20;
 export class Agent {
   readonly name: string;
   readonly persona: { id: string; description: string };
-  readonly role = "farmer";
+  /**
+   * Wave 4a — derived, town-legible specialization (mutable). Set once per
+   * game-day by CognitionSystem (RolesSystem.update); read back into the
+   * Observation. Defaults to / falls back to "farmer".
+   */
+  role: DerivedRole = "farmer";
   readonly color: number;
 
   pos: Vec2;
@@ -56,6 +63,8 @@ export class Agent {
   // Maintained by CognitionSystem; the obs layer reads them off the agent.
   /** current DailyPlan step text (AgentCardModel.planStep) */
   planStep: string | null = null;
+  /** Wave 3a — intrinsic drive vector (AgentCardModel.needs); card-projection store. */
+  needs: NeedState | null = null;
   /** top-5 affinity rows incl. summaries (AgentCardModel.relationships) */
   relationshipRows: { name: string; affinity: number; summary: string }[] = [];
   /** memory stream size (AgentCardModel.memoryCount) */

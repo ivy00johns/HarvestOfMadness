@@ -10,11 +10,12 @@ const PASSABLE_TYPES: ReadonlySet<TileType> = new Set([
   "path",
   "tilled",
   "soil",
+  "floor", // v3 — walkable indoor floor (door-gap + room interiors)
   "bedTile",
   "shopTile",
 ]);
 
-/** Tile types that till() accepts. */
+/** Tile types that till() accepts. `floor` is NOT tillable (till(floor) rejects). */
 const TILLABLE_TYPES: ReadonlySet<TileType> = new Set(["grass", "soil"]);
 
 export function makeTile(x: number, y: number, type: TileType): Tile {

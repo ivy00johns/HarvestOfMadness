@@ -18,6 +18,7 @@ import type {
   AssetManifest,
   CharacterAsset,
   Emotion,
+  Phase,
   RenderApi,
   Tile,
   Vec2,
@@ -28,13 +29,14 @@ import {
   CAMERA_PAN_SPEED,
   CAMERA_ZOOM_MAX,
   CAMERA_ZOOM_MIN,
-  CAMERA_ZOOM_STEP,
   CROP_COLORS,
   CROP_READY_COLOR,
+  DEFAULT_ZOOM,
   EMOTE_DURATION_MS,
   EMOTION_STYLE,
-  GAME_ZOOM,
   LABEL_FONT_SIZE,
+  PHASE_TINT_TWEEN_MS,
+  phaseTint,
   REG_ASSETS_ON,
   REG_ASSET_MANIFEST,
   SPEECH_DURATION_MS,
@@ -45,14 +47,30 @@ import {
   WATERED_SOIL_TINT,
   WATERED_TINT,
   WATER_ANIM_MS,
+  zoomFactorForWheelDelta,
 } from "../config";
-import { computeHud, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
+import { computeHud, FONT_SIZE_SMALL, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
 import type { Rect } from "../obs/layout";
-import { getWorld } from "../world/instance";
-import { BED_POS, SHOP_POS } from "../world/map";
+import { getTimeSystem, getWorld } from "../world/instance";
 import {
+  BENCH_POS,
+  BUILDINGS,
+  NOTICE_BOARD_POS,
+  PARK,
+  WELL_POS,
+  WORLD_OBJECTS,
+} from "../world/map";
+import { activityEmoji } from "../obs/activityEmoji";
+import { buildingStyle } from "../obs/buildingStyle";
+import {
+  COBBLE_PATH_FRAMES,
+  FURNITURE_FRAMES,
+  INTERIOR_FRAMES,
+  LANTERN_FRAMES,
+  SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
+  WELL_FRAMES,
   cropStripFrame,
   fenceFrame,
   setRenderApi,
@@ -88,14 +106,14 @@ const CRATE_FRAMES = [209, 211, 212]; // cabbage, potato, tomato crates
 const TREE_FRAMES = [0, 10];
 
 /**
- * Decorative trees sit ON the impassable wall ring (y=17) so the dressing
- * never contradicts WorldApi.isPassable; canopies overhang interior grass at
- * overhead depth, which agents simply walk behind.
+ * Decorative trees sit on open grass clear of rooms/roads/plots; canopies
+ * overhang at overhead depth, which agents simply walk behind (purely visual —
+ * trees do not change WorldApi.isPassable).
  */
 const TREE_SPOTS: { x: number; y: number; frame: number }[] = [
-  { x: 4, y: 17, frame: 0 },
-  { x: 13, y: 17, frame: 10 },
-  { x: 20, y: 17, frame: 0 },
+  { x: 3, y: 17, frame: 0 },
+  { x: 55, y: 6, frame: 10 },
+  { x: 55, y: 33, frame: 0 },
 ];
 
 /**
@@ -115,6 +133,14 @@ const DEPTH_BASE = 0;
 const DEPTH_OVERLAY = 1;
 const DEPTH_FACADE = 2;
 const DEPTH_PROP = 3;
+/**
+ * Day/night ambient tint overlay sits above the world + agents (so it tints
+ * them) but BELOW the tree canopies (DEPTH_OVERHEAD) and speech bubbles
+ * (DEPTH_BUBBLE), which therefore stay bright. The HUD is a separate scene
+ * /camera and is structurally unreachable from here. Lit lanterns glow one
+ * notch above the wash (DEPTH_TINT + 1).
+ */
+const DEPTH_TINT = 9_000;
 const DEPTH_OVERHEAD = 10_000;
 const DEPTH_BUBBLE = 20_000;
 
@@ -127,6 +153,10 @@ interface AgentSprite {
   /** placeholder circle (fallback mode) — null in assets mode */
   circle: Phaser.GameObjects.Graphics | null;
   label: Phaser.GameObjects.Text;
+  /** Smallville "pronunciatio" — persistent activity emoji above the name label */
+  activityLabel: Phaser.GameObjects.Text;
+  /** v3 (Wave 2) — readable activity text (current plan step) below the name */
+  activityText: Phaser.GameObjects.Text;
   charKey: string | null;
   facing: Dir;
   tilePos: Vec2;
@@ -155,6 +185,19 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   /** registration order preserved; character binding sorts a copy */
   private readonly agentNames: string[] = [];
   private unsubscribeWorld: (() => void) | null = null;
+
+  // -- day/night ambient lighting (Wave 3b) -----------------------------------
+  /** Full-map overlay quad tinted per phase (created once in create()). */
+  private tintRect: Phaser.GameObjects.Rectangle | null = null;
+  /** Current overlay color/alpha (tween source on phase change). */
+  private currentTint: { color: number; alpha: number } = {
+    color: 0xffffff,
+    alpha: 0,
+  };
+  /** Lit-lantern images, shown evening/night, hidden morning/afternoon. */
+  private readonly lanterns: Phaser.GameObjects.Image[] = [];
+  /** TimeSystem.onChange unsubscribe (event-driven; nothing per-frame). */
+  private unsubscribeTime: (() => void) | null = null;
 
   // -- spectator camera (pan / wheel-zoom / click-to-follow) -----------------
   private cursors: Phaser.Types.Input.Keyboard.CursorKeys | null = null;
@@ -185,6 +228,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.createCharacterAnims();
       this.dressBuildings();
       this.dressTrees();
+      this.dressPark();
       this.time.addEvent({
         delay: WATER_ANIM_MS,
         loop: true,
@@ -195,6 +239,22 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.tileGfx.setDepth(DEPTH_BASE);
     }
     this.redrawAll();
+    // v3 — draw world object markers over the tile layer (both asset + placeholder modes).
+    this.dressWorldObjects();
+
+    // v3 (Wave 3b) — day/night ambient lighting: one full-map overlay quad
+    // tinted per phase, plus lit lanterns at evening/night. Event-driven via
+    // TimeSystem.onChange (nothing per-frame); the first apply is instant.
+    this.tintRect = this.add
+      .rectangle(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE, 0xffffff, 0)
+      .setOrigin(0, 0)
+      .setScrollFactor(1)
+      .setDepth(DEPTH_TINT);
+    this.dressLanterns();
+    this.applyPhaseLighting(world.time().phase, true);
+    this.unsubscribeTime = getTimeSystem().onChange((t) =>
+      this.applyPhaseLighting(t.phase),
+    );
 
     this.unsubscribeWorld = world.onChange((tiles) => {
       if (tiles === null) {
@@ -207,6 +267,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.frameCamera, this);
       this.unsubscribeWorld?.();
+      this.unsubscribeTime?.();
       setRenderApi(null);
     });
 
@@ -252,10 +313,10 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
 
   /**
    * Inset the world camera below the opaque HUD top bar (controls + kill-switch
-   * badge) so the bar never covers the map — the top fence was being hidden
-   * behind it. Then fit the whole map into that inset region (never tighter
-   * than GAME_ZOOM, never below the wheel-zoom floor) so the full fence
-   * perimeter is visible by default. Re-runs on resize.
+   * badge) so the bar never covers the map. Default zoom = DEFAULT_ZOOM (1.5),
+   * which shows ~24 tiles across a typical viewport — agents and buildings are
+   * readable. On very small viewports we clamp down to CAMERA_ZOOM_MIN so the
+   * whole map is still reachable. Re-runs on resize.
    */
   private frameCamera(): void {
     const cam = this.cameras.main;
@@ -265,8 +326,11 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     const mapH = MAP_HEIGHT * TILE_SIZE;
     cam.setViewport(0, HUD_TOP_H, w, viewH);
     cam.setBounds(0, 0, mapW, mapH);
-    const fit = Math.min(w / mapW, viewH / mapH);
-    cam.setZoom(Phaser.Math.Clamp(Math.min(GAME_ZOOM, fit), CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX));
+    // Use the configured DEFAULT_ZOOM for a readable starting view, but clamp
+    // it so we never zoom in tighter than the map fills the viewport (no void),
+    // and never lower than CAMERA_ZOOM_MIN.
+    const zoom = Phaser.Math.Clamp(DEFAULT_ZOOM, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    cam.setZoom(zoom);
     cam.centerOn(mapW / 2, mapH / 2);
   }
 
@@ -333,10 +397,20 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   private onWorldWheel(p: Phaser.Input.Pointer, _o: unknown, _dx: number, dy: number): void {
     if (this.pointerOverHud(p.x, p.y)) return;
     const cam = this.cameras.main;
+    // Sample the world point under the cursor BEFORE changing zoom — used below
+    // to keep that world point stationary under the cursor (cursor-anchored zoom).
     const before = cam.getWorldPoint(p.x, p.y);
-    const factor = dy > 0 ? 1 / CAMERA_ZOOM_STEP : CAMERA_ZOOM_STEP;
-    const z = Phaser.Math.Clamp(cam.zoom * factor, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    // Delta-proportional factor: exp(-dy * sensitivity).
+    // dy>0 → scroll down → factor<1 (zoom out); dy<0 → zoom in.
+    // A single mouse notch (dy≈100) gives factor≈0.86 (zoom out ×0.86 or in ×1.16).
+    const z = Phaser.Math.Clamp(
+      cam.zoom * zoomFactorForWheelDelta(dy),
+      CAMERA_ZOOM_MIN,
+      CAMERA_ZOOM_MAX,
+    );
     cam.setZoom(z);
+    // Re-sample the world point that now maps to the same screen pixel; scroll
+    // by the difference so the world appears to zoom toward/away from the cursor.
     const after = cam.getWorldPoint(p.x, p.y);
     cam.setScroll(cam.scrollX + (before.x - after.x), cam.scrollY + (before.y - after.y));
   }
@@ -441,6 +515,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         lift += lineH; // stack downward, away from the HUD band
       }
       a.label.setY(Math.round(lift));
+      // Keep the readable activity text glued just under the de-collided name.
+      a.activityText.setY(Math.round(lift + LABEL_FONT_SIZE + 2));
     }
   }
 
@@ -511,7 +587,10 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       case "grass":
         break; // base layer already shows grass
       case "path":
-        place("terrain", this.pick(PATH_FRAMES, x, y));
+        // Cobblestone road (PathAndObjects) when present; else the v1 dirt path.
+        if (this.textures.exists("paths"))
+          place("paths", this.pick(COBBLE_PATH_FRAMES, x, y));
+        else place("terrain", this.pick(PATH_FRAMES, x, y));
         break;
       case "water": {
         const isWater = (dx: number, dy: number): boolean =>
@@ -538,14 +617,28 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         if (tile.crop?.watered) img.setTint(WATERED_SOIL_TINT);
         break;
       }
-      case "building":
+      case "floor":
       case "bedTile":
       case "shopTile":
-        break; // covered by the static facade dressing
-      case "wall":
-        // The impassable wall ring renders as the wooden farm fence.
-        place("fence", fenceFrame(x, y, MAP_WIDTH, MAP_HEIGHT));
+        // Walkable indoor floor (room interior, door-gap, bed/shop overlay
+        // cells): the tile layer owns the floor; furniture + sign are added by
+        // paintInterior at prop depth, agents y-sort above.
+        place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
         break;
+      case "building":
+        break; // retained-but-unused TileType: no tile stamps it (dead-but-valid)
+      case "wall": {
+        const onBorder =
+          x === 0 || y === 0 || x === MAP_WIDTH - 1 || y === MAP_HEIGHT - 1;
+        if (onBorder) {
+          // The impassable map-border wall ring renders as the wooden farm fence.
+          place("fence", fenceFrame(x, y, MAP_WIDTH, MAP_HEIGHT));
+        } else {
+          // Interior house/tavern/shop wall ring — open-roof cutaway edge.
+          place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+        }
+        break;
+      }
     }
 
     if (tile.crop) this.drawCropAssets(tile, x, y);
@@ -597,23 +690,180 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   // -- static dressing (assets mode, drawn once) -----------------------------
 
   /**
-   * Brick facades over the two frozen building footprints from map.ts:
-   * farmhouse (2,2)-(5,4) with its door on the bedTile column, shop
-   * (18,2)-(21,4) with its door on the shopTile column plus market crates.
-   * All these tiles are impassable except the door tiles the pathfinder uses.
+   * Brick facades over all 14 building footprints from map.ts (12 homesteads +
+   * shop + tavern). Each entry in BUILDINGS carries its own doorX and kind, so
+   * we never drift from the generated map. Shop/tavern get the light-wood door
+   * (DOOR_B) and market crates; houses get the dark-wood door (DOOR_A).
+   * Each kind gets a distinct roof/wall tint and a sign emoji (via buildingStyle)
+   * so buildings are visually distinguishable even with the shared house.png art.
    */
+  /**
+   * Hanging LPC sign frame for a civic room kind (shop/tavern/cafe/office/
+   * school), or undefined for houses (which keep the lightweight emoji sign from
+   * buildingStyle). Cafe=jug, office=board, school=book, shop=bread, tavern=beer.
+   */
+  private signFrameForKind(kind: string): number | undefined {
+    switch (kind) {
+      case "tavern":
+        return SIGN_FRAMES.BEER;
+      case "shop":
+        return SIGN_FRAMES.BREAD;
+      case "cafe":
+        return SIGN_FRAMES.JUG;
+      case "office":
+        return SIGN_FRAMES.BOARD;
+      case "school":
+        return SIGN_FRAMES.BOOK;
+      default:
+        return undefined;
+    }
+  }
+
   private dressBuildings(): void {
-    this.paintFacade(2, 2, 5, 4, {
-      doorX: BED_POS.x,
-      door: [HOUSE_FRAMES.DOOR_A_TOP, HOUSE_FRAMES.DOOR_A_BOT],
-      windowX: 5,
-    });
-    this.paintFacade(18, 2, 21, 4, {
-      doorX: SHOP_POS.x,
-      door: [HOUSE_FRAMES.DOOR_B_TOP, HOUSE_FRAMES.DOOR_B_BOT],
-      windowX: 21,
-      crateXs: [18, 20],
-    });
+    const openRoof = this.textures.exists("interior");
+    for (const b of BUILDINGS) {
+      const isShop = b.kind === "shop";
+      const isTavern = b.kind === "tavern";
+      // Civic rooms get a real hanging LPC sign; houses keep the lightweight
+      // emoji sign from buildingStyle.
+      const signFrame = this.signFrameForKind(b.kind);
+      if (openRoof) {
+        // Smallville-style open-roof furnished room (agents walk in visibly).
+        this.paintInterior(b, signFrame);
+        continue;
+      }
+      // Degraded fallback: the v1 closed brick facade.
+      const door: [number, number] =
+        isShop || isTavern
+          ? [HOUSE_FRAMES.DOOR_B_TOP, HOUSE_FRAMES.DOOR_B_BOT]
+          : [HOUSE_FRAMES.DOOR_A_TOP, HOUSE_FRAMES.DOOR_A_BOT];
+      const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
+      const style = buildingStyle(b.kind);
+      this.paintFacade(b.x0, b.y0, b.x1, b.y1, {
+        doorX: b.doorX,
+        door,
+        windowX,
+        crateXs: isShop ? [b.x0, b.x1] : undefined,
+        tint: style.tint,
+        sign: style.sign,
+        signFrame,
+      });
+    }
+  }
+
+  /**
+   * Open-roof furnished interior (Smallville cutaway): kind-specific furniture
+   * over the room and the hanging/emoji sign above. The tile layer (drawTile)
+   * now owns the floor + interior wall ring (single-owner rule), so this method
+   * paints furniture + sign ONLY — no floor-fill, no wall-strip — to avoid
+   * double-paint. Furniture is decoration only (passability is tile-driven;
+   * agents y-sort above props). Interior cells span [x0+1,y0+1]..[x1-1,y1-1].
+   */
+  private paintInterior(b: (typeof BUILDINGS)[number], signFrame?: number): void {
+    const { x0, y0, x1, y1, kind } = b;
+    const hasFurn = this.textures.exists("furniture_wood");
+    // Interior bounds (inside the wall ring).
+    const ix0 = x0 + 1;
+    const iy0 = y0 + 1;
+    const ix1 = x1 - 1;
+    const iy1 = y1 - 1;
+    const put = (
+      x: number,
+      y: number,
+      texture: string,
+      frame: number,
+      depth: number,
+    ): void => {
+      this.add
+        .image(x * TILE_SIZE, y * TILE_SIZE, texture, frame)
+        .setOrigin(0, 0)
+        .setDepth(depth);
+    };
+
+    // Kind-specific furnishing (props sit at prop depth above the floor; agents
+    // y-sort over them). Placed on interior floor cells only.
+    if (kind === "house") {
+      // 2×2 bed in the NW interior corner over the bedTile region.
+      if (hasFurn) {
+        put(ix0, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
+        put(ix0 + 1, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
+        put(ix0, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
+        put(ix0 + 1, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
+        // A small table + chair in the SE interior corner.
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      }
+      // A shelf on the back wall, NE interior corner.
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+    } else if (kind === "shop") {
+      // Shelves/cabinet along the back wall; counter crates at the doorway.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
+      put(ix0, iy1, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP); // counter unit
+      // Produce crates flanking the storefront (kept from the old shop look),
+      // never over the centre shopTile (the BUY/SELL gate cell stays clear).
+      put(ix1, iy1, "farming", CRATE_FRAMES[1], DEPTH_PROP);
+    } else if (kind === "tavern") {
+      // Bar counter along the back wall, tables + chairs, corner barrels.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
+      put(ix0 + 1, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix0 + 2, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_ROUND, DEPTH_PROP);
+        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+        put(ix0 + 3, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
+      }
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+      put(ix1, iy1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+    } else if (kind === "cafe") {
+      // Cafe: a BAR counter along the back wall + two small tables with chairs.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix0, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      }
+    } else if (kind === "office") {
+      // Office: two cabinets (desks) along the back wall + a table, chair, shelf.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
+      put(ix0, iy1, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      }
+    } else if (kind === "school") {
+      // School: two bookshelves along the back wall + two desk tables with chairs.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix0, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      }
+    }
+
+    // Sign above the room: real hanging sign for civic rooms, emoji for houses.
+    const midX = ((x0 + x1) / 2 + 0.5) * TILE_SIZE;
+    if (signFrame != null && this.textures.exists("decorations")) {
+      this.add
+        .image(midX, y0 * TILE_SIZE, "decorations", signFrame)
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_PROP + 1);
+    } else {
+      const sign = buildingStyle(kind).sign;
+      if (sign)
+        this.add
+          .text(midX, y0 * TILE_SIZE - 4, sign, {
+            fontSize: "16px",
+            fontFamily: "ui-monospace, Menlo, monospace",
+            stroke: "#000000",
+            strokeThickness: 2,
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(DEPTH_PROP + 1);
+    }
   }
 
   private paintFacade(
@@ -626,13 +876,21 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       door: [number, number];
       windowX: number;
       crateXs?: number[];
+      /** 0xRRGGBB tint applied to all facade tiles (0xffffff = no tint) */
+      tint?: number;
+      /** Emoji/sign placed centred above the roof, below speech bubbles */
+      sign?: string;
+      /** decorations-sheet hanging-sign frame; overrides the emoji sign when set */
+      signFrame?: number;
     },
   ): void {
-    const put = (x: number, y: number, frame: number, depth: number): void => {
-      this.add
+    const tint = opts.tint ?? 0xffffff;
+    const put = (x: number, y: number, frame: number, depth: number): Phaser.GameObjects.Image => {
+      return this.add
         .image(x * TILE_SIZE, y * TILE_SIZE, "house", frame)
         .setOrigin(0, 0)
-        .setDepth(depth);
+        .setDepth(depth)
+        .setTint(tint);
     };
     for (let y = y0; y <= y1; y++) {
       const row =
@@ -658,6 +916,25 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         .setOrigin(0, 0)
         .setDepth(DEPTH_PROP);
     }
+    // Signage centred above the roof (y0 row), depth between props and bubbles.
+    const midX = ((x0 + x1) / 2 + 0.5) * TILE_SIZE; // pixel centre of facade
+    if (opts.signFrame != null && this.textures.exists("decorations")) {
+      // Real LPC hanging sign, bottom-anchored just above the roofline.
+      this.add
+        .image(midX, y0 * TILE_SIZE, "decorations", opts.signFrame)
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_PROP + 1);
+    } else if (opts.sign) {
+      this.add
+        .text(midX, y0 * TILE_SIZE - 4, opts.sign, {
+          fontSize: "16px",
+          fontFamily: "ui-monospace, Menlo, monospace",
+          stroke: "#000000",
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_PROP + 1);
+    }
   }
 
   /** A few fruit trees along the bottom fence for life. */
@@ -674,6 +951,182 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         .setOrigin(0.5, 1)
         .setDepth(DEPTH_OVERHEAD);
     }
+  }
+
+  /**
+   * Wave 5a — the green PARK region. The inner pond renders through the normal
+   * water tile path and the benches through dressWorldObjects; here we add the
+   * scattered decor trees that fall INSIDE the park region (the existing tree
+   * sprite path), giving the park its leafy feel. Asset-guarded: a no-op when
+   * the tree sheet is missing (placeholder mode keeps the open grass).
+   */
+  private dressPark(): void {
+    if (!this.textures.exists("fruit_trees")) return;
+    const inPark = (p: Vec2): boolean =>
+      p.x >= PARK.x0 && p.x <= PARK.x1 && p.y >= PARK.y0 && p.y <= PARK.y1;
+    for (const d of getWorld().decor()) {
+      if (d.kind !== "tree" || !inPark(d.pos)) continue;
+      this.add
+        .image(
+          d.pos.x * TILE_SIZE + TILE_SIZE / 2,
+          (d.pos.y + 1) * TILE_SIZE - 2,
+          "fruit_trees",
+          TREE_FRAMES[0],
+        )
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_OVERHEAD);
+    }
+  }
+
+  /**
+   * v3 — Draw each world object (well, notice board, bench). In assets mode
+   * the well and notice board use real LPC decoration sprites; the bench (no
+   * dedicated sprite yet) and the whole placeholder path fall back to a labeled
+   * colored-rect marker.
+   */
+  private dressWorldObjects(): void {
+    const hasDeco = this.useAssets && this.textures.exists("decorations");
+    const OBJECT_COLORS: Record<string, number> = {
+      well:         0x4488cc, // blue — water
+      notice_board: 0xcc8833, // amber — parchment
+      bench:        0x886644, // brown — wood
+    };
+    const OBJECT_LABELS: Record<string, string> = {
+      well:         "🪣",
+      notice_board: "📋",
+      bench:        "🪑",
+    };
+
+    // Place a decorations-sheet tile at a map cell (top-left origin).
+    const deco = (tx: number, ty: number, frame: number, depth = DEPTH_PROP): void => {
+      this.add
+        .image(tx * TILE_SIZE, ty * TILE_SIZE, "decorations", frame)
+        .setOrigin(0, 0)
+        .setDepth(depth);
+    };
+
+    // Fallback marker: rounded rect + emoji (placeholder mode, or props without art).
+    const marker = (obj: (typeof WORLD_OBJECTS)[number]): void => {
+      const px = obj.pos.x * TILE_SIZE;
+      const py = obj.pos.y * TILE_SIZE;
+      const gfx = this.add.graphics();
+      gfx.fillStyle(OBJECT_COLORS[obj.kind] ?? 0xffffff, 0.85);
+      gfx.fillRoundedRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
+      gfx.lineStyle(1, 0x000000, 0.5);
+      gfx.strokeRoundedRect(px + 4, py + 4, TILE_SIZE - 8, TILE_SIZE - 8, 4);
+      gfx.setDepth(DEPTH_PROP + 1);
+      this.add
+        .text(px + TILE_SIZE / 2, py + TILE_SIZE / 2, OBJECT_LABELS[obj.kind] ?? "⚙", {
+          fontSize: "14px",
+          align: "center",
+        })
+        .setOrigin(0.5, 0.5)
+        .setDepth(DEPTH_PROP + 2);
+    };
+
+    for (const obj of WORLD_OBJECTS) {
+      const { x, y } = obj.pos;
+      if (hasDeco && obj.kind === "well") {
+        // 2×2 stone well anchored bottom-right on the object tile; it rises one
+        // tile up onto the grass strip and never overlaps the flanking buildings.
+        deco(x - 1, y - 1, WELL_FRAMES.RIM_L);
+        deco(x,     y - 1, WELL_FRAMES.RIM_R);
+        deco(x - 1, y,     WELL_FRAMES.BODY_L);
+        deco(x,     y,     WELL_FRAMES.BODY_R);
+      } else if (hasDeco && obj.kind === "notice_board") {
+        deco(x, y, SIGN_FRAMES.BOARD);
+        this.add
+          .text(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE - 2, OBJECT_LABELS.notice_board, {
+            fontSize: "12px",
+          })
+          .setOrigin(0.5, 1)
+          .setDepth(DEPTH_PROP + 2);
+      } else {
+        marker(obj);
+      }
+    }
+  }
+
+  // -- day/night ambient lighting (Wave 3b) -----------------------------------
+
+  /**
+   * Place the lit lanterns once (assets mode only). One lantern hangs by each
+   * building's window column (mirrors dressBuildings' window logic) at the
+   * front (y1) row — 14 buildings — plus one at the well, notice board and
+   * bench: ~17 total. All start hidden; applyPhaseLighting toggles them on at
+   * evening/night. No-op (empty array) without the decorations sheet, so the
+   * ambient tint still works in degraded/placeholder rendering.
+   */
+  private dressLanterns(): void {
+    if (!this.useAssets || !this.textures.exists("decorations")) return;
+    const place = (tx: number, ty: number): void => {
+      const img = this.add
+        .image(
+          tx * TILE_SIZE + TILE_SIZE / 2,
+          (ty + 1) * TILE_SIZE,
+          "decorations",
+          LANTERN_FRAMES.LIT,
+        )
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_TINT + 1)
+        .setVisible(false);
+      this.lanterns.push(img);
+    };
+    for (const b of BUILDINGS) {
+      const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
+      place(windowX, b.y1);
+    }
+    place(WELL_POS.x, WELL_POS.y);
+    place(NOTICE_BOARD_POS.x, NOTICE_BOARD_POS.y);
+    place(BENCH_POS.x, BENCH_POS.y);
+  }
+
+  /**
+   * Apply the ambient overlay + lantern state for a phase. Lanterns light at
+   * evening/night. The overlay cross-fades over PHASE_TINT_TWEEN_MS by tweening
+   * a typed {t} proxy (interpolating color via Phaser's Color helper + alpha
+   * linearly) into tintRect.setFillStyle; the first/instant apply sets it
+   * directly. Night alpha is hard-capped at 0.40 by the PHASE_TINTS palette.
+   */
+  private applyPhaseLighting(phase: Phase, instant = false): void {
+    const lit = phase === "evening" || phase === "night";
+    for (const l of this.lanterns) l.setVisible(lit);
+
+    const rect = this.tintRect;
+    if (!rect) return;
+    const target = phaseTint(phase);
+
+    if (instant) {
+      this.currentTint = { color: target.color, alpha: target.alpha };
+      rect.setFillStyle(target.color, target.alpha);
+      return;
+    }
+
+    const from = { color: this.currentTint.color, alpha: this.currentTint.alpha };
+    const fromColor = Phaser.Display.Color.IntegerToColor(from.color);
+    const toColor = Phaser.Display.Color.IntegerToColor(target.color);
+    const proxy: { t: number } = { t: 0 };
+    this.tweens.add({
+      targets: proxy,
+      t: 1,
+      duration: PHASE_TINT_TWEEN_MS,
+      ease: "Linear",
+      onUpdate: () => {
+        const c = Phaser.Display.Color.Interpolate.ColorWithColor(
+          fromColor,
+          toColor,
+          1,
+          proxy.t,
+        );
+        const color = Phaser.Display.Color.GetColor(c.r, c.g, c.b);
+        const alpha = from.alpha + (target.alpha - from.alpha) * proxy.t;
+        rect.setFillStyle(color, alpha);
+      },
+      onComplete: () => {
+        this.currentTint = { color: target.color, alpha: target.alpha };
+        rect.setFillStyle(target.color, target.alpha);
+      },
+    });
   }
 
   // -- placeholder tile rendering (v1 fallback, unchanged behavior) ----------
@@ -830,11 +1283,39 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         strokeThickness: 3,
       })
       .setOrigin(0.5, 1);
+    // Smallville "pronunciatio": persistent activity emoji pinned just above
+    // the name label, below speech bubbles. Starts blank until first action.
+    const activityLabel = this.add
+      .text(0, Math.round(this.labelLift()) - LABEL_FONT_SIZE - 2, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: "14px",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5, 1)
+      .setDepth(DEPTH_PROP);
+    // v3 (Wave 2) — readable activity text (current plan step) pinned just below
+    // the name label. De-collided downward with the name in restackLabels().
+    const activityText = this.add
+      .text(0, Math.round(this.labelLift()) + LABEL_FONT_SIZE + 2, "", {
+        fontFamily: "ui-monospace, Menlo, monospace",
+        fontSize: `${FONT_SIZE_SMALL}px`,
+        color: "#cdd6e4",
+        stroke: "#000000",
+        strokeThickness: 3,
+        wordWrap: { width: TILE_SIZE * 5 },
+        align: "center",
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(DEPTH_PROP);
     const [cx, cy] = this.tileCenter(pos);
     const container = this.add.container(cx, cy, [
       ...(sprite ? [sprite] : []),
       ...(circle ? [circle] : []),
       label,
+      activityLabel,
+      activityText,
     ]);
     container.setDepth(cy + TILE_SIZE / 2);
     this.agents.set(name, {
@@ -842,6 +1323,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       sprite,
       circle,
       label,
+      activityLabel,
+      activityText,
       charKey: null,
       facing: "down",
       tilePos: { ...pos },
@@ -921,7 +1404,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: `${SPEECH_FONT_SIZE}px`,
         color: "#101014",
-        wordWrap: { width: 230 },
+        wordWrap: { width: 260 },
       })
       .setOrigin(0.5, 0.5);
     const bounds = label.getBounds();
@@ -955,6 +1438,41 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       if (agent.speech === bubble) agent.speech = null;
       agent.speechTimer = null;
     });
+  }
+
+  /**
+   * Smallville "pronunciatio": update the persistent activity emoji for an
+   * agent. Called by AgentRuntime after each decision cycle with the chosen
+   * ActionType (and optional emotion for EMOTE actions). The emoji is rendered
+   * as a small text object pinned above the name label, below speech bubbles.
+   */
+  setActivityEmoji(name: string, action: string, emotion?: string): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    // activityEmoji is a pure function — import is at top of file.
+    const emoji = activityEmoji(
+      action as Parameters<typeof activityEmoji>[0],
+      emotion as Parameters<typeof activityEmoji>[1],
+    );
+    agent.activityLabel.setText(emoji);
+  }
+
+  /**
+   * v3 (Wave 2) — readable activity label: set the persistent plan-step text
+   * below an agent's name (Smallville "what they're doing"). Called by
+   * AgentRuntime after each decision with the agent's current planStep. Null or
+   * empty renders nothing; longer text is truncated to ~40 chars.
+   */
+  setActivityLabel(name: string, text: string | null): void {
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    if (!text) {
+      agent.activityText.setText("");
+      return;
+    }
+    const flat = text.replace(/\s+/g, " ");
+    const shown = flat.length > 40 ? `${flat.slice(0, 39)}…` : flat;
+    agent.activityText.setText(shown);
   }
 
   /** v2 — transient ~2s emote symbol floating up above the sprite. */

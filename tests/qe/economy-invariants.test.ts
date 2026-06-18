@@ -11,9 +11,14 @@ import { describe, expect, it } from "vitest";
 import type { Vec2 } from "@contracts/types";
 import { STARTING_GOLD } from "@contracts/types";
 import { World } from "../../src/world/World";
-import { SHOP_POS } from "../../src/world/map";
+import { FIELD_RECT, SHOP_POS } from "../../src/world/map";
 import { Agent, type Persona } from "../../src/agents/Agent";
 import { executeAction } from "../../src/agents/ActionExecutor";
+
+// Farm fixtures from the first homestead's plot (soil). PLOT is the tilled
+// target; FARM_STAND an adjacent soil cell to stand on while planting.
+const PLOT: Vec2 = { x: FIELD_RECT.x0, y: FIELD_RECT.y0 };
+const FARM_STAND: Vec2 = { x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 };
 
 /** mulberry32 — tiny deterministic PRNG so the fuzz replays identically. */
 function mulberry32(seed: number): () => number {
@@ -145,8 +150,8 @@ describe("harvest -> sell conservation (full loop accounting)", () => {
     expect(buy.ok).toBe(true);
 
     // Teleport to the field (executor pathing is not under test here).
-    agent.pos = { x: 9, y: 8 };
-    const plot = { x: 8, y: 8 };
+    agent.pos = { ...FARM_STAND };
+    const plot = { ...PLOT };
     expect(world.till(plot).ok).toBe(true);
     const plant = await executeAction(
       agent,

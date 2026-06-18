@@ -4,9 +4,15 @@
  */
 import { describe, expect, it } from "vitest";
 import {
+  COBBLE_PATH_FRAMES,
   FENCE_FRAMES,
+  FURNITURE_FRAMES,
+  INTERIOR_FRAMES,
+  LANTERN_FRAMES,
+  SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
+  WELL_FRAMES,
   cropStripFrame,
   fenceFrame,
   soilFrame,
@@ -109,7 +115,80 @@ describe("soilFrame (8x6 contract field at (8,8)-(15,13))", () => {
   });
 });
 
-describe("fenceFrame (24x18 wall ring)", () => {
+describe("town props frame constants (decorations + paths sheets, 16 frames/row)", () => {
+  const COL = (f: number): number => f % 16;
+  const ROW = (f: number): number => Math.floor(f / 16);
+
+  it("cobblestone road frames are seamless-fill cells (rows 3-4, cols 0-11), no grass-tuft 49", () => {
+    expect(COBBLE_PATH_FRAMES.length).toBeGreaterThan(0);
+    for (const f of COBBLE_PATH_FRAMES) {
+      expect(ROW(f)).toBeGreaterThanOrEqual(3);
+      expect(ROW(f)).toBeLessThanOrEqual(4);
+      expect(COL(f)).toBeLessThanOrEqual(11);
+    }
+    expect(COBBLE_PATH_FRAMES).not.toContain(49); // 49 carries a grass tuft
+  });
+
+  it("well frames form a 2-wide block: rim row directly above the body row", () => {
+    // adjacent columns on each row
+    expect(WELL_FRAMES.RIM_R - WELL_FRAMES.RIM_L).toBe(1);
+    expect(WELL_FRAMES.BODY_R - WELL_FRAMES.BODY_L).toBe(1);
+    // body sits one sheet-row (16 frames) below the rim
+    expect(WELL_FRAMES.BODY_L - WELL_FRAMES.RIM_L).toBe(16);
+    expect(WELL_FRAMES.BODY_R - WELL_FRAMES.RIM_R).toBe(16);
+    expect(ROW(WELL_FRAMES.RIM_L)).toBe(13);
+  });
+
+  it("hanging-sign frames live in the sign rows (0-1)", () => {
+    for (const f of Object.values(SIGN_FRAMES)) {
+      expect(ROW(f)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("interior floor/wall/furniture frames are non-negative sheet indices", () => {
+    expect(INTERIOR_FRAMES.FLOOR).toBeGreaterThanOrEqual(0);
+    expect(INTERIOR_FRAMES.WALL.length).toBeGreaterThan(0);
+    for (const f of INTERIOR_FRAMES.WALL) expect(ROW(f)).toBe(0); // back-wall row
+    // SHELF/CABINET/BAR/BARREL are valid in-sheet props for the bigger rooms.
+    for (const f of [INTERIOR_FRAMES.SHELF, INTERIOR_FRAMES.CABINET, INTERIOR_FRAMES.BAR, INTERIOR_FRAMES.BARREL])
+      expect(f).toBeGreaterThanOrEqual(0);
+  });
+
+  it("the bed is a 2x2 block: head row directly above the foot row", () => {
+    expect(FURNITURE_FRAMES.BED_HEAD_R - FURNITURE_FRAMES.BED_HEAD_L).toBe(1);
+    expect(FURNITURE_FRAMES.BED_FOOT_R - FURNITURE_FRAMES.BED_FOOT_L).toBe(1);
+    expect(FURNITURE_FRAMES.BED_FOOT_L - FURNITURE_FRAMES.BED_HEAD_L).toBe(16);
+  });
+
+  it("extra room furniture frames (tables + chairs) are non-negative sheet indices", () => {
+    // New constants added for the enlarged 5×5 / 7×5 rooms.
+    for (const f of [
+      FURNITURE_FRAMES.TABLE_ROUND,
+      FURNITURE_FRAMES.TABLE_SMALL,
+      FURNITURE_FRAMES.CHAIR_L,
+      FURNITURE_FRAMES.CHAIR_R,
+    ]) {
+      expect(f).toBeGreaterThanOrEqual(0);
+    }
+    // CHAIR_L / CHAIR_R are an adjacent pair on the same sheet row.
+    expect(FURNITURE_FRAMES.CHAIR_R - FURNITURE_FRAMES.CHAIR_L).toBe(1);
+  });
+
+  it("lit-lantern frames are an adjacent pair in the lantern/torch col band (12-15), same row", () => {
+    expect(LANTERN_FRAMES.LIT).toBeGreaterThanOrEqual(0);
+    expect(LANTERN_FRAMES.LIT_ALT).toBeGreaterThanOrEqual(0);
+    // manifest: "Lanterns/torches cols 12-15"
+    expect(COL(LANTERN_FRAMES.LIT)).toBeGreaterThanOrEqual(12);
+    expect(COL(LANTERN_FRAMES.LIT)).toBeLessThanOrEqual(15);
+    expect(COL(LANTERN_FRAMES.LIT_ALT)).toBeGreaterThanOrEqual(12);
+    expect(COL(LANTERN_FRAMES.LIT_ALT)).toBeLessThanOrEqual(15);
+    // same sheet row, adjacent columns (pin band + adjacency, not the row)
+    expect(ROW(LANTERN_FRAMES.LIT)).toBe(ROW(LANTERN_FRAMES.LIT_ALT));
+    expect(LANTERN_FRAMES.LIT_ALT - LANTERN_FRAMES.LIT).toBe(1);
+  });
+});
+
+describe("fenceFrame (map wall ring)", () => {
   it("posts at the four map corners", () => {
     expect(fenceFrame(0, 0, MAP_WIDTH, MAP_HEIGHT)).toBe(FENCE_FRAMES.POST);
     expect(fenceFrame(MAP_WIDTH - 1, 0, MAP_WIDTH, MAP_HEIGHT)).toBe(

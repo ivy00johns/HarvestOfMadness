@@ -32,9 +32,11 @@ import {
   cardHeight,
   cardIndexAt,
   cardRect,
+  computeHud,
   feedLineIndexAt,
   feedLineRect,
   pointInRect,
+  unionRect,
 } from "../../src/obs/layout";
 
 describe("contract rule 14 — readable text", () => {
@@ -104,6 +106,68 @@ describe("region geometry — nothing overlaps, everything on screen", () => {
 
   it("compact cards kick in for 4+ agents", () => {
     expect(cardHeight(3)).toBeGreaterThan(cardHeight(4));
+  });
+});
+
+describe("v3 (Wave 2) — transcript panel docks in the left band", () => {
+  it("transcript sits below the party strip and above the feed", () => {
+    const hud = computeHud(HUD_W, HUD_H);
+    // below the party strip
+    expect(hud.transcriptY).toBeGreaterThanOrEqual(hud.partyY + hud.partyH);
+    // above the feed (does not overlap it)
+    expect(hud.transcriptY + hud.transcriptH).toBeLessThanOrEqual(hud.logY);
+  });
+
+  it("transcript shares the left band x and width with the trace panel", () => {
+    const hud = computeHud(HUD_W, HUD_H);
+    expect(hud.transcriptX).toBe(hud.panelX);
+    expect(hud.transcriptW).toBe(hud.panelW);
+    // stays left of the card column
+    expect(hud.transcriptX + hud.transcriptW).toBeLessThanOrEqual(hud.cardX);
+  });
+
+  it("transcript rect uses integer pixel positions", () => {
+    const hud = computeHud(HUD_W, HUD_H);
+    for (const v of [hud.transcriptX, hud.transcriptY, hud.transcriptW, hud.transcriptH]) {
+      expect(Number.isInteger(v)).toBe(true);
+    }
+    expect(hud.transcriptRect).toEqual({
+      x: hud.transcriptX,
+      y: hud.transcriptY,
+      w: hud.transcriptW,
+      h: hud.transcriptH,
+    });
+  });
+
+  it("transcript height is clamped between 60 and 120px", () => {
+    const hud = computeHud(HUD_W, HUD_H);
+    expect(hud.transcriptH).toBeGreaterThanOrEqual(60);
+    expect(hud.transcriptH).toBeLessThanOrEqual(120);
+  });
+});
+
+describe("v3 (Wave 2) — unionRect", () => {
+  it("covers both input rects exactly", () => {
+    const a = { x: 10, y: 10, w: 20, h: 20 };
+    const b = { x: 25, y: 40, w: 30, h: 10 };
+    const u = unionRect(a, b);
+    expect(u.x).toBe(10);
+    expect(u.y).toBe(10);
+    expect(u.x + u.w).toBe(55); // max(30, 55)
+    expect(u.y + u.h).toBe(50); // max(30, 50)
+  });
+
+  it("the union of the party strip and the transcript covers both", () => {
+    const hud = computeHud(HUD_W, HUD_H);
+    const u = unionRect(hud.partyRect, hud.transcriptRect);
+    for (const r of [hud.partyRect, hud.transcriptRect]) {
+      expect(u.x).toBeLessThanOrEqual(r.x);
+      expect(u.y).toBeLessThanOrEqual(r.y);
+      expect(u.x + u.w).toBeGreaterThanOrEqual(r.x + r.w);
+      expect(u.y + u.h).toBeGreaterThanOrEqual(r.y + r.h);
+    }
+    expect(Number.isInteger(u.x) && Number.isInteger(u.y)).toBe(true);
+    expect(Number.isInteger(u.w) && Number.isInteger(u.h)).toBe(true);
   });
 });
 

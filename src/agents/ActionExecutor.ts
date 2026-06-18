@@ -32,6 +32,10 @@ import { chebyshev } from "./Observation";
 export interface ExecutorCognitionHooks {
   onGift(giver: Agent, receiver: Agent, itemId: string): void;
   onTalk(speaker: Agent, listener: Agent, say: string | null): void;
+  /** v3 — object interaction: write memory + apply notice-board diffusion. */
+  onUseObject?(agent: Agent, objectId: string, objectKind: string): void;
+  /** Wave 4c — a cast governance vote: record it + write memory + maybe-resolve. */
+  onVote?(agent: Agent, proposalId: string, support: boolean): void;
 }
 
 export interface ExecutorOpts {
@@ -109,6 +113,23 @@ function isGiftTarget(
     typeof (v as { itemId?: unknown }).itemId === "string" &&
     typeof (v as { qty?: unknown }).qty === "number" &&
     Number.isFinite((v as { qty: number }).qty)
+  );
+}
+
+function isObjectTarget(v: unknown): v is { objectId: string } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { objectId?: unknown }).objectId === "string"
+  );
+}
+
+function isVoteTarget(v: unknown): v is { proposalId: string; support: boolean } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { proposalId?: unknown }).proposalId === "string" &&
+    typeof (v as { support?: unknown }).support === "boolean"
   );
 }
 
@@ -381,6 +402,67 @@ export async function executeAction(
 
       case "WAIT":
         return { ok: true };
+
+      case "USE_OBJECT": {
+        // v3 — find the target object; validate adjacency; apply effect.
+        const target = action.target;
+        // Prefer objectId if provided; fall back to finding any adjacent object.
+        let objectId: string | null = null;
+        if (isObjectTarget(target)) {
+          objectId = target.objectId;
+        }
+
+        // The world must expose objects() + adjacentObject() (v3 extension).
+        const worldExt = world as WorldApi & {
+          objects?: () => import("@contracts/types").WorldObject[];
+          adjacentObject?: (pos: Vec2) => import("@contracts/types").WorldObject | null;
+        };
+
+        if (!worldExt.objects || !worldExt.adjacentObject) {
+          return reject("USE_OBJECT is not supported by this world implementation");
+        }
+
+        const allObjects = worldExt.objects();
+        let obj: import("@contracts/types").WorldObject | null | undefined = null;
+
+        if (objectId !== null) {
+          obj = allObjects.find((o) => o.id === objectId) ?? null;
+          if (!obj) {
+            return reject(`no world object with id "${objectId}"`);
+          }
+          // Validate adjacency for named target.
+          if (!world.isAdjacent(agent.pos, obj.pos)) {
+            return reject(
+              `you are not adjacent to the ${obj.kind} (must stand next to it)`,
+            );
+          }
+        } else {
+          // No objectId — use any adjacent object.
+          obj = worldExt.adjacentObject(agent.pos);
+          if (!obj) {
+            return reject("no usable object adjacent to your position");
+          }
+        }
+
+        // Effect: fire the cognition hook (memory + optional diffusion).
+        opts.cognition?.onUseObject?.(agent, obj.id, obj.kind);
+        return { ok: true };
+      }
+
+      case "VOTE": {
+        // Wave 4c — town-wide governance vote. No adjacency (you vote on a
+        // town proposal, not at a booth) and energy 0 (like EMOTE). The only
+        // precondition is a well-shaped {proposalId, support} target; the
+        // cognition layer owns awareness/open/idempotency. Always ok on a
+        // valid target — a vote on an unknown/closed proposal is silently a
+        // no-op inside the hook (never a hard rejection).
+        const target = action.target;
+        if (!isVoteTarget(target)) {
+          return reject("VOTE needs a {proposalId, support} target");
+        }
+        opts.cognition?.onVote?.(agent, target.proposalId, target.support);
+        return { ok: true };
+      }
 
       default:
         return reject(`unknown action "${String(action.action)}"`);

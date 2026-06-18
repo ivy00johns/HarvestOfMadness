@@ -34,8 +34,9 @@ paths:
         model=$FREELLMAPI_MODEL (default "auto"), messages=[{role:system},
         {role:user}], stream=false. Response model = X-Routed-Via header when
         present, else body.model. latencyMs measured server-side. Server
-        increments a UTC-day decision counter; past DAILY_CEILING returns 429
-        budget_exceeded WITHOUT calling upstream.
+        increments a UTC-day decision counter; if DAILY_CEILING is positive and
+        the counter passes it, returns 429 budget_exceeded WITHOUT calling
+        upstream. DAILY_CEILING unset or <= 0 means UNLIMITED (the default).
       requestBody:
         required: true
         content:

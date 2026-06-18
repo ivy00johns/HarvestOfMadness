@@ -30,6 +30,37 @@ import { CognitionSystem } from "./Cognition";
 /** Scheduler poll granularity (NOT the decision pace — that's the cooldown). */
 const POLL_MS = 100;
 
+// ---------------------------------------------------------------------------
+// Recurring-gathering helpers (pure — exported for unit tests)
+// ---------------------------------------------------------------------------
+
+/**
+ * Should a new gathering be seeded on `day`?
+ * Gatherings recur every 2 days, starting on day 2 (even days).
+ */
+export function shouldSeedGathering(day: number): boolean {
+  return day >= 2 && day % 2 === 0;
+}
+
+/**
+ * Build the SimEvent descriptor for a recurring tavern gathering on `day`.
+ * Host is identified by name; location and description are always the same.
+ */
+export function buildGatheringEvent(
+  day: number,
+  hostName: string,
+  tavernPos: { x: number; y: number },
+): import("@contracts/types").SimEvent {
+  return {
+    id: `party-d${day}`,
+    host: hostName,
+    location: tavernPos,
+    day,
+    phase: "evening",
+    description: "a gathering at the tavern",
+  };
+}
+
 /**
  * §6 cooldown guidance: ~2500ms mock (SCHEDULER_DEFAULTS), ~6000ms+ live —
  * live round-trips through FreeLLMAPI run ~5s, so the mock default would
@@ -82,6 +113,8 @@ export class AgentManager {
   private speed = 1;
   private inFlight = 0;
   private readonly lastDecisionAt = new Map<string, number>();
+  /** v3 — guard so seedEvent only fires once even if start() is called again */
+  private eventSeeded = false;
   /** LIVE-router decisions this UTC date (cost ceiling) — NOT all cycles. */
   private decisionsThisUtcDay = 0;
   private utcDayKey = currentUtcDayKey();
@@ -123,15 +156,62 @@ export class AgentManager {
     }
     // v2 rule 12 — pre-warm plans on every day_advanced (and day 1 now);
     // ensurePlan() inside observation enrichment is the hard guarantee.
+    // v3 recurring — also seed a new gathering on each even day (every 2 days).
     if (this.cognitionSystem) {
       const cognition = this.cognitionSystem;
       this.unsubscribeBus = this.bus.on((e) => {
-        if (e.kind === "day_advanced") cognition.onDayAdvanced();
+        if (e.kind === "day_advanced") {
+          cognition.onDayAdvanced();
+          // Seed a gathering for every even day ≥ 2 (cadence: every 2 days).
+          // Guard against double-seeding (day-2 is already seeded in start()).
+          try {
+            const newDay = e.day;
+            if (shouldSeedGathering(newDay)) {
+              const eventId = `party-d${newDay}`;
+              if (!cognition.events.get(eventId)) {
+                const tavernPos = getWorld().landmarks().find((l) => l.kind === "tavern")?.pos;
+                if (tavernPos) {
+                  const sageAgent =
+                    this.agentList.find((a) => a.persona.id === "sage") ?? this.agentList[0];
+                  if (sageAgent) {
+                    cognition.seedEvent(
+                      buildGatheringEvent(newDay, sageAgent.name, tavernPos),
+                    );
+                  }
+                }
+              }
+            }
+          } catch {
+            /* defensive — recurring seed must never break the day_advanced handler */
+          }
+        }
       });
       cognition.onDayAdvanced();
     }
     for (const agent of this.agentList) {
       void this.loop(agent);
+    }
+
+    // v3 — seed the party event once, after agents are registered
+    if (this.cognitionSystem && this.agentList.length > 0 && !this.eventSeeded) {
+      this.eventSeeded = true;
+      try {
+        const tavernPos = getWorld().landmarks().find((l) => l.kind === "tavern")?.pos;
+        if (tavernPos) {
+          const sageAgent =
+            this.agentList.find((a) => a.persona.id === "sage") ?? this.agentList[0];
+          this.cognitionSystem.seedEvent({
+            id: "party-d2",
+            host: sageAgent.name,
+            location: tavernPos,
+            day: 2,
+            phase: "evening",
+            description: "a gathering at the tavern",
+          });
+        }
+      } catch {
+        /* defensive — event seeding must never break start() */
+      }
     }
   }
 
@@ -279,7 +359,12 @@ export class AgentManager {
     const liveDecision = this.nextDecisionIsLive(agent);
     if (liveDecision) {
       this.decisionsThisUtcDay++;
-      if (this.decisionsThisUtcDay > this.config.maxDecisionsPerDay) {
+      // maxDecisionsPerDay <= 0 means UNLIMITED — the ceiling is opt-in only
+      // (FreeLLMAPI is free, so we never self-throttle by default).
+      if (
+        this.config.maxDecisionsPerDay > 0 &&
+        this.decisionsThisUtcDay > this.config.maxDecisionsPerDay
+      ) {
         this.ceilingReached = true;
         const t = getWorld().time();
         this.bus.emit({

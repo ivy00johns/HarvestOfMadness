@@ -36,4 +36,13 @@ describe("createBudget (UTC-day decision ceiling)", () => {
     now += 12 * 60 * 60 * 1000; // same UTC day, 12h later
     expect(budget.tryConsume()).toBe(false);
   });
+
+  it("a ceiling <= 0 means UNLIMITED: counts usage but never refuses", () => {
+    for (const ceiling of [0, -1]) {
+      const budget = createBudget(ceiling, () => Date.UTC(2026, 5, 11, 12, 0, 0));
+      for (let i = 0; i < 1000; i++) expect(budget.tryConsume()).toBe(true);
+      expect(budget.decisionsToday()).toBe(1000); // still tracked for /api/health
+      expect(budget.ceiling).toBe(ceiling);
+    }
+  });
 });

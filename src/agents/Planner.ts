@@ -27,7 +27,7 @@ import { buildDailyPlanPrompt } from "../llm/prompts";
 import { extractFirstJsonObject } from "../llm/parse";
 
 const PHASE_ORDER: readonly Phase[] = ["morning", "afternoon", "evening", "night"];
-const LANDMARK_KINDS: readonly Landmark["kind"][] = ["shop", "bed", "water", "house"];
+const LANDMARK_KINDS: readonly Landmark["kind"][] = ["shop", "bed", "water", "house", "tavern", "cafe", "office", "park"];
 
 /** Poignancy pinned for plan memories — never LLM-rated (budget rule). */
 export const PLAN_MEMORY_IMPORTANCE = 4;
@@ -43,6 +43,21 @@ export interface PlannerDeps {
   persona: (agentName: string) => string;
   /** last reflections (texts) for the prompt */
   reflections: (agentName: string) => string[];
+  /**
+   * Wave 3a — optional synthesized standing goal. When present it is injected
+   * into the plan prompt (live) and re-weights afternoon/evening branches
+   * (mock). Optional → existing test harnesses are unaffected, and the
+   * coercePlanSteps / 4-step / night-at-bed shape is UNCHANGED.
+   */
+  goalOf?: (agentName: string) => string | null;
+  /**
+   * Wave 5b — optional derived role. When present it is passed to mockDailyPlan
+   * so a purposeful agent visits the building tied to its role (merchant→shop,
+   * socialite→cafe, banker→office, wanderer→park). Optional → harnesses that
+   * leave it undefined get a byte-identical 2-arg / farmer plan. The goal still
+   * wins over the role; the coercePlanSteps fallback stays 2-arg.
+   */
+  roleOf?: (agentName: string) => string | null;
   /** appends a `plan` memory (cognition layer wiring; null on failure) */
   write: (
     agentName: string,
@@ -101,18 +116,23 @@ export class PlannerImpl implements Planner {
 
   private async generate(agentName: string, day: number): Promise<DailyPlan> {
     const persona = this.deps.persona(agentName);
+    // Wave 3a — optional synthesized standing goal (null when absent: existing
+    // callers and test harnesses leave goalOf undefined → byte-identical mock).
+    const goal = this.deps.goalOf?.(agentName) ?? undefined;
+    // Wave 5b — optional derived role (undefined when absent: byte-identical).
+    const role = this.deps.roleOf?.(agentName) ?? undefined;
     let steps: PlanStep[];
     let rawText: string;
 
     if (this.deps.live()) {
-      const live = await this.generateLive(agentName, day, persona);
+      const live = await this.generateLive(agentName, day, persona, goal);
       if (live) {
         ({ steps, rawText } = live);
       } else {
-        ({ steps, rawText } = mockDailyPlan(persona, day)); // garbage -> mock fallback
+        ({ steps, rawText } = mockDailyPlan(persona, day, goal, role)); // garbage -> mock fallback
       }
     } else {
-      ({ steps, rawText } = mockDailyPlan(persona, day));
+      ({ steps, rawText } = mockDailyPlan(persona, day, goal, role));
     }
 
     const plan: DailyPlan = { agentName, day, steps, rawText };
@@ -136,6 +156,7 @@ export class PlannerImpl implements Planner {
     agentName: string,
     day: number,
     persona: string,
+    goal?: string,
   ): Promise<{ steps: PlanStep[]; rawText: string } | null> {
     try {
       this.deps.onLiveCall?.();
@@ -149,6 +170,7 @@ export class PlannerImpl implements Planner {
           day,
           this.deps.reflections(agentName).slice(-PLAN_REFLECTION_WINDOW),
           this.deps.landmarks(),
+          goal,
         ),
         tier: "smart",
       });

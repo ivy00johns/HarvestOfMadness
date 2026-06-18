@@ -1,33 +1,41 @@
 import { describe, expect, it } from "vitest";
+import { MAP_WIDTH } from "@contracts/types";
 import { findPath, type PathGrid } from "../../src/world/Pathfinding";
 import { World } from "../../src/world/World";
+import { WATER_POS } from "../../src/world/map";
 
 function freshWorld(): World {
   return new World();
 }
 
+// The horizontal road spine (path) is open across the map's interior.
+const SPINE_Y = 20;
+// Tiles flanking the pond on its centre row (grass either side of the water).
+const POND_W = { x: WATER_POS.x - 1, y: WATER_POS.y + 1 };
+const POND_E = { x: WATER_POS.x + 4, y: WATER_POS.y + 1 };
+
 describe("Pathfinding (A*, 4-neighbour, Manhattan)", () => {
   it("finds a straight path between open tiles", () => {
     const world = freshWorld();
-    // Path row y=6 is open from x=3..20.
-    const path = world.findPath({ x: 4, y: 6 }, { x: 10, y: 6 });
+    // The y=20 spine is open path from x=1..62 between the vertical roads.
+    const path = world.findPath({ x: 4, y: SPINE_Y }, { x: 10, y: SPINE_Y });
     expect(path).not.toBeNull();
-    expect(path![0]).toEqual({ x: 4, y: 6 });
-    expect(path![path!.length - 1]).toEqual({ x: 10, y: 6 });
+    expect(path![0]).toEqual({ x: 4, y: SPINE_Y });
+    expect(path![path!.length - 1]).toEqual({ x: 10, y: SPINE_Y });
     expect(path!.length).toBe(7); // optimal: start + 6 steps
   });
 
   it("returns a single-element path for from === to", () => {
     const world = freshWorld();
-    expect(world.findPath({ x: 4, y: 6 }, { x: 4, y: 6 })).toEqual([
-      { x: 4, y: 6 },
+    expect(world.findPath({ x: 4, y: SPINE_Y }, { x: 4, y: SPINE_Y })).toEqual([
+      { x: 4, y: SPINE_Y },
     ]);
   });
 
   it("returns null when the target is impassable (water)", () => {
     const world = freshWorld();
-    expect(world.getTile(8, 3)!.type).toBe("water");
-    expect(world.findPath({ x: 4, y: 6 }, { x: 8, y: 3 })).toBeNull();
+    expect(world.getTile(WATER_POS.x, WATER_POS.y)!.type).toBe("water"); // pond corner
+    expect(world.findPath({ x: 4, y: SPINE_Y }, { ...WATER_POS })).toBeNull();
   });
 
   it("returns null when the target is walled off (unreachable)", () => {
@@ -43,15 +51,17 @@ describe("Pathfinding (A*, 4-neighbour, Manhattan)", () => {
 
   it("walks around the pond instead of through it", () => {
     const world = freshWorld();
-    // (6,4) and (10,4) are grass either side of the 3x4 pond (x7..9, y2..5).
-    const path = world.findPath({ x: 6, y: 4 }, { x: 10, y: 4 });
+    // POND_W and POND_E are grass either side of the 4x4 pond.
+    expect(world.getTile(POND_W.x, POND_W.y)!.type).toBe("grass");
+    expect(world.getTile(POND_E.x, POND_E.y)!.type).toBe("grass");
+    const path = world.findPath({ ...POND_W }, { ...POND_E });
     expect(path).not.toBeNull();
     for (const p of path!) {
       expect(world.isPassable(p.x, p.y)).toBe(true);
       expect(world.getTile(p.x, p.y)!.type).not.toBe("water");
     }
-    // Detour is forced: longer than the Manhattan distance of 4.
-    expect(path!.length).toBeGreaterThan(5);
+    // Detour is forced: longer than the Manhattan distance of 5.
+    expect(path!.length).toBeGreaterThan(6);
     // Every step is a 4-neighbour move.
     for (let i = 1; i < path!.length; i++) {
       const dx = Math.abs(path![i].x - path![i - 1].x);
@@ -62,7 +72,7 @@ describe("Pathfinding (A*, 4-neighbour, Manhattan)", () => {
 
   it("returns null for out-of-bounds endpoints", () => {
     const world = freshWorld();
-    expect(world.findPath({ x: -1, y: 0 }, { x: 4, y: 6 })).toBeNull();
-    expect(world.findPath({ x: 4, y: 6 }, { x: 99, y: 6 })).toBeNull();
+    expect(world.findPath({ x: -1, y: 0 }, { x: 4, y: SPINE_Y })).toBeNull();
+    expect(world.findPath({ x: 4, y: SPINE_Y }, { x: MAP_WIDTH + 35, y: SPINE_Y })).toBeNull();
   });
 });

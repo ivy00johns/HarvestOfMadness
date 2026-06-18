@@ -18,6 +18,7 @@ const ACTION_TYPES: readonly ActionType[] = [
   "EMOTE",
   "SLEEP",
   "WAIT",
+  "USE_OBJECT",
 ];
 
 const EMOTIONS: readonly Emotion[] = ["neutral", "happy", "annoyed", "sad", "excited"];
@@ -261,6 +262,14 @@ function isGiftTarget(v: unknown): v is { agentName: string; itemId: string; qty
   );
 }
 
+function isObjectTarget(v: unknown): v is { objectId: string } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { objectId?: unknown }).objectId === "string"
+  );
+}
+
 /**
  * Shape-check `target` per action. Position actions require Vec2; BUY/SELL
  * require {itemId, qty}; TALK_TO requires {agentName}; GIVE_GIFT (v2)
@@ -292,6 +301,9 @@ function validateTarget(
     case "WAIT":
     case "EMOTE":
       return undefined; // target ignored
+    case "USE_OBJECT":
+      // objectId required; fall back gracefully to undefined (executor allows omission)
+      return isObjectTarget(target) ? { objectId: target.objectId } : undefined;
   }
 }
 

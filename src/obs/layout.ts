@@ -12,7 +12,6 @@
  * over computeHud at the design size) so the pure layout unit tests keep
  * asserting the same geometry.
  */
-import { MAP_HEIGHT, MAP_WIDTH, TILE_SIZE } from "@contracts/types";
 
 // -- contract rule 14: every HUD font ≥ 12 logical px ------------------------
 export const FONT_SIZE_SMALL = 12;
@@ -30,6 +29,19 @@ export interface Rect {
 
 export function pointInRect(px: number, py: number, r: Rect): boolean {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+}
+
+/**
+ * Smallest axis-aligned rect covering both inputs. Used to publish a single
+ * click-through guard rect when the party strip AND the transcript panel are
+ * both visible in the left band. Integer pixels (inputs are already integers).
+ */
+export function unionRect(a: Rect, b: Rect): Rect {
+  const x = Math.min(a.x, b.x);
+  const y = Math.min(a.y, b.y);
+  const right = Math.max(a.x + a.w, b.x + b.w);
+  const bottom = Math.max(a.y + a.h, b.y + b.h);
+  return { x, y, w: right - x, h: bottom - y };
 }
 
 // -- fixed design metrics (independent of viewport size) ---------------------
@@ -94,6 +106,19 @@ export interface HudLayout {
   panelCloseRect: Rect;
   panelHeaderH: number;
   panelVisibleTrace: number;
+  /** v3 — live party showcase strip, docked top-left over the trace-panel band */
+  partyX: number;
+  partyY: number;
+  partyW: number;
+  partyH: number;
+  partyRect: Rect;
+  /** v3 (Wave 2) — conversation transcript panel, docked below the party strip
+   *  and above the feed, in the left band */
+  transcriptX: number;
+  transcriptY: number;
+  transcriptW: number;
+  transcriptH: number;
+  transcriptRect: Rect;
   cardHeight(count: number): number;
   cardRect(index: number, count: number): Rect;
   feedLineRect(i: number): Rect;
@@ -122,6 +147,33 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const panelW = Math.max(120, cardX - 8);
   const panelH = Math.max(60, logY - panelY - 4);
   const panelRect: Rect = { x: panelX, y: panelY, w: panelW, h: panelH };
+
+  // v3 — live party showcase: a slim strip (≤96px) overlaying the top of the
+  // trace-panel band (top-left). Reuses panelX/panelY/panelW; height is clamped
+  // so it never grows past the band. The trace panel is transient (opened on
+  // card click), so the strip overlays — never displaces — existing chrome.
+  const partyX = panelX;
+  const partyY = panelY;
+  const partyW = panelW;
+  const partyH = Math.min(96, Math.max(60, panelH));
+  const partyRect: Rect = { x: partyX, y: partyY, w: partyW, h: partyH };
+
+  // v3 (Wave 2) — conversation transcript panel: docked BELOW the party strip
+  // and ABOVE the feed, reusing the left band's x/width. Height is clamped to the
+  // gap actually left above the feed (cap 120px). No min-floor: a 60px floor
+  // would push the bottom past logY and overlap the feed at viewport heights
+  // below ~362px. At the design size this is the full 120px. The trace panel is
+  // transient and overlays this band when open.
+  const transcriptX = panelX;
+  const transcriptY = partyY + partyH + 4;
+  const transcriptW = panelW;
+  const transcriptH = Math.max(0, Math.min(120, logY - transcriptY - 4));
+  const transcriptRect: Rect = {
+    x: transcriptX,
+    y: transcriptY,
+    w: transcriptW,
+    h: transcriptH,
+  };
 
   const cardHeight = (count: number): number => {
     if (count <= 3) return CARD_H_NORMAL;
@@ -180,6 +232,16 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     panelCloseRect: { x: panelX + panelW - 22, y: panelY, w: 22, h: 20 },
     panelHeaderH: PANEL_HEADER_H,
     panelVisibleTrace: PANEL_VISIBLE_TRACE,
+    partyX,
+    partyY,
+    partyW,
+    partyH,
+    partyRect,
+    transcriptX,
+    transcriptY,
+    transcriptW,
+    transcriptH,
+    transcriptRect,
     cardHeight,
     cardRect,
     feedLineRect,
@@ -212,8 +274,11 @@ export const REG_HUD = "hudPanelRect";
 // Legacy 768x576 design-space exports (retained for the pure layout unit tests
 // and any code still importing them). These mirror computeHud at design size.
 // ---------------------------------------------------------------------------
-export const HUD_W = MAP_WIDTH * TILE_SIZE; // 768
-export const HUD_H = MAP_HEIGHT * TILE_SIZE; // 576
+// Legacy fixed design size (768×576) — the v1 logical frame the pure layout
+// unit tests assert. The live HUD docks to the viewport (computeHud), so this
+// design size is independent of the map dimensions.
+export const HUD_W = 768; // v1 design frame: 24 tiles × 32px (frozen)
+export const HUD_H = 576; // v1 design frame: 18 tiles × 32px (frozen)
 
 const DESIGN = computeHud(HUD_W, HUD_H);
 

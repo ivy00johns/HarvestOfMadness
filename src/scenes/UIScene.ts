@@ -31,6 +31,7 @@ import { toCssColor } from "../obs/EventLog";
 import {
   buildAgentCard,
   formatAffinityRow,
+  formatNeedsRow,
   formatTraceEntry,
   formatTraceSummary,
   personaText,
@@ -45,8 +46,14 @@ import {
   REG_HUD,
   computeHud,
   pointInRect,
+  unionRect,
   type HudLayout,
 } from "../obs/layout";
+import { formatCognitionMeter } from "../obs/CognitionMeter";
+import { buildPartyPanel } from "../obs/PartyPanel";
+import { buildGovernancePanel } from "../obs/GovernancePanel";
+import { buildTranscript, conversationFromEvent } from "../obs/Transcript";
+import type { Conversation } from "@contracts/types";
 import type { ObsConnection } from "../obs/wiring";
 import { connectObservability } from "../obs/wiring";
 import { startAgents } from "../agents/bootstrap";
@@ -115,6 +122,7 @@ interface CardUi {
   energyText: Phaser.GameObjects.Text;
   plan: Phaser.GameObjects.Text;
   goal: Phaser.GameObjects.Text;
+  needs: Phaser.GameObjects.Text;
   thought: Phaser.GameObjects.Text | null;
   action: Phaser.GameObjects.Text;
   relRows: Phaser.GameObjects.Text[];
@@ -140,6 +148,42 @@ export class UIScene extends Phaser.Scene {
   private budgetBadge!: Phaser.GameObjects.Text;
   private pauseBtn!: Phaser.GameObjects.Text;
   private speedBtns = new Map<number, Phaser.GameObjects.Text>();
+  /** v3 — cognition-cost tally, right-aligned in the badge row */
+  private cogMeter!: Phaser.GameObjects.Text;
+
+  // v3 — live party showcase strip (top-left, over the trace-panel band)
+  private partyBg: Phaser.GameObjects.Rectangle | null = null;
+  private partyTitle: Phaser.GameObjects.Text | null = null;
+  private partyMeta: Phaser.GameObjects.Text | null = null;
+  private partyKnow: Phaser.GameObjects.Text | null = null;
+  private partyInvited: Phaser.GameObjects.Text | null = null;
+  private partyArrived: Phaser.GameObjects.Text | null = null;
+  /** Whether the party strip is currently shown — gates HUD click-through so
+   *  clicks on the visible strip don't pan/follow the world map underneath. */
+  private partyVisible = false;
+  /** arrivals accumulated from the bus (event_arrived), keyed by eventId.
+   *  Scene state — survives relayout(); arrivals live in Cognition, not EventBoard. */
+  private readonly arrivedByEvent = new Map<string, Set<string>>();
+
+  // Wave 4c — live governance showcase strip (shares the party band; the party
+  // event takes priority when both are present).
+  private govBg: Phaser.GameObjects.Rectangle | null = null;
+  private govTitle: Phaser.GameObjects.Text | null = null;
+  private govMeta: Phaser.GameObjects.Text | null = null;
+  private govTally: Phaser.GameObjects.Text | null = null;
+  /** Whether the governance strip is currently shown — gates HUD click-through. */
+  private govVisible = false;
+
+  // v3 (Wave 2) — conversation transcript panel (left band, below the party strip)
+  private transcriptBg: Phaser.GameObjects.Rectangle | null = null;
+  private transcriptTitle: Phaser.GameObjects.Text | null = null;
+  private transcriptRows: Phaser.GameObjects.Text[] = [];
+  /** rows the transcript panel can show (one Text per line) */
+  private static readonly TRANSCRIPT_MAX_LINES = 6;
+  /** latest conversation parsed off the bus, rendered when no panel overlays it */
+  private latestConversation: Conversation | null = null;
+  /** Whether the transcript panel is currently shown — gates HUD click-through. */
+  private transcriptVisible = false;
 
   // event feed
   private logTexts: Phaser.GameObjects.Text[] = [];
@@ -170,6 +214,9 @@ export class UIScene extends Phaser.Scene {
     this.buildTopBar();
     this.buildBadgeRow();
     this.buildFeedChrome();
+    this.buildPartyChrome();
+    this.buildGovernanceChrome();
+    this.buildTranscriptChrome();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
       this.onPointerDown(p.x, p.y),
     );
@@ -215,17 +262,59 @@ export class UIScene extends Phaser.Scene {
     this.panelEntryTexts = [];
     this.panelTraceEntries = [];
     this.selectedAgent = null;
+    // removeAll(true) destroyed the party strip objects — drop the stale refs;
+    // buildPartyChrome() recreates them. arrivedByEvent is sim state, kept.
+    this.partyBg = null;
+    this.partyTitle = null;
+    this.partyMeta = null;
+    this.partyKnow = null;
+    this.partyInvited = null;
+    this.partyArrived = null;
+    // Wave 4c — governance strip objects were destroyed too; drop stale refs.
+    this.govBg = null;
+    this.govTitle = null;
+    this.govMeta = null;
+    this.govTally = null;
+    this.govVisible = false;
+    // removeAll(true) destroyed the transcript chrome too — drop the stale refs;
+    // buildTranscriptChrome() recreates them. latestConversation is sim state, kept.
+    this.transcriptBg = null;
+    this.transcriptTitle = null;
+    this.transcriptRows = [];
+    this.transcriptVisible = false;
     this.buildTopBar();
     this.buildBadgeRow();
     this.buildFeedChrome();
+    this.buildPartyChrome();
+    this.buildGovernanceChrome();
+    this.buildTranscriptChrome();
     this.refreshAll();
     if (reopen) this.toggleTracePanel(reopen);
     this.publishPanelRect();
   }
 
-  /** WorldScene reads this rect to ignore camera clicks over the open panel. */
+  /** WorldScene reads this rect to ignore camera clicks over the open panel.
+   *  Priority: an open trace panel (covers the whole band) > the visible left-band
+   *  chrome (party strip and/or transcript panel, combined via unionRect) >
+   *  nothing. Without these cases, clicks on the visible chrome fall through and
+   *  pan/follow the world map underneath. */
   private publishPanelRect(): void {
-    this.registry.set(REG_HUD, this.selectedAgent ? this.hud.panelRect : null);
+    let rect = null;
+    if (this.selectedAgent) {
+      rect = this.hud.panelRect;
+    } else {
+      // The party strip and the governance strip share the same band
+      // (hud.partyRect); union it with the transcript rect when visible.
+      const bandVisible = this.partyVisible || this.govVisible;
+      if (bandVisible && this.transcriptVisible) {
+        rect = unionRect(this.hud.partyRect, this.hud.transcriptRect);
+      } else if (bandVisible) {
+        rect = this.hud.partyRect;
+      } else if (this.transcriptVisible) {
+        rect = this.hud.transcriptRect;
+      }
+    }
+    this.registry.set(REG_HUD, rect);
   }
 
   // -- wiring -----------------------------------------------------------------
@@ -236,10 +325,12 @@ export class UIScene extends Phaser.Scene {
 
     this.unsubscribers.push(this.feed.attach(conn.bus));
     this.unsubscribers.push(conn.bus.on((e) => this.onBusEvent(e)));
-    // sticky states emitted before we attached: budget latch + kill-switch
+    // sticky states emitted before we attached: budget latch + kill-switch,
+    // plus pre-attach event_arrived so the party strip counts early arrivals.
     for (const e of conn.bus.recent()) {
       if (e.kind === "budget_reached") this.budgetReached = true;
       this.killSwitch.apply(e.kind);
+      this.accumulateArrival(e);
     }
     this.unsubscribers.push(getTimeSystem().onChange(() => this.refreshTopBar()));
     this.time.addEvent({
@@ -253,7 +344,31 @@ export class UIScene extends Phaser.Scene {
   private onBusEvent(e: WorldEvent): void {
     if (e.kind === "budget_reached") this.budgetReached = true;
     if (this.killSwitch.apply(e.kind)) this.renderBadgeRow();
+    this.accumulateArrival(e);
+    if (e.kind === "conversation") {
+      const conv = conversationFromEvent(e);
+      if (conv) this.latestConversation = conv;
+    }
     this.markDirty();
+  }
+
+  /**
+   * Accumulate party arrivals from the bus. `event_arrived` carries
+   * `{ eventId, agentName }`; arrived state lives in Cognition (not EventBoard),
+   * so the strip's arrived count is sourced here. Defensive on payload shape.
+   */
+  private accumulateArrival(e: WorldEvent): void {
+    if (e.kind !== "event_arrived") return;
+    const p = e.payload as { eventId?: unknown; agentName?: unknown } | undefined;
+    const eventId = typeof p?.eventId === "string" ? p.eventId : undefined;
+    const agentName = typeof p?.agentName === "string" ? p.agentName : undefined;
+    if (!eventId || !agentName) return;
+    let set = this.arrivedByEvent.get(eventId);
+    if (!set) {
+      set = new Set<string>();
+      this.arrivedByEvent.set(eventId, set);
+    }
+    set.add(agentName);
   }
 
   /** Trailing ~150ms throttle: many events coalesce into one re-render. */
@@ -270,8 +385,12 @@ export class UIScene extends Phaser.Scene {
     if (this.destroyed) return;
     this.refreshTopBar();
     this.renderBadgeRow();
+    this.renderCogMeter();
     this.renderFeed();
     this.renderCards();
+    this.renderParty();
+    this.renderGovernance();
+    this.renderTranscript();
     if (this.selectedAgent) this.rebuildPanelEntries();
   }
 
@@ -279,6 +398,7 @@ export class UIScene extends Phaser.Scene {
   private refreshLive(): void {
     if (this.destroyed) return;
     this.refreshTopBar();
+    this.renderCogMeter();
     const agents = this.conn?.controls.agents() ?? [];
     for (const agent of agents) {
       const ui = this.cards.get(agent.name);
@@ -409,7 +529,25 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(DEPTH_BADGE)
       .setVisible(false);
+    // v3 — cognition-cost tally, right-aligned in the badge row, distinct from
+    // the decision-layer model/latency/tokens shown on agent cards.
+    this.cogMeter = this.add
+      .text(this.hud.w - 6, this.hud.badgeRowY + 3, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        color: COLOR_DIM,
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH_BADGE);
     this.renderBadgeRow();
+    this.renderCogMeter();
+  }
+
+  /** Cognition LLM spend tally (badge row, right-aligned). Mock → zeroed. */
+  private renderCogMeter(): void {
+    if (this.destroyed || !this.cogMeter) return;
+    const metrics = this.conn?.controls.cognitionMetrics?.() ?? null;
+    this.cogMeter.setText(formatCognitionMeter(metrics).text);
   }
 
   /** Kill-switch pinned top-left (rule 13); PAUSED + BUDGET badges follow it. */
@@ -527,6 +665,282 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
+  // -- live party showcase strip --------------------------------------------------
+
+  /**
+   * Build the standing party strip chrome (backing rect + texts) at
+   * hud.partyRect. Starts hidden; renderParty() shows it when there is a
+   * showcase event. No nested containers (Phaser 4.1 gotcha).
+   */
+  private buildPartyChrome(): void {
+    const r = this.hud.partyRect;
+    this.partyBg = this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
+      .setDepth(DEPTH_HUD)
+      .setVisible(false);
+    const mk = (
+      dy: number,
+      style: Phaser.Types.GameObjects.Text.TextStyle,
+    ): Phaser.GameObjects.Text =>
+      this.add
+        .text(r.x + 8, r.y + dy, "", style)
+        .setDepth(DEPTH_HUD_TEXT)
+        .setVisible(false);
+
+    this.partyTitle = mk(5, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_BASE,
+      fontStyle: "bold",
+      color: COLOR_GOAL,
+    });
+    this.partyMeta = mk(22, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_DIM,
+    });
+    this.partyKnow = mk(40, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_TEXT,
+    });
+    this.partyInvited = mk(58, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_PLAN,
+    });
+    this.partyArrived = this.add
+      .text(r.x + r.w - 8, r.y + 58, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        color: COLOR_OK,
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH_HUD_TEXT)
+      .setVisible(false);
+  }
+
+  /**
+   * Render the live party showcase. Reads the soonest non-past event via the
+   * optional wiring seams; hides the strip when there is no event (mock/absent)
+   * or while a trace panel is open (the panel overlays the same band). Event-
+   * driven via markDirty()→refreshAll() throttle — not per-frame.
+   */
+  private renderParty(): void {
+    if (this.destroyed || !this.partyBg) return;
+    const controls = this.conn?.controls;
+    const eventId = controls?.showcaseEventId?.() ?? null;
+    const snap = eventId ? controls?.attendanceSnapshot?.(eventId) : undefined;
+    // Hide while a card's trace panel is open (it occupies the same band).
+    if (!snap || this.selectedAgent) {
+      this.setPartyVisible(false);
+      return;
+    }
+    const town = controls?.agents().length ?? 0;
+    const arrived = (eventId && this.arrivedByEvent.get(eventId)) || new Set<string>();
+    const view = buildPartyPanel(snap, arrived, town);
+
+    this.partyTitle?.setText(this.clip(`★ ${view.description}`, 36));
+    this.partyMeta?.setText(
+      this.clip(
+        `host ${view.host} · day ${snap.event.day} ${snap.event.phase}`,
+        38,
+      ),
+    );
+    this.partyKnow?.setText(view.knowLine);
+    this.partyInvited?.setText(`invited: ${view.invitedCount}`);
+    this.partyArrived?.setText(`arrived: ${view.arrivedCount}`);
+    this.setPartyVisible(true);
+  }
+
+  private setPartyVisible(visible: boolean): void {
+    this.partyVisible = visible;
+    this.partyBg?.setVisible(visible);
+    this.partyTitle?.setVisible(visible);
+    this.partyMeta?.setVisible(visible);
+    this.partyKnow?.setVisible(visible);
+    this.partyInvited?.setVisible(visible);
+    this.partyArrived?.setVisible(visible);
+    // Keep the click-through guard in sync with what's actually drawn.
+    this.publishPanelRect();
+  }
+
+  // -- live governance showcase strip (Wave 4c) ----------------------------------
+
+  /**
+   * Build the standing governance strip chrome (backing rect + texts) at
+   * hud.partyRect — it shares the party band, shown only when there is no party
+   * event to display. Starts hidden; renderGovernance() shows it when there is
+   * an open town proposal. No nested containers (Phaser 4.1 gotcha).
+   */
+  private buildGovernanceChrome(): void {
+    const r = this.hud.partyRect;
+    this.govBg = this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
+      .setDepth(DEPTH_HUD)
+      .setVisible(false);
+    const mk = (
+      dy: number,
+      style: Phaser.Types.GameObjects.Text.TextStyle,
+    ): Phaser.GameObjects.Text =>
+      this.add
+        .text(r.x + 8, r.y + dy, "", style)
+        .setDepth(DEPTH_HUD_TEXT)
+        .setVisible(false);
+    this.govTitle = mk(5, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_BASE,
+      fontStyle: "bold",
+      color: COLOR_PLAN,
+    });
+    this.govMeta = mk(22, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_DIM,
+    });
+    this.govTally = mk(40, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_TEXT,
+    });
+  }
+
+  /**
+   * Render the live governance showcase. Reads the current proposal tally via
+   * the optional wiring seam. Hidden when there is no proposal, while a trace
+   * panel is open, or while the party strip occupies the band (the party event
+   * wins). Event-driven via markDirty()→refreshAll() throttle — not per-frame.
+   */
+  private renderGovernance(): void {
+    if (this.destroyed || !this.govBg) return;
+    const controls = this.conn?.controls;
+    const tally = controls?.governanceTally?.();
+    // The party strip owns the band when an event is showing; only show
+    // governance when neither the party strip nor a trace panel is up.
+    if (!tally || this.selectedAgent || this.partyVisible) {
+      this.setGovernanceVisible(false);
+      return;
+    }
+    const town = controls?.agents().length ?? 0;
+    const view = buildGovernancePanel(tally, town);
+    const verb =
+      view.status === "adopted"
+        ? "ADOPTED"
+        : view.status === "rejected"
+          ? "REJECTED"
+          : "town rule up for a vote";
+    this.govTitle?.setText(this.clip(`⚖ ${view.ruleText}`, 40));
+    this.govMeta?.setText(this.clip(`by ${view.proposer} · ${verb}`, 40));
+    this.govTally?.setText(view.tallyLine);
+    this.setGovernanceVisible(true);
+  }
+
+  private setGovernanceVisible(visible: boolean): void {
+    this.govVisible = visible;
+    this.govBg?.setVisible(visible);
+    this.govTitle?.setVisible(visible);
+    this.govMeta?.setVisible(visible);
+    this.govTally?.setVisible(visible);
+    // Keep the click-through guard in sync with what's actually drawn.
+    this.publishPanelRect();
+  }
+
+  // -- conversation transcript panel ---------------------------------------------
+
+  /**
+   * Build the standing transcript panel chrome (backing rect + bold title +
+   * fixed row of wrapped Text lines) at hud.transcriptRect. Starts hidden;
+   * renderTranscript() fills + shows it when there is a conversation to display
+   * and no trace panel overlays the band. No nested containers (Phaser 4.1).
+   */
+  private buildTranscriptChrome(): void {
+    const r = this.hud.transcriptRect;
+    this.transcriptBg = this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
+      .setDepth(DEPTH_HUD)
+      .setVisible(false);
+    this.transcriptTitle = this.add
+      .text(r.x + 8, r.y + 4, "Conversation", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        color: COLOR_TEXT,
+      })
+      .setDepth(DEPTH_HUD_TEXT)
+      .setVisible(false);
+    this.transcriptRows = [];
+    const rowTop = r.y + 22;
+    const rowH = FONT_SIZE_SMALL + 2;
+    for (let i = 0; i < UIScene.TRANSCRIPT_MAX_LINES; i++) {
+      this.transcriptRows.push(
+        this.add
+          .text(r.x + 8, rowTop + i * rowH, "", {
+            fontFamily: HUD_FONT,
+            fontSize: PX_SMALL,
+            color: COLOR_TEXT,
+            wordWrap: { width: r.w - 16 },
+          })
+          .setDepth(DEPTH_HUD_TEXT)
+          .setVisible(false),
+      );
+    }
+  }
+
+  /**
+   * Render the latest conversation into the transcript panel. Hides the panel
+   * when there is no conversation (empty) OR while a trace panel is open (it
+   * overlays the same left band). Each line shows "[speaker]: text" with the two
+   * participants' lines in alternating colors. Event-driven via the markDirty()
+   * → refreshAll() throttle — not per-frame.
+   */
+  private renderTranscript(): void {
+    if (this.destroyed || !this.transcriptBg) return;
+    const view = buildTranscript(
+      this.latestConversation,
+      UIScene.TRANSCRIPT_MAX_LINES,
+      this.transcriptLineMaxChars(),
+    );
+    if (view.empty || this.selectedAgent) {
+      this.setTranscriptVisible(false);
+      return;
+    }
+    const [p0] = view.participants;
+    for (let i = 0; i < this.transcriptRows.length; i++) {
+      const row = this.transcriptRows[i];
+      const line = view.lines[i];
+      if (line) {
+        row.setText(this.clip(`[${line.speaker}]: ${line.text}`, 64));
+        row.setColor(line.speaker === p0 ? COLOR_GOAL : COLOR_PLAN);
+        row.setVisible(true);
+      } else {
+        if (row.text !== "") row.setText("");
+        row.setVisible(false);
+      }
+    }
+    this.setTranscriptVisible(true);
+  }
+
+  /** Rough char budget for a transcript row at 12px monospace in the panel. */
+  private transcriptLineMaxChars(): number {
+    return Math.max(20, Math.floor((this.hud.transcriptW - 16) / 7.5));
+  }
+
+  private setTranscriptVisible(visible: boolean): void {
+    this.transcriptVisible = visible;
+    this.transcriptBg?.setVisible(visible);
+    this.transcriptTitle?.setVisible(visible);
+    if (!visible) {
+      for (const row of this.transcriptRows) row.setVisible(false);
+    }
+    // Keep the click-through guard in sync with what's actually drawn.
+    this.publishPanelRect();
+  }
+
   // -- agent cards ----------------------------------------------------------------
 
   private renderCards(): void {
@@ -629,6 +1043,9 @@ export class UIScene extends Phaser.Scene {
       energyText: text(x + cardW - 6, rowGold, { ...small }).setOrigin(1, 0),
       plan: text(x + 6, rowPlan, { ...small, color: COLOR_PLAN }),
       goal: text(x + 6, rowGoal, { ...small, color: COLOR_GOAL }),
+      // Wave 3a — intrinsic-drive bars, right-aligned on the goal row; empty
+      // when the agent carries no needs vector (additive, never overlaps text).
+      needs: text(x + cardW - 6, rowGoal, { ...small, color: COLOR_DIM }).setOrigin(1, 0),
       thought: compact
         ? null
         : text(x + 6, rowThought, {
@@ -648,7 +1065,9 @@ export class UIScene extends Phaser.Scene {
 
   private updateCard(ui: CardUi, card: ObsAgentCardModel): void {
     if (typeof card.color === "number") ui.swatch.setFillStyle(card.color, 1);
-    ui.name.setText(this.clip(card.name, 22));
+    // Wave 4a — append the derived role to the name only when non-default.
+    const roleTag = card.role && card.role !== "farmer" ? ` · ${card.role}` : "";
+    ui.name.setText(this.clip(`${card.name}${roleTag}`, 22));
     ui.fsm.setText(card.fsm).setColor(FSM_COLORS[card.fsm] ?? "#8a8f98");
     ui.gold.setText(`${card.gold}g`);
     this.updateEnergy(ui, card.energy);
@@ -656,6 +1075,8 @@ export class UIScene extends Phaser.Scene {
     // v2: current plan step ("PLAN: water east plot") — hidden when absent
     ui.plan.setText(card.planStep ? this.clip(`PLAN: ${card.planStep}`, 30) : "");
     ui.goal.setText(this.clip(`goal: ${card.goal ?? "—"}`, 30));
+    // Wave 3a — intrinsic-drive bars (empty when the agent has no needs vector)
+    ui.needs.setText(card.needs ? formatNeedsRow(card.needs) : "");
     // ~30 wrapped chars/line at 12px in cardW-12 → clip to guarantee ≤2 lines
     ui.thought?.setText(card.lastThought ? this.clip(card.lastThought, 58) : "…");
 
@@ -734,6 +1155,8 @@ export class UIScene extends Phaser.Scene {
       this.expandedTurnIds.add(first.turnId);
       this.rebuildPanelEntries();
     }
+    this.renderParty(); // hide the party strip behind the open panel
+    this.renderTranscript(); // hide the transcript panel behind the open panel
     this.publishPanelRect();
   }
 
@@ -784,6 +1207,8 @@ export class UIScene extends Phaser.Scene {
     this.panelTraceEntries = [];
     for (const obj of this.panelObjects) obj.destroy();
     this.panelObjects = [];
+    this.renderParty(); // restore the party strip once the panel closes
+    this.renderTranscript(); // restore the transcript panel once the panel closes
     this.publishPanelRect();
   }
 

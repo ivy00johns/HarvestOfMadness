@@ -11,6 +11,7 @@ import type {
   AgentFsmState,
   DecisionTraceEntry,
   InventoryEntry,
+  NeedState,
   Vec2,
 } from "@contracts/types";
 import { parseAgentAction } from "../llm/parse";
@@ -52,6 +53,10 @@ export interface InspectableAgent {
   color?: number;
   /** current DailyPlan step text */
   planStep?: string | null;
+  /** Wave 3a — intrinsic drive vector for the card's needs row */
+  needs?: NeedState | null;
+  /** Wave 4a — derived role tag (one of ROLE_VOCABULARY) */
+  role?: string;
   /**
    * relationship rows — tolerated shapes: contract `{name, affinity, summary}`
    * arrays, RelationshipSummary `{otherName, affinity, summary}` arrays, or
@@ -155,6 +160,34 @@ export function formatAffinityRow(
   return `${padded} ${bar} ${sign}`;
 }
 
+/** Bar slots per drive in the card needs row. */
+export const NEEDS_BAR_SLOTS = 4;
+
+/**
+ * One compact needs row: "E▓▓░░ W▓░░░ S▓▓▓░ N▓░░░ P▓▓░░" — five 4-slot bars,
+ * one per drive in DRIVE_KEYS order (Energy/Wealth/Social/Novelty/Purpose),
+ * higher = more filled. Reuses the affinity-bar idiom (single Text object).
+ * Pure + defensive: non-finite drive values render as empty bars.
+ */
+export function formatNeedsRow(n: NeedState): string {
+  const drives: [string, number][] = [
+    ["E", n?.energy ?? 0],
+    ["W", n?.wealth ?? 0],
+    ["S", n?.social ?? 0],
+    ["N", n?.novelty ?? 0],
+    ["P", n?.purpose ?? 0],
+  ];
+  return drives
+    .map(([label, raw]) => {
+      const v = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(1, raw)) : 0;
+      let filled = Math.round(v * NEEDS_BAR_SLOTS);
+      if (v > 0 && filled === 0) filled = 1;
+      const bar = "▓".repeat(filled) + "░".repeat(NEEDS_BAR_SLOTS - filled);
+      return `${label}${bar}`;
+    })
+    .join(" ");
+}
+
 /**
  * Build the contract card for one agent. Thought/say come from defensively
  * re-parsing the newest trace entry's raw response (the trace stores raw
@@ -197,6 +230,8 @@ export function buildAgentCard(agent: InspectableAgent): ObsAgentCardModel {
 
   if (typeof agent.color === "number") card.color = agent.color;
   if (agent.planStep !== undefined) card.planStep = agent.planStep;
+  if (agent.needs) card.needs = agent.needs;
+  if (typeof agent.role === "string" && agent.role.length > 0) card.role = agent.role;
   if (relationships.length > 0) card.relationships = relationships;
   if (typeof agent.memoryCount === "number") card.memoryCount = agent.memoryCount;
   if (typeof agent.reflectionCount === "number") {

@@ -38,7 +38,7 @@ export function findPath(grid: PathGrid, from: Vec2, to: Vec2): Vec2[] | null {
   const gScore = new Map<number, number>([[startKey, 0]]);
   const cameFrom = new Map<number, number>();
   const closed = new Set<number>();
-  // Small map (24x18) — a sorted-insert array open list is plenty.
+  // Small map (64x40) — a linear-scan array open list is plenty.
   const open: { k: number; f: number; pos: Vec2 }[] = [
     { k: startKey, f: manhattan(from, to), pos: { ...from } },
   ];

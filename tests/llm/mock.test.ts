@@ -15,6 +15,7 @@ const ALL_ACTIONS: ActionType[] = [
   "TALK_TO",
   "SLEEP",
   "WAIT",
+  "USE_OBJECT",
 ];
 
 const BED: Vec2 = { x: 2, y: 2 };

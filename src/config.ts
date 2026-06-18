@@ -5,7 +5,7 @@
  * Contract-authoritative values (map size, tile size, crop tables) live in
  * @contracts/types — re-exported here for convenience.
  */
-import type { Emotion, TileType } from "@contracts/types";
+import type { Emotion, Phase, TileType } from "@contracts/types";
 
 export {
   MAP_WIDTH,
@@ -17,20 +17,54 @@ export {
 } from "@contracts/types";
 
 /**
- * Default spectator camera zoom. The map is small (768x576) so on a large
- * fullscreen canvas we frame the farm at >1x by default; the spectator can
- * mouse-wheel between CAMERA_ZOOM_MIN and CAMERA_ZOOM_MAX.
+ * Default spectator camera zoom. The map is 64×40 tiles (2048×1280 world px).
+ * At DEFAULT_ZOOM=1.5 a typical 1440-wide viewport shows ~24 tiles across —
+ * agents and buildings are readable. GAME_ZOOM is kept as an alias so existing
+ * code that imports it still compiles; new code should prefer DEFAULT_ZOOM.
  */
-export const GAME_ZOOM = 1.75;
+export const DEFAULT_ZOOM = 1.5;
+/** @deprecated prefer DEFAULT_ZOOM */
+export const GAME_ZOOM = DEFAULT_ZOOM;
 
-/** Spectator camera zoom clamp (mouse wheel). */
-export const CAMERA_ZOOM_MIN = 0.5;
+/**
+ * Spectator camera zoom clamp.
+ * MIN is set near the fit-to-map value for the 64×40 world on typical viewports
+ * (~0.6) so the player can zoom out to see the whole town without endless void.
+ * MAX stays at 3 — good for close-up inspection.
+ */
+export const CAMERA_ZOOM_MIN = 0.6;
 export const CAMERA_ZOOM_MAX = 3;
-/** Multiplicative wheel zoom step. */
-export const CAMERA_ZOOM_STEP = 1.1;
 
-/** Keyboard pan speed (world px/sec at zoom 1, scaled by 1/zoom). */
-export const CAMERA_PAN_SPEED = 480;
+/**
+ * Wheel zoom sensitivity (exponential).  Formula: factor = exp(-dy * S).
+ * At S=0.0015 a single mouse-wheel notch (dy≈±100) yields factor≈1.16 (zoom in)
+ * or ≈0.86 (zoom out) — noticeable but not jarring.  A small trackpad tick
+ * (dy≈±10) gives ≈1.015 — imperceptibly smooth.
+ * The old CAMERA_ZOOM_STEP (fixed ×1.1 per ANY wheel event) is removed; this
+ * helper scales proportionally to delta magnitude so fast scrolls still move
+ * quickly but single notches are gentle.
+ */
+export const ZOOM_WHEEL_SENSITIVITY = 0.0015;
+
+/**
+ * Pure helper — delta-proportional zoom factor for a wheel event.
+ * dy > 0  → scroll down → zoom OUT (factor < 1).
+ * dy < 0  → scroll up  → zoom IN  (factor > 1).
+ * dy = 0  → no change  (factor = 1).
+ * Tunable via the sensitivity constant; safe to unit-test with no Phaser dep.
+ */
+export function zoomFactorForWheelDelta(
+  dy: number,
+  sensitivity = ZOOM_WHEEL_SENSITIVITY,
+): number {
+  return Math.exp(-dy * sensitivity);
+}
+
+/** Keyboard pan speed (world px/sec at zoom 1, scaled by 1/zoom).
+ *  Raised from 480→720 for the larger 64×40 map so panning the full width
+ *  still takes a comfortable ~3s at zoom 1.
+ */
+export const CAMERA_PAN_SPEED = 720;
 
 /** Camera follow lerp (per-axis) when tracking a clicked agent. */
 export const CAMERA_FOLLOW_LERP = 0.12;
@@ -45,6 +79,7 @@ export const TILE_COLORS: Record<TileType, number> = {
   water: 0x2a6fb0,
   tilled: 0x4a2f1d, // dark brown
   soil: 0x8a6a45,
+  floor: 0x8b6f47, // warm wood — walkable indoor floor
   building: 0x6e5340,
   bedTile: 0xc06080,
   shopTile: 0xd8a83c,
@@ -105,3 +140,32 @@ export const EMOTION_STYLE: Record<
   excited: { symbol: "★", color: 0xffa726, cssColor: "#ffa726" },
   neutral: { symbol: "·", color: 0xe0e0e0, cssColor: "#e0e0e0" },
 };
+
+// ---------------------------------------------------------------------------
+// v3 (Wave 3b) — day/night ambient lighting palette (pure data; WorldScene
+// paints a single full-map overlay Rectangle tinted per phase). The night
+// alpha is HARD-CAPPED at 0.40 for legibility (labels use white+stroke3 so
+// they survive the wash; trees/bubbles render above the overlay and stay
+// bright). afternoon is a transparent no-op (full midday daylight).
+// ---------------------------------------------------------------------------
+
+/** A full-map ambient overlay color + opacity for one phase of the day. */
+export interface PhaseTint {
+  color: number;
+  alpha: number;
+}
+
+export const PHASE_TINTS: Record<Phase, PhaseTint> = {
+  morning: { color: 0x9fb8d8, alpha: 0.12 }, // cool dawn blue, light
+  afternoon: { color: 0xffffff, alpha: 0.0 }, // midday no-op
+  evening: { color: 0xff9a3c, alpha: 0.22 }, // warm amber
+  night: { color: 0x1b2a55, alpha: 0.4 }, // cool blue, HARD CAP 0.40
+};
+
+/** Pure lookup of the ambient overlay for a phase. */
+export function phaseTint(phase: Phase): PhaseTint {
+  return PHASE_TINTS[phase];
+}
+
+/** Cross-fade duration when the phase changes (instant on first apply). */
+export const PHASE_TINT_TWEEN_MS = 400;
