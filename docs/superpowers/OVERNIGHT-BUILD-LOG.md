@@ -47,6 +47,15 @@ Get to Smallville-level: **city size, character density, structure details, item
 - **03:2x** Mortality (15a69bd): death/suicide/murder, deterministic + conservative. 1065 green.
 - **03:3x** Visual confirmation: full 96×64 town renders with 26 agents + lush foliage + dirt roads (artifacts/overnight-full-town.png). No regressions.
 
+## SESSION — morning feedback round 3 (2026-06-18, the STRUCTURAL gap)
+User (rightly furious): "houses still same design/size, no stores with aisles or larger buildings, everything is a grid, FAR from Smallville." Studied the_ville MAP DATA (not just the renderer): **140×100 tiles, ~1360 interior-furniture tiles in LARGE multi-room buildings** — HOM had ~150 in tiny identical rooms (~9× less density, no big buildings). Key realization: **furniture is render-only (doesn't block pathfinding), so rooms can be packed freely.** Shipped + visually verified (artifacts not committed; see verify-final-7):
+- **Bigger civic buildings** (07cc453): supermarket 8×6 (was 5×5), tavern 9×6, cafe 7×5, office 7×6, school 9×6 — doors + central tavern unchanged so ≤40 reachability holds.
+- **Packed interiors** (07cc453): supermarket = shelf AISLES; tavern = bar wall + table grid + barrels; cafe = counter + tables; school = bookshelf wall + DESK ROWS; office = cabinet wall + desks; houses = bed + dining + storage + plant, walls filled.
+- **Initials** (07cc453): in-world labels → "GG" not full names (killed the cluster blur).
+- **Tree-on-roof fix** (this session): canopy box-check (trees are 96×128 = 3×4 tiles) + dropped a hardcoded TREE_SPOT inside the enlarged cafe.
+- **Scroll throttle**: agent-strip wheel accumulates to one card/notch (no trackpad fly-through).
+STILL NOT Smallville-level (honest): the 26 RESIDENTIAL houses are still small + grid-placed (interiors now varied/packed, footprints uniform); residential layout still a grid; conversation panel still churns fast in MOCK mode. Next candidates: fewer/larger houses, organic residential layout, or a much bigger map.
+
 ## SESSION — morning feedback round 2 (2026-06-18, after studying generative_agents)
 Re-read the actual Smallville frontend (`generative_agents/.../demo/main_script.html` + `demo.html`). Key lesson: **Smallville renders NO sentence text in the world** — each agent shows only a tiny `INITIALS: emoji` pronunciatio balloon; all words (action, location, conversation) live in side panels with click-to-focus. That was the root of the "I can't read this madness" soup. Six user-driven fixes shipped, each visually verified via Playwright (artifacts/ui-scroll-wrap-verify.png, world-interiors-flowers-verify.png), suite 1073 green:
 1. **In-world text soup killed** (5d736ea) — dropped the per-agent plan-step line + 160-char speech bubbles; world shows emoji only, words go to the panels.
