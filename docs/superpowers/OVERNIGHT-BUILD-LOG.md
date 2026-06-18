@@ -30,14 +30,33 @@ Get to Smallville-level: **city size, character density, structure details, item
 ### Wave 3 — New agent systems
 - [x] 3a. Diaries (eb8daa3): DiarySystem mirrors ReflectionEngine (live+mock), fires in onDayAdvanced, per-agent store, surfaces in feed as "<Name>'s journal: ...". 1047 green, behavior-proven deterministic.
 - [~] 3b. Jobs — LARGELY ALREADY EXISTS: RolesSystem (farmer/merchant/socialite/wanderer/banker from action histograms) + governance's role-based functional-location visiting. Enhancement (concrete occupations per archetype) is optional/deferred.
-- [ ] 3c. Death/murder/suicide — IN PROGRESS (workflow). Scoped: Agent alive/cause fields + pure deterministic MortalitySystem (starvation/despair/murder, conservative thresholds) + skip-dead in AgentManager + 💀 emoji + death bus event. No RenderApi/contract churn.
+- [x] 3c. Death/murder/suicide (15a69bd): pure deterministic MortalitySystem — starvation (4 days @ energy≤3), despair/suicide (4 days sustained crisis: low energy+gold<1+≥2 crisis needs+isolated), murder (adjacency + affinity ≤−60 grudge). Skip-dead scheduler gate, 💀 death bus events in feed. Conservative thresholds → normal agents survive (all multi-day tests green). 1065 tests, behavior-proven deterministic. Constants in src/agents/Mortality.ts.
 
-### Wave 4 — Big systems
-- [ ] 4a. UI revamp (readability; less GBA)
-- [ ] 4b. Building capabilities (Minecraft-ish place/remove controls)
+### Wave 4 — Big systems (HANDOFF — architecture notes for fresh context)
+- [ ] 4a. UI revamp (readability; less GBA). **All HUD chrome is Phaser-drawn in src/scenes/UIScene.ts (~1200 lines), NO DOM** — Text/Rectangle objects; layout math in src/obs/layout.ts (computeHud); panels are pure builders (PartyPanel/GovernancePanel/DiaryPanel) rendered by UIScene. Font/color consts in src/config.ts (LABEL_FONT_SIZE=12, SPEECH_FONT_SIZE, EMOTION_STYLE) + layout.ts (FONT_SIZE_SMALL). **Concrete readability targets**: larger/cleaner type, higher-contrast palette, more padding/spacing between agent cards, clearer panel headers, reduce the dense "GBA" monospace feel. **Best done with dev-server + screenshot iteration (not blind)** — vite on :5180, zoom via wheel-event dispatch (no global Phaser handle; see how I screenshotted). Verify: tests/obs/* + tests/config/* stay green + visual screenshots.
+- [ ] 4b. Building capabilities (Minecraft-ish place/remove). **The World grid is currently FROZEN (generated, immutable).** Build controls need: a build-mode toggle in the HUD, a placeable palette (path/wall/soil/water/decor), pointer→tile placement in WorldScene.onWorldPointerDown that mutates the World grid + emits World.onChange(tiles) (the existing per-tile re-render path that farming already uses) — pathfinding auto-adapts (passability is tile-type-driven). Files: src/world/World.ts (add setTile/mutation API), src/scenes/WorldScene.ts (build-mode pointer handling), src/scenes/UIScene.ts (palette UI). Substantial — warrants its own brainstorm+plan. Start small (place/remove a couple tile types) then expand.
+- [ ] 4c. Jobs enhancement (OPTIONAL — emergent RolesSystem already covers the basics): concrete occupations tied to the 14 new archetypes (blacksmith→forge, teacher→school, gravedigger→graveyard) with job locations (src/agents/locations.ts) + routines. Lower priority.
 
 ## Log
 - **01:1x** Merged main, verified 1023 green @ 96×64. Created this log. Starting Wave 1a.
 - **01:28** Decor system shipped (a1dd037): dense multi-kind scatter (trees/bushes/flowers/tufts), 1027 green. Visual-confirmed: town went bare→lush/wooded. Screenshot: artifacts/wave1-decor.png.
 - **01:38** Warm dirt roads shipped (replaces grey cobble), 1027 green, visual-confirmed. Town now reads as an organic farm village.
-- **NEXT:** pivot to the big requested features. Visual parity (size+density+paths) substantially done. Interiors/terrain-variety = optional polish (room-size + frame-hunt constrained). Priorities: (2a) character density via reserve-lot activation + personas; (3a) diaries; (3b) jobs; (4a) UI revamp; (3c) death; (4b) build controls. Dev server (vite) was on :5180. Use Playwright wheel-events to zoom (no global game handle).
+- **02:1x** Character density (34ae07c): 12→26 agents, all 14 reserve lots activated + 14 new personas. 1024 green, reachability holds.
+- **02:4x** Diaries (eb8daa3): daily first-person journals, surfaced in feed. 1047 green.
+- **03:2x** Mortality (15a69bd): death/suicide/murder, deterministic + conservative. 1065 green.
+- **03:3x** Visual confirmation: full 96×64 town renders with 26 agents + lush foliage + dirt roads (artifacts/overnight-full-town.png). No regressions.
+
+## MORNING SUMMARY (read me first)
+**Six features shipped tonight on `feat/world-dressing`, every one fully test-verified + adversarially checked. Suite grew 933 → 1065 green; tsc clean throughout.**
+1. **City size** 64×40 → **96×64** (3× area).
+2. **Item/foliage density** — dense deterministic decor (trees/bushes/flowers/grass tufts) replacing bare grass.
+3. **Warm dirt roads** replacing grey cobble (organic farm-village look).
+4. **Character density** 12 → **26 agents** (14 new archetypes: gravedigger, prepper, poet, athlete, con-merchant, teacher, forager, herbalist, blacksmith, seer, miser, drunkard, carpenter, child).
+5. **Diaries** — agents write a daily first-person journal entry (shown in the feed).
+6. **Death / murder / suicide** — deterministic MortalitySystem (starvation, despair-suicide, murder).
+
+**To view:** `cd /Users/johns/Projects/HOM-world-dressing && <node-prefix> "$N/node" node_modules/vite/bin/vite.js --port 5180` then open http://localhost:5180. Worktree is on branch `feat/world-dressing`; merges cleanly to `main` (governance already merged in).
+
+**Not done (handed off above, Wave 4):** UI revamp (4a — needs visual iteration), build controls (4b — needs its own plan), jobs enhancement (4c — optional, RolesSystem already covers basics). Decided NOT to start these blind at the tail of a long context — they're specced above for a fresh session / your review.
+
+**Tasteful note on #6:** death/murder/suicide is in-world *simulation* logic only (a dark farming sim), thresholds tuned so it's rare and never triggers for normally-behaving agents.
