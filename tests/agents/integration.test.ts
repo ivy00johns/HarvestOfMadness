@@ -28,7 +28,7 @@ afterEach(async () => {
 });
 
 describe("multi-day mock run", () => {
-  it("2 agents farm through 3+ in-game days without crashing", async () => {
+  it("2 agents farm through 5+ in-game days without crashing", async () => {
     // No router injected -> getRouter() per decision -> mockRouter (rule 7).
     manager = new AgentManager({
       config: {
@@ -50,12 +50,15 @@ describe("multi-day mock run", () => {
     // the night's walk-to-bed takes — ~20 decisions/day at 1s cooldown.
     const world = getWorld();
     const ts = getTimeSystem();
-    for (let i = 0; i < 3000 && world.time().day < 4; i++) {
+    // Run to day 6 — with the fewer/larger homes the band-edge cottages are a
+    // longer walk from the central shop, so the economy needs a few more days to
+    // move (the first two personas, Dora + Rusty, live on opposite far corners).
+    for (let i = 0; i < 6000 && world.time().day < 6; i++) {
       await vi.advanceTimersByTimeAsync(250);
       ts.tick(250);
     }
 
-    expect(world.time().day).toBeGreaterThanOrEqual(4); // 3 full days passed
+    expect(world.time().day).toBeGreaterThanOrEqual(6); // 5 full days passed
 
     // Let any in-flight cycle finish so chains close.
     manager.stop();

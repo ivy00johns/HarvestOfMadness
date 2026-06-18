@@ -119,68 +119,34 @@ interface HomesteadSpec {
 }
 
 /**
- * Twenty-six homesteads scattered in an organic, asymmetric arrangement around
- * the downtown civic core. Sizes VARY (4×4, 5×5, 6×5) so the town reads
- * hand-built; each door faces a residential road spur (its exterior neighbour is
- * a `path`), and the soil plot hugs an open side within OBSERVATION_RADIUS=4 of
- * the door. The first twelve are the original outer-band homes; the remaining
- * fourteen are the promoted reserve lots (inner-north strip, inner-south strip,
- * and two spine-adjacent lots), each now bound to a distinct persona.
- *
- * IDs and the one-bed-per-house invariant are unchanged, so personas.ts and the
- * 26-bed / 26-house landmark contract hold. Variety comes from SIZE + organic
- * placement, never from changing the count.
+ * TEN larger TWO-ROOM homesteads in a north band + a south band around the
+ * downtown civic core (fewer-but-bigger replaces the old 26 small identical
+ * rooms — less crowding, room to furnish like Smallville). Each is 8×7 / 8×6
+ * with a vertical interior divider + doorway gap (see stampHomestead), a door
+ * facing a residential road, and a soil plot in the gap beside the door. Doors
+ * stay within the ≤40 A* tavern-reachability budget. One bed + one house
+ * landmark per home → the 10-bed / 10-house landmark contract.
  */
 export const HOMESTEADS: HomesteadSpec[] = [
-  // -- north band: doors face S onto the y=22 road (house bottom row y=21). Soil
-  //    plots hug an OPEN side beside the house, nearest cell ≤ Chebyshev 4 of
-  //    the door. Sizes vary (5×5 / 6×5 / 4×4) for an organic, hand-built feel. --
-  // 5×5 — plot to the WEST; its south edge (y=21) borders the y=22 road so the
-  //   executor TILL-rejects-road test (FIELD_RECT = this plot) finds a road neighbour.
-  { id: "brix", house: { x: 25, y: 17 }, size: { w: 5, h: 5 }, bed: { x: 27, y: 19 }, door: { x: 27, y: 21 }, doorSide: "S", plot: { x0: 21, y0: 19, x1: 23, y1: 21 } },
-  // 6×5 (wide) — plot to the EAST (between ford and wren)
-  { id: "ford", house: { x: 31, y: 17 }, size: { w: 6, h: 5 }, bed: { x: 34, y: 19 }, door: { x: 34, y: 21 }, doorSide: "S", plot: { x0: 38, y0: 18, x1: 39, y1: 20 } },
-  // 4×4 (small) — plot to the EAST (between wren and dora)
-  { id: "wren", house: { x: 41, y: 18 }, size: { w: 4, h: 4 }, bed: { x: 42, y: 19 }, door: { x: 42, y: 21 }, doorSide: "S", plot: { x0: 45, y0: 19, x1: 47, y1: 21 } },
-  // 5×5 — plot to the WEST (between wren and dora, lower row)
-  { id: "dora", house: { x: 52, y: 17 }, size: { w: 5, h: 5 }, bed: { x: 54, y: 19 }, door: { x: 54, y: 21 }, doorSide: "S", plot: { x0: 49, y0: 18, x1: 50, y1: 20 } },
-  // 6×5 (wide) — plot to the EAST (between gus and clem)
-  { id: "gus",  house: { x: 58, y: 17 }, size: { w: 6, h: 5 }, bed: { x: 60, y: 19 }, door: { x: 60, y: 21 }, doorSide: "S", plot: { x0: 64, y0: 18, x1: 65, y1: 20 } },
-  // 4×4 (small) — plot to the EAST (right of clem)
-  { id: "clem", house: { x: 67, y: 18 }, size: { w: 4, h: 4 }, bed: { x: 68, y: 19 }, door: { x: 68, y: 21 }, doorSide: "S", plot: { x0: 71, y0: 19, x1: 73, y1: 21 } },
-  // -- south band: doors face N onto the y=50 road; house top row y=51 ---------
-  // 5×5 — plot to the WEST
-  { id: "fern",  house: { x: 25, y: 51 }, size: { w: 5, h: 5 }, bed: { x: 27, y: 53 }, door: { x: 27, y: 51 }, doorSide: "N", plot: { x0: 21, y0: 52, x1: 23, y1: 54 } },
-  // 4×4 (small) — plot to the EAST
-  { id: "nell",  house: { x: 33, y: 51 }, size: { w: 4, h: 4 }, bed: { x: 34, y: 53 }, door: { x: 34, y: 51 }, doorSide: "N", plot: { x0: 38, y0: 52, x1: 39, y1: 54 } },
-  // 6×5 (wide) — plot to the EAST
-  { id: "sage",  house: { x: 41, y: 51 }, size: { w: 6, h: 5 }, bed: { x: 44, y: 53 }, door: { x: 44, y: 51 }, doorSide: "N", plot: { x0: 48, y0: 52, x1: 49, y1: 54 } },
-  // 5×5 — plot to the EAST
-  { id: "rusty", house: { x: 52, y: 51 }, size: { w: 5, h: 5 }, bed: { x: 54, y: 53 }, door: { x: 54, y: 51 }, doorSide: "N", plot: { x0: 57, y0: 52, x1: 59, y1: 54 } },
-  // 4×4 (small) — plot to the EAST
-  { id: "moss",  house: { x: 60, y: 51 }, size: { w: 4, h: 4 }, bed: { x: 61, y: 53 }, door: { x: 62, y: 51 }, doorSide: "N", plot: { x0: 64, y0: 52, x1: 65, y1: 54 } },
-  // 6×5 (wide) — plot to the EAST
-  { id: "zola",  house: { x: 66, y: 51 }, size: { w: 6, h: 5 }, bed: { x: 68, y: 53 }, door: { x: 68, y: 51 }, doorSide: "N", plot: { x0: 72, y0: 52, x1: 73, y1: 54 } },
-  // -- inner-north strip (promoted RESERVE_LOTS): 4×4, door faces N onto the
-  //    y=22 road; plot sits directly below the house (Chebyshev ≤ 4 of the door). --
-  { id: "mort", house: { x: 26, y: 23 }, size: { w: 4, h: 4 }, bed: { x: 27, y: 24 }, door: { x: 27, y: 23 }, doorSide: "N", plot: { x0: 26, y0: 27, x1: 28, y1: 28 } },
-  { id: "prim", house: { x: 34, y: 23 }, size: { w: 4, h: 4 }, bed: { x: 35, y: 24 }, door: { x: 35, y: 23 }, doorSide: "N", plot: { x0: 34, y0: 27, x1: 36, y1: 28 } },
-  { id: "lyle", house: { x: 41, y: 23 }, size: { w: 4, h: 4 }, bed: { x: 42, y: 24 }, door: { x: 42, y: 23 }, doorSide: "N", plot: { x0: 41, y0: 27, x1: 43, y1: 28 } },
-  { id: "dash", house: { x: 49, y: 23 }, size: { w: 4, h: 4 }, bed: { x: 50, y: 24 }, door: { x: 50, y: 23 }, doorSide: "N", plot: { x0: 49, y0: 27, x1: 51, y1: 28 } },
-  { id: "vex",  house: { x: 58, y: 23 }, size: { w: 4, h: 4 }, bed: { x: 59, y: 24 }, door: { x: 59, y: 23 }, doorSide: "N", plot: { x0: 58, y0: 27, x1: 60, y1: 28 } },
-  { id: "opal", house: { x: 66, y: 23 }, size: { w: 4, h: 4 }, bed: { x: 67, y: 24 }, door: { x: 67, y: 23 }, doorSide: "N", plot: { x0: 66, y0: 27, x1: 68, y1: 28 } },
-  // -- inner-south strip (promoted RESERVE_LOTS): 4×4, door faces S onto the
-  //    y=50 road; plot sits directly above the house. -----------------------------
-  { id: "bram", house: { x: 26, y: 46 }, size: { w: 4, h: 4 }, bed: { x: 27, y: 48 }, door: { x: 27, y: 49 }, doorSide: "S", plot: { x0: 26, y0: 44, x1: 28, y1: 45 } },
-  { id: "sena", house: { x: 34, y: 46 }, size: { w: 4, h: 4 }, bed: { x: 35, y: 48 }, door: { x: 35, y: 49 }, doorSide: "S", plot: { x0: 34, y0: 44, x1: 36, y1: 45 } },
-  { id: "gunn", house: { x: 41, y: 46 }, size: { w: 4, h: 4 }, bed: { x: 42, y: 48 }, door: { x: 42, y: 49 }, doorSide: "S", plot: { x0: 41, y0: 44, x1: 43, y1: 45 } },
-  { id: "wisp", house: { x: 49, y: 46 }, size: { w: 4, h: 4 }, bed: { x: 50, y: 48 }, door: { x: 50, y: 49 }, doorSide: "S", plot: { x0: 49, y0: 44, x1: 51, y1: 45 } },
-  { id: "cyrus", house: { x: 58, y: 46 }, size: { w: 4, h: 4 }, bed: { x: 59, y: 48 }, door: { x: 59, y: 49 }, doorSide: "S", plot: { x0: 58, y0: 44, x1: 60, y1: 45 } },
-  { id: "tibb", house: { x: 66, y: 46 }, size: { w: 4, h: 4 }, bed: { x: 67, y: 48 }, door: { x: 67, y: 49 }, doorSide: "S", plot: { x0: 66, y0: 44, x1: 68, y1: 45 } },
-  // -- spine-adjacent lots (promoted RESERVE_LOTS): 4×4, door faces N onto the
-  //    y=36 spine; house sits just below the spine; plot below the house. ---------
-  { id: "hark", house: { x: 18, y: 37 }, size: { w: 4, h: 4 }, bed: { x: 19, y: 39 }, door: { x: 19, y: 37 }, doorSide: "N", plot: { x0: 18, y0: 41, x1: 20, y1: 42 } },
-  { id: "pip",  house: { x: 66, y: 37 }, size: { w: 4, h: 4 }, bed: { x: 67, y: 39 }, door: { x: 67, y: 37 }, doorSide: "N", plot: { x0: 66, y0: 41, x1: 68, y1: 42 } },
+  // -- NORTH band: 8×7 TWO-ROOM cottages, door S onto the y=22 road (bottom row
+  //    y=21). stampHomestead adds a vertical interior divider with a doorway gap,
+  //    so each home is two rooms; the door sits beside its side plot, the bed in
+  //    the far room. Pitch 11 leaves a 3-wide plot gap between homes. --
+  // brix is HOMESTEADS[0] → its plot is FIELD_RECT; it extends to y=21 so its
+  // south edge borders the y=22 road (the executor TILL-rejects-road fixture).
+  { id: "brix", house: { x: 20, y: 15 }, size: { w: 8, h: 7 }, bed: { x: 22, y: 17 }, door: { x: 26, y: 21 }, doorSide: "S", plot: { x0: 28, y0: 18, x1: 30, y1: 21 } },
+  { id: "ford", house: { x: 31, y: 15 }, size: { w: 8, h: 7 }, bed: { x: 33, y: 17 }, door: { x: 37, y: 21 }, doorSide: "S", plot: { x0: 39, y0: 18, x1: 41, y1: 20 } },
+  { id: "wren", house: { x: 42, y: 15 }, size: { w: 8, h: 7 }, bed: { x: 44, y: 17 }, door: { x: 48, y: 21 }, doorSide: "S", plot: { x0: 50, y0: 18, x1: 52, y1: 20 } },
+  { id: "dora", house: { x: 53, y: 15 }, size: { w: 8, h: 7 }, bed: { x: 55, y: 17 }, door: { x: 59, y: 21 }, doorSide: "S", plot: { x0: 61, y0: 18, x1: 63, y1: 20 } },
+  { id: "gus",  house: { x: 64, y: 15 }, size: { w: 8, h: 7 }, bed: { x: 66, y: 17 }, door: { x: 70, y: 21 }, doorSide: "S", plot: { x0: 72, y0: 18, x1: 74, y1: 20 } },
+  // -- SOUTH band: 8×6 two-room cottages, door N onto the y=50 road (top row
+  //    y=51). Pitch 10 (kept tighter so the door→tavern A* stays ≤40 from the
+  //    farther south row); plots sit in the 2-wide gaps beside each door. --
+  { id: "fern",  house: { x: 22, y: 51 }, size: { w: 8, h: 6 }, bed: { x: 24, y: 54 }, door: { x: 28, y: 51 }, doorSide: "N", plot: { x0: 30, y0: 53, x1: 31, y1: 55 } },
+  { id: "nell",  house: { x: 32, y: 51 }, size: { w: 8, h: 6 }, bed: { x: 34, y: 54 }, door: { x: 38, y: 51 }, doorSide: "N", plot: { x0: 40, y0: 53, x1: 41, y1: 55 } },
+  { id: "sage",  house: { x: 42, y: 51 }, size: { w: 8, h: 6 }, bed: { x: 44, y: 54 }, door: { x: 48, y: 51 }, doorSide: "N", plot: { x0: 50, y0: 53, x1: 51, y1: 55 } },
+  { id: "rusty", house: { x: 52, y: 51 }, size: { w: 8, h: 6 }, bed: { x: 54, y: 54 }, door: { x: 58, y: 51 }, doorSide: "N", plot: { x0: 60, y0: 53, x1: 61, y1: 55 } },
+  { id: "zola",  house: { x: 62, y: 51 }, size: { w: 8, h: 6 }, bed: { x: 64, y: 54 }, door: { x: 68, y: 51 }, doorSide: "N", plot: { x0: 70, y0: 53, x1: 72, y1: 55 } },
 ];
 
 /** persona id -> start (door) tile, consumed by src/agents/personas.ts. */
@@ -357,7 +323,7 @@ export const WATER_POS: Vec2 = { x: POND.x0, y: POND.y0 };
 export const FIELD_RECT = { ...HOMESTEADS[0].plot }; // first homestead's plot
 
 /**
- * Building footprints (the 26 homestead rooms + the 5 civic rooms = 31) for the
+ * Building footprints (the 10 homestead rooms + the 5 civic rooms = 15) for the
  * renderer's facade/interior dressing. `doorX` is the entrance column (always
  * within [x0,x1]). The map's renderer reads this so it can never drift from the
  * generated map (see tests/world/map.test.ts).
@@ -404,6 +370,17 @@ function stampHomestead(tiles: TileType[][], landmarks: Landmark[], h: Homestead
   const x1 = h.house.x + h.size.w - 1;
   const y1 = h.house.y + h.size.h - 1;
   stampRoom(tiles, h.house.x, h.house.y, x1, y1, h.door);
+  // TWO-ROOM split: a vertical interior wall with a single doorway gap divides
+  // the home into two rooms (Smallville-style). The divider sits between the
+  // door's room and the bed's room; the gap (kept `floor`) connects them so the
+  // bed stays reachable. Skipped for any home too small to hold a divider.
+  if (h.size.w >= 5 && h.size.h >= 4) {
+    const dcol = h.house.x + Math.ceil(h.size.w / 2);
+    const gapRow = h.house.y + Math.floor(h.size.h / 2);
+    for (let y = h.house.y + 1; y <= y1 - 1; y++) {
+      if (y !== gapRow) tiles[y][dcol] = "wall";
+    }
+  }
   tiles[h.bed.y][h.bed.x] = "bedTile";
   fillRect(tiles, h.plot.x0, h.plot.y0, h.plot.x1, h.plot.y1, "soil");
   landmarks.push({ kind: "bed", pos: { ...h.bed } });
@@ -430,7 +407,7 @@ export function generateMap(): MapData {
   const landmarks: Landmark[] = [];
 
   // Homesteads (varied sizes) — rooms over roads, soil plots, bed + house
-  // landmarks (26 each).
+  // landmarks (10 each).
   for (const h of HOMESTEADS) stampHomestead(tiles, landmarks, h);
 
   // Civic cluster (shop / tavern / cafe / office / school).

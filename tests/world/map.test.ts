@@ -40,8 +40,8 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly twenty-six walkable homesteads: full wall ring + 1 floor door perimeter, floor interior + 1 bed", () => {
-    expect(HOMESTEADS).toHaveLength(26);
+  it("has ten walkable two-room homesteads: full wall ring + 1 door, divider + 1 reachable bed", () => {
+    expect(HOMESTEADS).toHaveLength(10);
     for (const h of HOMESTEADS) {
       // Room bounds are SIZE-derived (varied 4×4 / 5×5 / 6×5), never +4.
       const x0 = h.house.x;
@@ -86,25 +86,56 @@ describe("town generator", () => {
               : { x: h.door.x - 1, y: h.door.y };
       expect(at(ext), `${h.id} door exterior neighbour is a road path`).toBe("path");
 
-      // -- interior: (w-2)*(h-2)-1 floor + exactly 1 bedTile (== h.bed) -------
-      let intFloor = 0;
+      // -- interior: floor + EXACTLY 1 bedTile + a divider wall (two-room split).
+      //    The bed must be REACHABLE from the door through floor cells (BFS), so
+      //    the doorway gap in the divider really connects the two rooms.
+      void interiorTiles; // multi-room: exact floor count no longer fixed
       let intBed = 0;
+      let intWall = 0;
       let theBed: Vec2 | null = null;
       for (let y = y0 + 1; y <= y1 - 1; y++) {
         for (let x = x0 + 1; x <= x1 - 1; x++) {
           const t = map.tiles[y][x];
-          if (t === "floor") intFloor++;
-          else if (t === "bedTile") {
+          if (t === "bedTile") {
             intBed++;
             theBed = { x, y };
-          } else {
+          } else if (t === "wall") {
+            intWall++;
+          } else if (t !== "floor") {
             throw new Error(`unexpected interior tile ${t} at ${x},${y}`);
           }
         }
       }
-      expect(intFloor, `${h.id} interior floor count`).toBe(interiorTiles - 1);
       expect(intBed, `${h.id} interior bedTile count`).toBe(1);
       expect(theBed, `${h.id} bed`).toEqual(h.bed);
+      expect(intWall, `${h.id} has an interior divider wall`).toBeGreaterThan(0);
+
+      // BFS from the door over floor/bed cells must reach the bed.
+      const passable = (px: number, py: number): boolean => {
+        if (px < x0 || px > x1 || py < y0 || py > y1) return false;
+        const t = map.tiles[py][px];
+        return t === "floor" || t === "bedTile";
+      };
+      const seen = new Set<string>([`${h.door.x},${h.door.y}`]);
+      const queue: Vec2[] = [{ ...h.door }];
+      let bedReached = false;
+      while (queue.length > 0) {
+        const c = queue.shift() as Vec2;
+        if (c.x === h.bed.x && c.y === h.bed.y) {
+          bedReached = true;
+          break;
+        }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = c.x + dx;
+          const ny = c.y + dy;
+          const k = `${nx},${ny}`;
+          if (!seen.has(k) && passable(nx, ny)) {
+            seen.add(k);
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+      expect(bedReached, `${h.id} bed reachable from the door`).toBe(true);
 
       // -- plot is all soil ---------------------------------------------------
       for (let y = h.plot.y0; y <= h.plot.y1; y++) {
@@ -120,7 +151,7 @@ describe("town generator", () => {
     expect(sizes.size).toBeGreaterThanOrEqual(2);
   });
 
-  it("has exactly 26 bedTiles, zero `building` tiles, and the expected landmark counts", () => {
+  it("has exactly 10 bedTiles, zero `building` tiles, and the expected landmark counts", () => {
     let beds = 0;
     let buildings = 0;
     for (let y = 0; y < MAP_HEIGHT; y++)
@@ -128,12 +159,12 @@ describe("town generator", () => {
         if (map.tiles[y][x] === "bedTile") beds++;
         if (map.tiles[y][x] === "building") buildings++;
       }
-    expect(beds).toBe(26);
+    expect(beds).toBe(10);
     // `building` is retained-but-unused: no tile stamps it anymore.
     expect(buildings).toBe(0);
     const count = (k: string) => map.landmarks.filter((l) => l.kind === k).length;
-    expect(count("bed")).toBe(26);
-    expect(count("house")).toBe(26);
+    expect(count("bed")).toBe(10);
+    expect(count("house")).toBe(10);
     expect(count("shop")).toBe(1);
     expect(count("tavern")).toBe(1);
     expect(count("water")).toBeGreaterThanOrEqual(1);
@@ -236,8 +267,8 @@ describe("town generator", () => {
         for (let x = b.x0; x <= b.x1; x++)
           expect(built.has(map.tiles[y][x]), `building tile ${x},${y} is ${map.tiles[y][x]}`).toBe(true);
     }
-    // Expect 31 rooms: 26 homesteads + shop + tavern + cafe + office + school.
-    expect(BUILDINGS).toHaveLength(31);
+    // Expect 15 rooms: 10 homesteads + shop + tavern + cafe + office + school.
+    expect(BUILDINGS).toHaveLength(15);
   });
 
   it("every building kind is present at least once (typology coverage)", () => {
