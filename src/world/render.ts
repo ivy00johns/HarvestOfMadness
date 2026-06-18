@@ -98,11 +98,18 @@ export const LANTERN_FRAMES = {
 } as const;
 
 /**
- * interior.png — 16 frames/row. Open-roof room rendering: a tiled floor, a
- * back-wall strip, and a few built-in furnishings. frame = row*16 + col.
+ * interior.png — 16 frames/row. Open-roof room rendering: a back-wall strip and
+ * a few built-in furnishings. frame = row*16 + col.
+ *
+ * NOTE on the floor: interior.png's only floor tiles are frame 64 (a blue-grey/
+ * tan two-tone STONE tile) and 65 (green cobble). Tiled across a room, frame 64
+ * reads as an ugly checkerboard, so interior FLOORS are now drawn from the
+ * dedicated warm wood-plank sheet (INTERIOR_FLOOR_TEXTURE) instead — see
+ * WorldScene.drawTileAssets. FLOOR is retained as a valid sheet index (still the
+ * documented stone tile) but is no longer used for floor fill.
  */
 export const INTERIOR_FRAMES = {
-  FLOOR: 64, // c0r4 — stone/tile floor
+  FLOOR: 64, // c0r4 — stone/tile floor (legacy; checkerboard — superseded by wood floor)
   // Back wall as a framed row: top-left corner, top edge, top-right corner.
   // (frame 1 is a broken-wall hole — never use it.) Indexed left→right.
   WALL: [0, 2, 4] as readonly number[],
@@ -111,6 +118,28 @@ export const INTERIOR_FRAMES = {
   BAR: 100, // c4r6 — counter unit (tavern bar)
   BARREL: 129, // c1r8 — barrel stack
 } as const;
+
+/**
+ * Warm wood-plank interior floor. interior.png ships no clean wood floor (only
+ * the checkerboard stone tile), so a single seamless 32×32 warm-wood-plank tile
+ * lives in its own sheet (manifest key "interior_floor"). It is a 1×1 sheet, so
+ * the whole tile is frame 0. Tone matches the manifest's intended floor colour
+ * (TILE_COLORS.floor = 0x8b6f47). Used for floor / bedTile / shopTile interior
+ * cells. CC0 (authored for this project) — see public/assets/CREDITS.md.
+ */
+export const INTERIOR_FLOOR_TEXTURE = "interior_floor";
+export const INTERIOR_FLOOR_FRAME = 0;
+
+/**
+ * Warm wood-plank interior WALL ring. interior.png's row-0 wall frames are
+ * open-roof ceiling-edge pieces with large black voids — tiled as a full wall
+ * ring they read as dark "gold/odd blocks". A single seamless 32×32 timber-wall
+ * tile (manifest key "interior_wall") replaces them: a tidy vertical-plank wall
+ * a few shades deeper than the floor, so a room reads as walls + floor. 1×1
+ * sheet (whole tile = frame 0). CC0 (authored) — see public/assets/CREDITS.md.
+ */
+export const INTERIOR_WALL_TEXTURE = "interior_wall";
+export const INTERIOR_WALL_FRAME = 0;
 
 /**
  * blonde-wood.png furniture — 16 frames/row. A double bed (2×2 block) and a

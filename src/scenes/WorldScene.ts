@@ -63,7 +63,11 @@ import { activityEmoji } from "../obs/activityEmoji";
 import { buildingStyle } from "../obs/buildingStyle";
 import {
   FURNITURE_FRAMES,
+  INTERIOR_FLOOR_FRAME,
+  INTERIOR_FLOOR_TEXTURE,
   INTERIOR_FRAMES,
+  INTERIOR_WALL_FRAME,
+  INTERIOR_WALL_TEXTURE,
   LANTERN_FRAMES,
   SIGN_FRAMES,
   SOIL_FRAMES,
@@ -622,9 +626,16 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       case "bedTile":
       case "shopTile":
         // Walkable indoor floor (room interior, door-gap, bed/shop overlay
-        // cells): the tile layer owns the floor; furniture + sign are added by
-        // paintInterior at prop depth, agents y-sort above.
-        place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
+        // cells): a warm, seamless wood-plank tile (cozy cottage), NOT the
+        // interior.png checkerboard stone. The tile layer owns the floor;
+        // furniture + sign are added by paintInterior at prop depth, agents
+        // y-sort above. Falls back to the legacy stone frame only if the
+        // dedicated wood-floor sheet failed to load (degraded mode).
+        if (this.textures.exists(INTERIOR_FLOOR_TEXTURE)) {
+          place(INTERIOR_FLOOR_TEXTURE, INTERIOR_FLOOR_FRAME, DEPTH_OVERLAY);
+        } else {
+          place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
+        }
         break;
       case "building":
         break; // retained-but-unused TileType: no tile stamps it (dead-but-valid)
@@ -635,8 +646,16 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
           // The impassable map-border wall ring renders as the wooden farm fence.
           place("fence", fenceFrame(x, y, MAP_WIDTH, MAP_HEIGHT));
         } else {
-          // Interior house/tavern/shop wall ring — open-roof cutaway edge.
-          place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+          // Interior house/tavern/shop wall ring — a tidy warm timber-plank
+          // wall (NOT interior.png's black-voided open-roof beams, which read
+          // as dark "gold blocks" when ringed around a room). Falls back to the
+          // legacy interior wall frame only if the wood-wall sheet failed to
+          // load (degraded mode).
+          if (this.textures.exists(INTERIOR_WALL_TEXTURE)) {
+            place(INTERIOR_WALL_TEXTURE, INTERIOR_WALL_FRAME, DEPTH_FACADE);
+          } else {
+            place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+          }
         }
         break;
       }

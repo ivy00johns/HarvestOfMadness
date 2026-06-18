@@ -215,6 +215,16 @@ HOUSE INTERIOR & DECORATIONS
   License: CC-BY-SA 3.0 / GPL 3.0 / GPL 2.0
   Source: https://opengameart.org/content/lpc-house-interior-and-decorations
 
+INTERIOR FLOOR & WALL (warm wood) — PROJECT-AUTHORED
+  Files: assets/lpc/interiors/wood_floor.png, assets/lpc/interiors/wood_wall.png
+  Title: Warm wood-plank interior floor + timber wall tiles (Harvest of Madness)
+  Author(s): Harvest of Madness project (procedurally authored for this repo)
+  License: CC0 1.0 (public domain dedication)
+  Note: interior.png ships no clean warm wood floor — only a blue-grey/tan
+        checkerboard stone tile (frame 64) and open-roof wall beams with black
+        voids. These two seamless 32x32 tiles replace them so interiors read as
+        cozy wood-floored rooms. Tone matches TILE_COLORS.floor = 0x8b6f47.
+
 WOODEN FURNITURE
   Files: assets/lpc/furniture/blonde-wood.png, assets/lpc/furniture/dark-wood.png,
          assets/lpc/furniture/green-wood.png, assets/lpc/furniture/white-wood.png,
