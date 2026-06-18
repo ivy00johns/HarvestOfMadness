@@ -20,6 +20,7 @@ const ALL_ACTIONS: ActionType[] = [
   "MOVE_TO",
   "WAIT",
   "USE_OBJECT",
+  "VOTE",
 ];
 
 const ALL_EMOTIONS: Emotion[] = ["neutral", "happy", "annoyed", "sad", "excited"];
@@ -58,6 +59,7 @@ describe("activityEmoji", () => {
     expect(activityEmoji("HARVEST")).toBe("🌾");
     expect(activityEmoji("WATER")).toBe("💧");
     expect(activityEmoji("GIVE_GIFT")).toBe("🎁");
+    expect(activityEmoji("VOTE")).toBe("🗳️");
     expect(activityEmoji("EMOTE", "happy")).toBe("😊");
     expect(activityEmoji("EMOTE", "sad")).toBe("😢");
     expect(activityEmoji("EMOTE", "annoyed")).toBe("😠");

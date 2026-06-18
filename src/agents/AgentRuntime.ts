@@ -60,7 +60,15 @@ const RETRY_INSTRUCTION =
 /** Human-readable lastSeenDoing line for an accepted action. */
 export function describeAction(a: AgentAction): string {
   const t = a.target as
-    | { x?: number; y?: number; itemId?: string; qty?: number; agentName?: string }
+    | {
+        x?: number;
+        y?: number;
+        itemId?: string;
+        qty?: number;
+        agentName?: string;
+        proposalId?: string;
+        support?: boolean;
+      }
     | undefined;
   switch (a.action) {
     case "MOVE_TO":
@@ -85,6 +93,8 @@ export function describeAction(a: AgentAction): string {
       return `showing a ${a.emotion ?? "neutral"} face`;
     case "SLEEP":
       return "sleeping";
+    case "VOTE":
+      return `voting ${t?.support ? "yes" : "no"} on the town proposal`;
     case "WAIT":
     default:
       return "idling";

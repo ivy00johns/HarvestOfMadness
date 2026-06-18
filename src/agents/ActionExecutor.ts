@@ -34,6 +34,8 @@ export interface ExecutorCognitionHooks {
   onTalk(speaker: Agent, listener: Agent, say: string | null): void;
   /** v3 — object interaction: write memory + apply notice-board diffusion. */
   onUseObject?(agent: Agent, objectId: string, objectKind: string): void;
+  /** Wave 4c — a cast governance vote: record it + write memory + maybe-resolve. */
+  onVote?(agent: Agent, proposalId: string, support: boolean): void;
 }
 
 export interface ExecutorOpts {
@@ -119,6 +121,15 @@ function isObjectTarget(v: unknown): v is { objectId: string } {
     typeof v === "object" &&
     v !== null &&
     typeof (v as { objectId?: unknown }).objectId === "string"
+  );
+}
+
+function isVoteTarget(v: unknown): v is { proposalId: string; support: boolean } {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    typeof (v as { proposalId?: unknown }).proposalId === "string" &&
+    typeof (v as { support?: unknown }).support === "boolean"
   );
 }
 
@@ -435,6 +446,21 @@ export async function executeAction(
 
         // Effect: fire the cognition hook (memory + optional diffusion).
         opts.cognition?.onUseObject?.(agent, obj.id, obj.kind);
+        return { ok: true };
+      }
+
+      case "VOTE": {
+        // Wave 4c — town-wide governance vote. No adjacency (you vote on a
+        // town proposal, not at a booth) and energy 0 (like EMOTE). The only
+        // precondition is a well-shaped {proposalId, support} target; the
+        // cognition layer owns awareness/open/idempotency. Always ok on a
+        // valid target — a vote on an unknown/closed proposal is silently a
+        // no-op inside the hook (never a hard rejection).
+        const target = action.target;
+        if (!isVoteTarget(target)) {
+          return reject("VOTE needs a {proposalId, support} target");
+        }
+        opts.cognition?.onVote?.(agent, target.proposalId, target.support);
         return { ok: true };
       }
 

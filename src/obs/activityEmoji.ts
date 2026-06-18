@@ -24,6 +24,7 @@ export function activityEmoji(action: ActionType, emotion?: Emotion): string {
     case "MOVE_TO":    return "🚶";
     case "WAIT":       return "💭";
     case "USE_OBJECT": return "✨";
+    case "VOTE":       return "🗳️"; // Wave 4c — governance vote
   }
 }
 
