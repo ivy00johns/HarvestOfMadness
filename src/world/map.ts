@@ -119,40 +119,43 @@ interface HomesteadSpec {
 }
 
 /**
- * TWELVE TWO-ROOM homesteads in four corner HAMLETS (3 homes each) around the
- * central civic hub (Option C 140×100 re-lay). Each is a 5×6/5×7 cottage with a
- * vertical interior divider + doorway gap (see stampHomestead), a door facing a
- * residential road (north y=20 / south y=80), and a soil plot beside the door.
- * Every door stays within the ≤100 A* tavern-reachability floor (corner homes
- * sit ~90–96 tiles from the central tavern). One bed + one house landmark per
- * home → the 12-bed / 12-house landmark contract.
+ * TWELVE big, multi-room homesteads in four corner HAMLETS (3 homes each) around
+ * the central civic hub (Option C 140×100 re-lay). Each is a large 8×8 / 9×8 home
+ * (NOT the old 5×6/5×7 cottage) with a vertical interior divider + doorway gap
+ * (see stampHomestead) splitting it into TWO rooms, a door facing a residential
+ * road (north y=20 / south y=80), and a soil plot beside the door. The bigger
+ * footprints reclaim the empty countryside that previously surrounded each corner
+ * hamlet (the rim + the central road stretches stay open).
+ *
+ * Per hamlet: TWO homes sit on the outer road edge (door toward the road) and ONE
+ * sits inboard a row deeper, doors all opening onto the nearest residential road
+ * (north y=20 / south y=80) so each door's exterior neighbour is a path tile. Side
+ * plots sit within OBSERVATION_RADIUS (Chebyshev 4) of the door. Every door stays
+ * within the ≤100 A* tavern-reachability floor. One bed + one house landmark per
+ * home → the 12-bed / 12-house landmark contract. brix is HOMESTEADS[0] → its plot
+ * is FIELD_RECT; it extends DOWN to y=19 so a soil cell at y=19 borders the north
+ * road y=20 (the executor TILL-rejects-road fixture).
+ *
+ * Homes are 8×8 except the four inboard homes (wren/clem/sage/zola) which are 9×8,
+ * so the town spans ≥2 distinct house sizes (the organic, hand-built invariant).
  */
 export const HOMESTEADS: HomesteadSpec[] = [
-  // FOUR corner HAMLETS (3 homes each). Each home is a 5×6 two-room cottage
-  // (stampHomestead adds a vertical divider + doorway gap). Doors face the
-  // nearest residential road (north y=20 / south y=80) so each door's exterior
-  // neighbour is a path tile. Side plots sit within OBSERVATION_RADIUS of the
-  // door. brix is HOMESTEADS[0] → its plot is FIELD_RECT; it extends DOWN to
-  // y=19 so a soil cell at y=19 borders the north road y=20 (the executor
-  // TILL-rejects-road fixture).
   // -- NW hamlet (doors onto the north road y=20) --
-  { id: "brix", house: { x: 7,  y: 14 }, size: { w: 5, h: 6 }, bed: { x: 9,  y: 16 }, door: { x: 9,  y: 19 }, doorSide: "S", plot: { x0: 12, y0: 15, x1: 14, y1: 19 } },
-  { id: "ford", house: { x: 16, y: 14 }, size: { w: 5, h: 6 }, bed: { x: 18, y: 16 }, door: { x: 18, y: 19 }, doorSide: "S", plot: { x0: 21, y0: 15, x1: 23, y1: 18 } },
-  // wren/clem/sage/zola are 5×7 (a row taller than their 5×6 hamlet-mates) so
-  // the town spans ≥2 distinct house sizes (the organic-layout invariant).
-  { id: "wren", house: { x: 9,  y: 21 }, size: { w: 5, h: 7 }, bed: { x: 11, y: 24 }, door: { x: 11, y: 21 }, doorSide: "N", plot: { x0: 14, y0: 22, x1: 16, y1: 25 } },
+  { id: "brix", house: { x: 2,  y: 12 }, size: { w: 8, h: 8 }, bed: { x: 8,  y: 14 }, door: { x: 8,  y: 19 }, doorSide: "S", plot: { x0: 10, y0: 15, x1: 12, y1: 19 } },
+  { id: "ford", house: { x: 14, y: 12 }, size: { w: 8, h: 8 }, bed: { x: 20, y: 14 }, door: { x: 20, y: 19 }, doorSide: "S", plot: { x0: 22, y0: 16, x1: 23, y1: 19 } },
+  { id: "wren", house: { x: 4,  y: 21 }, size: { w: 9, h: 8 }, bed: { x: 10, y: 26 }, door: { x: 10, y: 21 }, doorSide: "N", plot: { x0: 13, y0: 21, x1: 13, y1: 24 } },
   // -- NE hamlet (doors onto the north road y=20) --
-  { id: "dora", house: { x: 118, y: 14 }, size: { w: 5, h: 6 }, bed: { x: 120, y: 16 }, door: { x: 120, y: 19 }, doorSide: "S", plot: { x0: 123, y0: 16, x1: 125, y1: 19 } },
-  { id: "gus",  house: { x: 127, y: 14 }, size: { w: 5, h: 6 }, bed: { x: 129, y: 16 }, door: { x: 129, y: 19 }, doorSide: "S", plot: { x0: 132, y0: 16, x1: 134, y1: 19 } },
-  { id: "clem", house: { x: 121, y: 21 }, size: { w: 5, h: 7 }, bed: { x: 123, y: 24 }, door: { x: 123, y: 21 }, doorSide: "N", plot: { x0: 126, y0: 22, x1: 128, y1: 25 } },
+  { id: "dora", house: { x: 130, y: 12 }, size: { w: 8, h: 8 }, bed: { x: 132, y: 14 }, door: { x: 132, y: 19 }, doorSide: "S", plot: { x0: 128, y0: 15, x1: 128, y1: 19 } },
+  { id: "gus",  house: { x: 118, y: 12 }, size: { w: 8, h: 8 }, bed: { x: 124, y: 14 }, door: { x: 124, y: 19 }, doorSide: "S", plot: { x0: 126, y0: 16, x1: 126, y1: 19 } },
+  { id: "clem", house: { x: 127, y: 21 }, size: { w: 9, h: 8 }, bed: { x: 129, y: 26 }, door: { x: 129, y: 21 }, doorSide: "N", plot: { x0: 126, y0: 22, x1: 126, y1: 25 } },
   // -- SW hamlet (doors onto the south road y=80) --
-  { id: "fern", house: { x: 7,  y: 74 }, size: { w: 5, h: 6 }, bed: { x: 9,  y: 76 }, door: { x: 9,  y: 79 }, doorSide: "S", plot: { x0: 12, y0: 75, x1: 14, y1: 78 } },
-  { id: "nell", house: { x: 16, y: 74 }, size: { w: 5, h: 6 }, bed: { x: 18, y: 76 }, door: { x: 18, y: 79 }, doorSide: "S", plot: { x0: 21, y0: 75, x1: 23, y1: 78 } },
-  { id: "sage", house: { x: 9,  y: 81 }, size: { w: 5, h: 7 }, bed: { x: 11, y: 84 }, door: { x: 11, y: 81 }, doorSide: "N", plot: { x0: 14, y0: 82, x1: 16, y1: 85 } },
+  { id: "fern", house: { x: 2,  y: 81 }, size: { w: 8, h: 8 }, bed: { x: 8,  y: 85 }, door: { x: 8,  y: 81 }, doorSide: "N", plot: { x0: 10, y0: 81, x1: 12, y1: 85 } },
+  { id: "nell", house: { x: 14, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 20, y: 85 }, door: { x: 20, y: 81 }, doorSide: "N", plot: { x0: 22, y0: 81, x1: 23, y1: 84 } },
+  { id: "sage", house: { x: 4,  y: 72 }, size: { w: 9, h: 8 }, bed: { x: 10, y: 74 }, door: { x: 10, y: 79 }, doorSide: "S", plot: { x0: 13, y0: 75, x1: 13, y1: 78 } },
   // -- SE hamlet (doors onto the south road y=80) --
-  { id: "rusty", house: { x: 118, y: 74 }, size: { w: 5, h: 6 }, bed: { x: 120, y: 76 }, door: { x: 120, y: 79 }, doorSide: "S", plot: { x0: 123, y0: 75, x1: 125, y1: 78 } },
-  { id: "moss",  house: { x: 127, y: 74 }, size: { w: 5, h: 6 }, bed: { x: 129, y: 76 }, door: { x: 129, y: 79 }, doorSide: "S", plot: { x0: 132, y0: 75, x1: 134, y1: 78 } },
-  { id: "zola",  house: { x: 121, y: 81 }, size: { w: 5, h: 7 }, bed: { x: 123, y: 84 }, door: { x: 123, y: 81 }, doorSide: "N", plot: { x0: 126, y0: 82, x1: 128, y1: 85 } },
+  { id: "rusty", house: { x: 130, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 132, y: 85 }, door: { x: 132, y: 81 }, doorSide: "N", plot: { x0: 128, y0: 81, x1: 128, y1: 85 } },
+  { id: "moss",  house: { x: 118, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 124, y: 85 }, door: { x: 124, y: 81 }, doorSide: "N", plot: { x0: 126, y0: 81, x1: 126, y1: 84 } },
+  { id: "zola",  house: { x: 127, y: 72 }, size: { w: 9, h: 8 }, bed: { x: 129, y: 74 }, door: { x: 129, y: 79 }, doorSide: "S", plot: { x0: 126, y0: 75, x1: 126, y1: 78 } },
 ];
 
 /** persona id -> start (door) tile, consumed by src/agents/personas.ts. */
@@ -425,12 +428,30 @@ export function generateMap(): MapData {
   const parkCentre: Vec2 = { x: PARK.x1, y: PARK.y1 }; // SE park corner — grass
   landmarks.push({ kind: "park", pos: { ...parkCentre } });
 
-  // Decorative ground cover — deterministic (zero RNG), dense and layered so the
-  // 140x100 town reads as a lush, lived-in place rather than bare lawn. Four kinds
-  // by descending size: clustered trees (forest feel) > bushes > flowers > grass
-  // tufts. Each kind uses a distinct coprime hash so the layers never align into
-  // visible stripes. One decor item per grass tile (priority tree>bush>flower>
-  // grass via early-continue). `variant` indexes the renderer's per-kind frames.
+  // Decorative ground cover — deterministic (zero RNG / Date), placed to read as
+  // HAND-PLANTED copses + meadows rather than the procedural grid the old layout
+  // betrayed. The previous scatter keyed every kind off a single linear congruence
+  // (a·x + b·y) % m === 0, which is geometrically a family of parallel DIAGONAL
+  // lines — the "diagonal tree rows" the zoomed-out review flagged. This rewrite
+  // replaces that with: (a) deterministic tree COPSES grown as radial blobs around
+  // hash-jittered cluster centres, plus a thin rim woodland; and (b) bushes /
+  // flowers / grass scattered with a well-mixed 2D integer HASH (not a single
+  // congruence) and biased toward the copses, so no kind lines up into stripes.
+  // One decor item per grass tile (priority tree > bush > flower > grass).
+
+  // Well-mixed deterministic 2D integer hash → 32-bit unsigned. Bit-avalanche
+  // (xorshift/multiply) so neighbouring inputs scatter, with NO linear structure
+  // that could re-introduce diagonal banding. Pure integer math, no RNG/Date.
+  const hash2 = (a: number, b: number): number => {
+    let hsh = (a * 0x1f1f1f1f) ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
+    hsh = Math.imul(hsh ^ (hsh >>> 15), 0x2c1b3c6d);
+    hsh = Math.imul(hsh ^ (hsh >>> 12), 0x297a2d39);
+    hsh ^= hsh >>> 15;
+    return hsh >>> 0;
+  };
+  // Float in [0,1) from the hash, for threshold tests.
+  const rand2 = (a: number, b: number): number => hash2(a, b) / 0x100000000;
+
   const decor: DecorItem[] = [];
   const isGrass = (gx: number, gy: number): boolean =>
     gy >= 0 && gy < MAP_HEIGHT && gx >= 0 && gx < MAP_WIDTH && tiles[gy][gx] === "grass";
@@ -461,23 +482,100 @@ export function generateMap(): MapData {
   const bordersField = (gx: number, gy: number): boolean =>
     tiles[gy][gx - 1] === "soil" || tiles[gy][gx + 1] === "soil" ||
     tiles[gy - 1][gx] === "soil" || tiles[gy + 1][gx] === "soil";
+  // -- tree COPSES -----------------------------------------------------------
+  // Seed one cluster centre per coarse CELL of the map, then JITTER each centre
+  // by a hash so the centres are not gridded. ~14×10 cells over 140×100 ⇒ ~140
+  // candidate centres; the keep-probability culls them to ~80–110 actual copses
+  // scattered organically. Each kept centre carries a hash-varied radius and a
+  // base density; a tile becomes a tree when it falls inside some copse and a
+  // radial-falloff hash test passes (closer to the centre ⇒ more likely), so
+  // trees clump into rounded blobs instead of lines.
+  const CELL = 10;
+  interface Copse { cx: number; cy: number; r: number; density: number }
+  const copses: Copse[] = [];
+  for (let gy = 0; gy * CELL < MAP_HEIGHT; gy++) {
+    for (let gx = 0; gx * CELL < MAP_WIDTH; gx++) {
+      // ~45% of cells host a copse (deterministic per cell) so the map reads as
+      // discrete tree clumps with open lawn between them, not continuous forest.
+      if (rand2(gx * 2 + 1, gy * 2 + 7) > 0.45) continue;
+      // Jittered centre inside the cell (keeps centres off the grid lines).
+      const jx = Math.floor(rand2(gx + 11, gy + 3) * CELL);
+      const jy = Math.floor(rand2(gx + 5, gy + 17) * CELL);
+      const cx = gx * CELL + jx;
+      const cy = gy * CELL + jy;
+      const r = 2 + Math.floor(rand2(gx + 31, gy + 13) * 3); // 2..4 — tight copses
+      const density = 0.45 + rand2(gx + 23, gy + 41) * 0.3; // 0.45..0.75
+      copses.push({ cx, cy, r, density });
+    }
+  }
+  // A tile's tree probability = the strongest overlapping copse's radial falloff.
+  // Only copses whose cell is within the tile's 3×3 cell neighbourhood can reach
+  // it (r ≤ 6 < CELL), so this stays O(tiles · 9).
+  const treeProbAt = (x: number, y: number): number => {
+    let best = 0;
+    const gxBase = Math.floor(x / CELL);
+    const gyBase = Math.floor(y / CELL);
+    for (const c of copses) {
+      if (Math.abs(Math.floor(c.cx / CELL) - gxBase) > 1) continue;
+      if (Math.abs(Math.floor(c.cy / CELL) - gyBase) > 1) continue;
+      const d = Math.hypot(x - c.cx, y - c.cy);
+      if (d > c.r) continue;
+      const falloff = 1 - d / (c.r + 1); // 1 at centre → ~0 at the rim
+      const p = c.density * falloff;
+      if (p > best) best = p;
+    }
+    return best;
+  };
+  // Thin RIM woodland: a band a few tiles in from the map edge reads as the town's
+  // outer treeline. Sparse + hash-gated so it stays a natural fringe, not a wall.
+  const rimTreeAt = (x: number, y: number): boolean => {
+    const margin = Math.min(x, y, MAP_WIDTH - 1 - x, MAP_HEIGHT - 1 - y);
+    if (margin > 4) return false;
+    return rand2(x * 3 + 2, y * 5 + 9) < 0.22;
+  };
+
   for (let y = 1; y < MAP_HEIGHT - 1; y++) {
     for (let x = 1; x < MAP_WIDTH - 1; x++) {
       if (!isGrass(x, y)) continue;
-      // Trees: need a clear canopy neighbourhood, biased into sparse "forest"
-      // cells so they clump at the rural edges instead of dotting lawns evenly.
+      // Trees: only where the full canopy box is clear of buildings. A tile joins
+      // a copse when a radial-falloff hash test passes, or sits in the rim band.
       if (clearCanopy(x, y)) {
-        const forestCell = (((x / 6) | 0) * 13 + ((y / 6) | 0) * 29) % 7 === 0;
-        const treeHit = forestCell ? (x * 11 + y * 7) % 6 === 0 : (x * 11 + y * 7) % 31 === 0;
-        if (treeHit) { decor.push({ kind: "tree", pos: { x, y }, variant: (x + y) % 2 }); continue; }
+        let p = treeProbAt(x, y);
+        // Thin trees inside the PARK so it reads as open green with a few shade
+        // trees rather than a forested square (the pond + lawns stay visible).
+        const inPark = x >= PARK.x0 && x <= PARK.x1 && y >= PARK.y0 && y <= PARK.y1;
+        if (inPark) p *= 0.25;
+        const inCopse = p > 0 && rand2(x * 7 + 13, y * 7 + 29) < p;
+        if (inCopse || rimTreeAt(x, y)) {
+          decor.push({ kind: "tree", pos: { x, y }, variant: hash2(x, y) % 2 });
+          continue;
+        }
       }
       const edge = bordersField(x, y);
-      if (!edge && (x * 17 + y * 5) % 23 === 0) { decor.push({ kind: "bush", pos: { x, y }, variant: (x * 3 + y) % 3 }); continue; }
-      // Flowers: DIAGONAL coprime hash (mod 13, both multipliers nonzero mod 13)
-      // so blossoms scatter naturally — the old (·)%11 with an ×11 term collapsed
-      // to x≡0 (mod 11), planting flowers in vertical COLUMNS that read as fences.
-      if (!edge && (x * 7 + y * 5) % 13 === 0) { decor.push({ kind: "flower", pos: { x, y }, variant: (x + y * 2) % 4 }); continue; }
-      if ((x * 13 + y * 3) % 8 === 0) { decor.push({ kind: "grass", pos: { x, y }, variant: (x + y) % 3 }); continue; }
+      // Bushes cluster at the SKIRTS of copses (where the tree falloff is weak but
+      // nonzero) plus an occasional standalone shrub — a natural understorey, not
+      // a grid. Kept off field borders so plots read clean.
+      const tp = treeProbAt(x, y);
+      if (!edge) {
+        const bushHere =
+          (tp > 0 && tp < 0.5 && rand2(x + 101, y + 53) < 0.3) ||
+          rand2(x * 9 + 3, y * 4 + 19) < 0.012;
+        if (bushHere) { decor.push({ kind: "bush", pos: { x, y }, variant: hash2(x * 3, y) % 3 }); continue; }
+      }
+      // Flowers bloom in meadow PATCHES away from the copses: a low-frequency
+      // hash defines soft patch centres, a second hash speckles blossoms within.
+      if (!edge && tp < 0.3) {
+        const meadow = rand2(Math.floor(x / 6) + 71, Math.floor(y / 6) + 67) < 0.4;
+        if (meadow && rand2(x * 5 + 7, y * 3 + 11) < 0.22) {
+          decor.push({ kind: "flower", pos: { x, y }, variant: hash2(x, y * 2) % 4 });
+          continue;
+        }
+      }
+      // Grass tufts fill the open lawn at a gentle density (hash-gated, no grid).
+      if (rand2(x * 2 + 17, y * 6 + 5) < 0.08) {
+        decor.push({ kind: "grass", pos: { x, y }, variant: hash2(x + y, x) % 3 });
+        continue;
+      }
     }
   }
   // Guarantee at least one tree INSIDE the park region (typology park test).

@@ -848,27 +848,61 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     };
 
     if (kind === "house") {
-      // A lived-in home: bed in a footprint-seeded corner, a dining set, storage
-      // along the back wall, and a houseplant — then any leftover wall cells get
-      // a shelf/cabinet/barrel so the room reads full, never bare.
-      const v = (b.x0 * 7 + b.y0 * 13) % 5;
-      const bedCorners: [number, number][] = [
-        [ix0, iy0], [ix1 - 1, iy0], [ix0, iy1 - 1], [ix0, iy0], [ix1 - 1, iy1 - 1],
-      ];
-      placeBed(...bedCorners[v]);
-      // dining set roughly opposite the bed
-      diningSet(v < 2 ? ix1 : ix0 + 1, iy1, v % 2 === 0);
-      // back wall storage
-      prop(ix0, iy0, "interior", v % 2 ? INTERIOR_FRAMES.SHELF : INTERIOR_FRAMES.CABINET);
-      prop(ix1, iy0, "interior", v % 2 ? INTERIOR_FRAMES.CABINET : INTERIOR_FRAMES.SHELF);
-      plant(ix1, iy1);
-      prop(ix1, iy1, "farming", CRATE_FRAMES[1]);
-      // fill any remaining wall-adjacent cells so the home looks furnished
+      // A big, lived-in TWO-ROOM home (8×8 / 9×8). stampHomestead splits it with a
+      // vertical divider wall (dcol) + a doorway gap (gapRow); furniture is
+      // render-only, so we flow it around that divider into a bedroom on one side
+      // and a living/kitchen room on the other. Every home is guaranteed: a 2×2
+      // bed, a STORAGE CHEST (the interior CABINET, frame 98 — the visible "place
+      // to put things"), a dining table + chairs, a bookshelf, and a houseplant,
+      // with the remaining wall cells dressed so the larger footprint never reads
+      // empty.
+      const w = x1 - x0 + 1;
+      const h = y1 - y0 + 1;
+      const dcol = x0 + Math.ceil(w / 2); // matches stampHomestead's divider column
+      const gapRow = y0 + Math.floor(h / 2);
+      // Treat the divider wall cells (all but the doorway gap) as occupied so no
+      // prop straddles the wall; the two interior rooms furnish independently.
+      for (let cy = iy0; cy <= iy1; cy++) {
+        if (cy !== gapRow) mark(dcol, cy);
+      }
+      const leftRoom = dcol - 1 >= ix0; // interior columns left of the divider
+      const v = (b.x0 * 7 + b.y0 * 13) % 4;
+
+      // Furnish one side as the BEDROOM (2×2 bed in the far corner) and the other
+      // as the living/kitchen side. The choice is footprint-seeded but the bed
+      // always lands clear of the divider; furniture is render-only so this needs
+      // no agreement with the bedTile coordinate.
+      const bedOnLeft = leftRoom && (v % 2 === 0);
+      if (bedOnLeft) {
+        placeBed(ix0, iy0);
+      } else {
+        placeBed(ix1 - 1, iy0);
+      }
+
+      // STORAGE CHEST — exactly one CABINET per home, on the back wall of the side
+      // opposite the bed (so it is always visible, never overlapped by the bed).
+      const chestX = bedOnLeft ? ix1 : ix0;
+      prop(chestX, iy0, "interior", INTERIOR_FRAMES.CABINET);
+
+      // Dining table + chairs along the front (door) wall of the living side.
+      const liveCol = bedOnLeft ? ix1 - 1 : ix0 + 1;
+      diningSet(liveCol, iy1, v % 2 === 0);
+
+      // A bookshelf on the back wall + a houseplant in a front corner.
+      const shelfX = bedOnLeft ? dcol + 1 : dcol - 1;
+      if (shelfX >= ix0 && shelfX <= ix1) prop(shelfX, iy0, "interior", INTERIOR_FRAMES.SHELF);
+      plant(bedOnLeft ? ix0 : ix1, iy1);
+      // A produce crate by the door wall for a lived-in look.
+      prop(bedOnLeft ? ix1 : ix0, iy1, "farming", CRATE_FRAMES[1]);
+
+      // Dress any remaining wall-adjacent cells (alternating) with shelves/barrels
+      // so the big two-room footprint reads furnished, not bare. The CHEST is
+      // already placed (CABINET excluded here so it stays the single storage piece).
       for (let cy = iy0; cy <= iy1; cy++) {
         for (let cx = ix0; cx <= ix1; cx++) {
           const onWall = cx === ix0 || cx === ix1 || cy === iy0 || cy === iy1;
           if (onWall && free(cx, cy) && (cx + cy) % 2 === 0) {
-            const opts = [INTERIOR_FRAMES.SHELF, INTERIOR_FRAMES.CABINET, INTERIOR_FRAMES.BARREL];
+            const opts = [INTERIOR_FRAMES.SHELF, INTERIOR_FRAMES.BARREL];
             prop(cx, cy, "interior", opts[(cx + cy) % opts.length]);
           }
         }
