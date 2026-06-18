@@ -5,12 +5,14 @@ import { generateMap, HOMESTEAD_DOORS, HOMESTEADS } from "../../src/world/map";
 const map = generateMap();
 
 describe("personas live at their homesteads", () => {
-  it("each persona starts on its homestead door (a path tile)", () => {
+  it("each persona starts on its homestead door (a walkable floor door-gap)", () => {
     for (const p of PERSONAS) {
       const door = HOMESTEAD_DOORS[p.id];
       expect(door, `homestead for ${p.id}`).toBeDefined();
       expect(p.start).toEqual(door);
-      expect(map.tiles[p.start.y][p.start.x]).toBe("path");
+      // The door-gap is a passable `floor` tile (was `path` before walkable
+      // interiors); the room is entered through this single floor opening.
+      expect(map.tiles[p.start.y][p.start.x]).toBe("floor");
     }
   });
 

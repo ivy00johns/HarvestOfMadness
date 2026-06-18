@@ -26,7 +26,10 @@ export type TileType =
   | "water"
   | "tilled"
   | "soil"
-  | "building"
+  | "floor" // v3 — passable indoor floor (walkable house/tavern/shop interiors)
+  | "building" // retained-but-unused: no tile stamps it anymore, but it stays a
+  // valid impassable type so TILE_COLORS / placeholder / isPassable(building) need
+  // no churn (see docs/.../walkable-interiors-design.md §2).
   | "bedTile"
   | "shopTile"
   | "wall";
@@ -118,8 +121,8 @@ export const STARTING_SEEDS = 5;
  */
 export const PHASE_DURATION_MS = 8_000;
 
-export const MAP_WIDTH = 48;
-export const MAP_HEIGHT = 32;
+export const MAP_WIDTH = 64;
+export const MAP_HEIGHT = 40;
 /** v2: LPC art is 32×32; world logic is tile-indexed and never uses pixels */
 export const TILE_SIZE = 32;
 export const OBSERVATION_RADIUS = 4;

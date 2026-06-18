@@ -21,9 +21,9 @@
  * Time is advanced manually via TimeSystem.step() / advanceDay() so we control
  * exactly when each phase starts — no fake-timer races.
  *
- * Seeded event: party-d2, Social Sage hosts at the tavern door {x:22,y:15},
- * day 2 evening. Day 1 is the full diffusion window. Day 2 morning+afternoon
- * give extra spreading before convergence fires at evening.
+ * Seeded event: party-d2, Social Sage hosts at the tavern door (derived from the
+ * map's tavern landmark), day 2 evening. Day 1 is the full diffusion window.
+ * Day 2 morning+afternoon give extra spreading before convergence fires at evening.
  *
  * Assertions:
  *   1. Diffusion: knowerCount("party-d2") ≥ 4 of 6 by end of day-2 afternoon.
@@ -43,7 +43,7 @@ import { getWorld, getTimeSystem, resetWorldForTests } from "../../src/world/ins
 import { getEventBus, resetEventBusForTests } from "../../src/agents/events";
 import { Agent } from "../../src/agents/Agent";
 import { PERSONAS } from "../../src/agents/personas";
-import { HOMESTEADS } from "../../src/world/map";
+import { HOMESTEADS, generateMap } from "../../src/world/map";
 import { CognitionSystem } from "../../src/agents/Cognition";
 import { runDecisionCycle } from "../../src/agents/AgentRuntime";
 import { mockRouter } from "../../src/llm/mock";
@@ -60,7 +60,8 @@ function chebyshev(a: { x: number; y: number }, b: { x: number; y: number }): nu
 // Sim harness
 // ---------------------------------------------------------------------------
 
-const TAVERN_POS = { x: 22, y: 15 }; // TAVERN_DOOR from map.ts
+// Derive the tavern door from the generated map's landmark (no hardcoded coords).
+const TAVERN_POS = { ...generateMap().landmarks.find((l) => l.kind === "tavern")!.pos };
 const EVENT_ID = "party-d2";
 const EVENT_DAY = 2;
 const EVENT_PHASE = "evening" as const;

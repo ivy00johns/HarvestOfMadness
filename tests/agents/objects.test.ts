@@ -49,10 +49,10 @@ function exec(agent: Agent, action: AgentAction, opts = OPTS) {
   return executeAction(agent, action, getWorld(), [], opts);
 }
 
-// One tile adjacent to each object.
-// WELL at (19,16) → approach from the north (19,15)
-// NOTICE_BOARD at (20,16) → approach from the south (20,17) — avoids the well at (19,16)
-// BENCH at (29,10) → approach from the left (28,10)
+// One tile adjacent to each object (all derived from the map's object exports,
+// so they follow any relayout). Board sits one tile EAST of the well, so we
+// approach the well from the north and the board from the south — neither
+// approach tile is Manhattan-adjacent to the other object.
 const NEXT_TO_WELL: Vec2 = { x: WELL_POS.x, y: WELL_POS.y - 1 };
 const NEXT_TO_BOARD: Vec2 = { x: NOTICE_BOARD_POS.x, y: NOTICE_BOARD_POS.y + 1 };
 const NEXT_TO_BENCH: Vec2 = { x: BENCH_POS.x - 1, y: BENCH_POS.y };

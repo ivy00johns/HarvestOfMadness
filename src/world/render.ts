@@ -94,6 +94,7 @@ export const INTERIOR_FRAMES = {
   WALL: [0, 2, 4] as readonly number[],
   SHELF: 96, // c0r6 — bookshelf
   CABINET: 98, // c2r6 — cabinet
+  BAR: 100, // c4r6 — counter unit (tavern bar)
   BARREL: 129, // c1r8 — barrel stack
 } as const;
 
@@ -105,6 +106,9 @@ export const FURNITURE_FRAMES = {
   BED_HEAD_L: 208, BED_HEAD_R: 209, // r13 — pillow end
   BED_FOOT_L: 224, BED_FOOT_R: 225, // r14 — foot end
   TABLE_ROUND: 125, // c13r7 — small round table
+  TABLE_SMALL: 124, // c12r7 — small square table (extra tavern/house table)
+  CHAIR_L: 110, // c14r6 — chair facing right (paired left of a table)
+  CHAIR_R: 111, // c15r6 — chair facing left (paired right of a table)
 } as const;
 
 /** 4-neighbour membership probe: same-type checks at (±1,0)/(0,±1). */

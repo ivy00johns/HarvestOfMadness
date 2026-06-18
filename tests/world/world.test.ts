@@ -1,30 +1,46 @@
 import { describe, expect, it } from "vitest";
+import { MAP_HEIGHT, MAP_WIDTH } from "@contracts/types";
 import { World } from "../../src/world/World";
+import {
+  BED_POS,
+  FIELD_RECT,
+  HOMESTEADS,
+  SHOP_POS,
+  WATER_POS,
+} from "../../src/world/map";
 
-const SOIL = { x: 9, y: 13 }; // inside Dora's homestead plot
-const GRASS = { x: 3, y: 8 }; // open grass
-const WATER = { x: 31, y: 10 }; // the pond
-const BUILDING = { x: 5, y: 12 }; // Dora's house
-const WALL = { x: 0, y: 0 };
+// All map-coordinate fixtures derive from the generated map's exports so they
+// follow any relayout. Soil from the first homestead's plot; a house wall corner
+// (impassable); the pond corner (water); a walkable floor door-gap.
+const SOIL = { x: FIELD_RECT.x0, y: FIELD_RECT.y0 }; // inside the first plot
+const SOIL_B = { x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 }; // a second plot soil
+const GRASS = { x: 3, y: 18 }; // open grass, clear of rooms/roads
+const WATER = { ...WATER_POS }; // the pond corner
+const WALL = { x: 0, y: 0 }; // the map-border wall ring
+// A house wall corner — the room's impassable wall ring (replaces the old
+// `building` fixture; `building` is retained-but-unused, no tile stamps it).
+const HOUSE_WALL = { x: HOMESTEADS[0].house.x, y: HOMESTEADS[0].house.y };
+// A walkable `floor` tile — the first homestead's door-gap.
+const FLOOR = { ...HOMESTEADS[0].door };
 
 describe("World map + queries", () => {
   it("exposes the contract dimensions", () => {
     const w = new World();
-    expect(w.width).toBe(48);
-    expect(w.height).toBe(32);
+    expect(w.width).toBe(MAP_WIDTH);
+    expect(w.height).toBe(MAP_HEIGHT);
   });
 
   it("getTile returns null out of bounds", () => {
     const w = new World();
     expect(w.getTile(-1, 0)).toBeNull();
-    expect(w.getTile(48, 0)).toBeNull();
-    expect(w.getTile(0, 32)).toBeNull();
+    expect(w.getTile(MAP_WIDTH, 0)).toBeNull();
+    expect(w.getTile(0, MAP_HEIGHT)).toBeNull();
     expect(w.getTile(5, 5)).not.toBeNull();
   });
 
   it("tilesInRadius is Chebyshev and clipped to the map", () => {
     const w = new World();
-    // Interior: full (2r+1)^2 square.
+    // Interior: full (2r+1)^2 square (a tile well clear of the border).
     expect(w.tilesInRadius({ x: 12, y: 9 }, 2)).toHaveLength(25);
     // Corner clipping: (0,0) r=1 -> 2x2.
     expect(w.tilesInRadius({ x: 0, y: 0 }, 1)).toHaveLength(4);
@@ -36,17 +52,18 @@ describe("World map + queries", () => {
     }
   });
 
-  it("isPassable: grass/path/tilled/soil/bedTile/shopTile yes; water/building/wall no", () => {
+  it("isPassable: grass/path/tilled/soil/floor/bedTile/shopTile yes; water/house-wall/wall no", () => {
     const w = new World();
     expect(w.isPassable(GRASS.x, GRASS.y)).toBe(true); // grass
-    expect(w.isPassable(6, 16)).toBe(true); // path (the town road)
+    expect(w.isPassable(10, 20)).toBe(true); // path (the town spine road)
     expect(w.isPassable(SOIL.x, SOIL.y)).toBe(true); // soil
-    expect(w.isPassable(6, 14)).toBe(true); // bedTile (Dora's bed)
-    expect(w.isPassable(17, 14)).toBe(true); // shopTile (the commons shop)
+    expect(w.isPassable(FLOOR.x, FLOOR.y)).toBe(true); // floor (door-gap) — walkable interiors
+    expect(w.isPassable(BED_POS.x, BED_POS.y)).toBe(true); // bedTile
+    expect(w.isPassable(SHOP_POS.x, SHOP_POS.y)).toBe(true); // shopTile
     w.till(SOIL);
     expect(w.isPassable(SOIL.x, SOIL.y)).toBe(true); // tilled
     expect(w.isPassable(WATER.x, WATER.y)).toBe(false);
-    expect(w.isPassable(BUILDING.x, BUILDING.y)).toBe(false);
+    expect(w.isPassable(HOUSE_WALL.x, HOUSE_WALL.y)).toBe(false); // interior wall ring
     expect(w.isPassable(WALL.x, WALL.y)).toBe(false);
     expect(w.isPassable(-1, 5)).toBe(false); // out of bounds
   });
@@ -96,14 +113,16 @@ describe("Farm mutations — tile-level preconditions", () => {
     expect(w.getTile(GRASS.x, GRASS.y)!.type).toBe("tilled");
   });
 
-  it("till rejects water/building/wall/already-tilled/out-of-bounds with readable reasons", () => {
+  it("till rejects water/house-wall/wall/floor/already-tilled/out-of-bounds with readable reasons", () => {
     const w = new World();
     const water = w.till(WATER);
     expect(water.ok).toBe(false);
     expect(water.reason).toContain("water");
     expect(water.reason).toContain(`(${WATER.x},${WATER.y})`);
-    expect(w.till(BUILDING).reason).toContain("building");
+    expect(w.till(HOUSE_WALL).reason).toContain("wall");
     expect(w.till(WALL).reason).toContain("wall");
+    // floor is passable but NOT tillable.
+    expect(w.till(FLOOR).reason).toContain("floor");
     w.till(SOIL);
     expect(w.till(SOIL).reason).toContain("already tilled");
     expect(w.till({ x: -1, y: 99 }).reason).toContain("outside the map");
@@ -183,8 +202,8 @@ describe("Farm mutations — tile-level preconditions", () => {
 describe("advanceDay (SLEEP) crop semantics", () => {
   it("grows only watered crops, resets watered on ALL crops, recomputes ready", () => {
     const w = new World();
-    const watered = { x: 9, y: 9 };
-    const dry = { x: 10, y: 9 };
+    const watered = { ...SOIL };
+    const dry = { ...SOIL_B };
     for (const p of [watered, dry]) {
       w.till(p);
       w.plant(p, "parsnip");

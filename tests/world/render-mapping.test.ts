@@ -148,7 +148,8 @@ describe("town props frame constants (decorations + paths sheets, 16 frames/row)
     expect(INTERIOR_FRAMES.FLOOR).toBeGreaterThanOrEqual(0);
     expect(INTERIOR_FRAMES.WALL.length).toBeGreaterThan(0);
     for (const f of INTERIOR_FRAMES.WALL) expect(ROW(f)).toBe(0); // back-wall row
-    for (const f of [INTERIOR_FRAMES.SHELF, INTERIOR_FRAMES.CABINET, INTERIOR_FRAMES.BARREL])
+    // SHELF/CABINET/BAR/BARREL are valid in-sheet props for the bigger rooms.
+    for (const f of [INTERIOR_FRAMES.SHELF, INTERIOR_FRAMES.CABINET, INTERIOR_FRAMES.BAR, INTERIOR_FRAMES.BARREL])
       expect(f).toBeGreaterThanOrEqual(0);
   });
 
@@ -157,9 +158,23 @@ describe("town props frame constants (decorations + paths sheets, 16 frames/row)
     expect(FURNITURE_FRAMES.BED_FOOT_R - FURNITURE_FRAMES.BED_FOOT_L).toBe(1);
     expect(FURNITURE_FRAMES.BED_FOOT_L - FURNITURE_FRAMES.BED_HEAD_L).toBe(16);
   });
+
+  it("extra room furniture frames (tables + chairs) are non-negative sheet indices", () => {
+    // New constants added for the enlarged 5×5 / 7×5 rooms.
+    for (const f of [
+      FURNITURE_FRAMES.TABLE_ROUND,
+      FURNITURE_FRAMES.TABLE_SMALL,
+      FURNITURE_FRAMES.CHAIR_L,
+      FURNITURE_FRAMES.CHAIR_R,
+    ]) {
+      expect(f).toBeGreaterThanOrEqual(0);
+    }
+    // CHAIR_L / CHAIR_R are an adjacent pair on the same sheet row.
+    expect(FURNITURE_FRAMES.CHAIR_R - FURNITURE_FRAMES.CHAIR_L).toBe(1);
+  });
 });
 
-describe("fenceFrame (24x18 wall ring)", () => {
+describe("fenceFrame (map wall ring)", () => {
   it("posts at the four map corners", () => {
     expect(fenceFrame(0, 0, MAP_WIDTH, MAP_HEIGHT)).toBe(FENCE_FRAMES.POST);
     expect(fenceFrame(MAP_WIDTH - 1, 0, MAP_WIDTH, MAP_HEIGHT)).toBe(

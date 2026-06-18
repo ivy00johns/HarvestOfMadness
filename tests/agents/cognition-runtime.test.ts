@@ -9,10 +9,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentAction, Router, Vec2 } from "@contracts/types";
 import { getWorld, resetWorldForTests } from "../../src/world/instance";
+import { FIELD_RECT } from "../../src/world/map";
 import { Agent } from "../../src/agents/Agent";
 import { CognitionSystem } from "../../src/agents/Cognition";
 import { runDecisionCycle } from "../../src/agents/AgentRuntime";
 import { getEventBus, resetEventBusForTests } from "../../src/agents/events";
+
+// Farm fixtures from the first homestead's plot (all soil). Alice stands on
+// ALICE_POS; Bob 4-adjacent on BOB_POS; TILL_TARGET is a third adjacent soil
+// cell (so tilling it is a valid, attributable action).
+const ALICE_POS: Vec2 = { x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 + 1 };
+const BOB_POS: Vec2 = { x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 }; // north, adjacent
+const TILL_TARGET: Vec2 = { x: FIELD_RECT.x0 + 2, y: FIELD_RECT.y0 + 1 }; // east, adjacent
+const TILL_STR = `(${TILL_TARGET.x},${TILL_TARGET.y})`;
 
 function makeAgent(pos: Vec2, name: string): Agent {
   return new Agent({
@@ -46,8 +55,8 @@ beforeEach(() => {
   resetWorldForTests();
   resetEventBusForTests();
   cognition = new CognitionSystem({ bus: getEventBus() }); // mock mode (no VITE_MODEL_MODE)
-  a = makeAgent({ x: 9, y: 9 }, "Alice");
-  b = makeAgent({ x: 9, y: 8 }, "Bob"); // 4-adjacent to Alice
+  a = makeAgent({ ...ALICE_POS }, "Alice");
+  b = makeAgent({ ...BOB_POS }, "Bob"); // 4-adjacent to Alice
   cognition.registerAgent(a);
   cognition.registerAgent(b);
 });
@@ -97,9 +106,9 @@ describe("plan + enrichment on the decision path", () => {
 
 describe("rule-9 memory writes", () => {
   it("every resolved action becomes a memory for the actor", async () => {
-    await cycle(a, { thought: "t", say: null, action: "TILL", target: { x: 9, y: 8 } });
+    await cycle(a, { thought: "t", say: null, action: "TILL", target: { ...TILL_TARGET } });
     const mems = cognition.memory.all("Alice");
-    expect(mems.some((m) => m.text.includes("I tilled the ground at (9,8)"))).toBe(true);
+    expect(mems.some((m) => m.text.includes(`I tilled the ground at ${TILL_STR}`))).toBe(true);
     expect(a.memoryCount).toBe(mems.length);
     expect(
       getEventBus()
@@ -109,7 +118,7 @@ describe("rule-9 memory writes", () => {
   });
 
   it("rejections are remembered too (with the reason)", async () => {
-    await cycle(a, { thought: "t", say: null, action: "HARVEST", target: { x: 9, y: 8 } });
+    await cycle(a, { thought: "t", say: null, action: "HARVEST", target: { ...TILL_TARGET } });
     const mems = cognition.memory.all("Alice");
     const fail = mems.find((m) => m.text.startsWith("I tried to HARVEST but failed"));
     expect(fail).toBeDefined();
@@ -132,7 +141,7 @@ describe("rule-9 memory writes", () => {
   });
 
   it("out-of-earshot agents hear nothing", async () => {
-    b.pos = { x: 13, y: 9 }; // beyond 1 tile
+    b.pos = { x: ALICE_POS.x + 4, y: ALICE_POS.y }; // beyond 1 tile
     await cycle(a, { thought: "t", say: "Hello?", action: "WAIT" });
     expect(cognition.memory.all("Bob").some((m) => m.text.includes("Hello?"))).toBe(false);
   });
@@ -194,7 +203,7 @@ describe("gift + emote through the full cycle", () => {
   });
 
   it("TALK_TO grows affinity on both rows and the relationships ride into the next prompt", async () => {
-    b.pos = { x: 9, y: 8 };
+    b.pos = { ...BOB_POS };
     await cycle(a, {
       thought: "t",
       say: "How are the parsnips?",

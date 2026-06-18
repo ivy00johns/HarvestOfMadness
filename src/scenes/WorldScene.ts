@@ -95,14 +95,14 @@ const CRATE_FRAMES = [209, 211, 212]; // cabbage, potato, tomato crates
 const TREE_FRAMES = [0, 10];
 
 /**
- * Decorative trees sit ON the impassable wall ring (y=17) so the dressing
- * never contradicts WorldApi.isPassable; canopies overhang interior grass at
- * overhead depth, which agents simply walk behind.
+ * Decorative trees sit on open grass clear of rooms/roads/plots; canopies
+ * overhang at overhead depth, which agents simply walk behind (purely visual —
+ * trees do not change WorldApi.isPassable).
  */
 const TREE_SPOTS: { x: number; y: number; frame: number }[] = [
-  { x: 4, y: 17, frame: 0 },
-  { x: 13, y: 17, frame: 10 },
-  { x: 20, y: 17, frame: 0 },
+  { x: 3, y: 17, frame: 0 },
+  { x: 55, y: 6, frame: 10 },
+  { x: 55, y: 33, frame: 0 },
 ];
 
 /**
@@ -565,14 +565,28 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         if (tile.crop?.watered) img.setTint(WATERED_SOIL_TINT);
         break;
       }
-      case "building":
+      case "floor":
       case "bedTile":
       case "shopTile":
-        break; // covered by the static facade dressing
-      case "wall":
-        // The impassable wall ring renders as the wooden farm fence.
-        place("fence", fenceFrame(x, y, MAP_WIDTH, MAP_HEIGHT));
+        // Walkable indoor floor (room interior, door-gap, bed/shop overlay
+        // cells): the tile layer owns the floor; furniture + sign are added by
+        // paintInterior at prop depth, agents y-sort above.
+        place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
         break;
+      case "building":
+        break; // retained-but-unused TileType: no tile stamps it (dead-but-valid)
+      case "wall": {
+        const onBorder =
+          x === 0 || y === 0 || x === MAP_WIDTH - 1 || y === MAP_HEIGHT - 1;
+        if (onBorder) {
+          // The impassable map-border wall ring renders as the wooden farm fence.
+          place("fence", fenceFrame(x, y, MAP_WIDTH, MAP_HEIGHT));
+        } else {
+          // Interior house/tavern/shop wall ring — open-roof cutaway edge.
+          place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+        }
+        break;
+      }
     }
 
     if (tile.crop) this.drawCropAssets(tile, x, y);
@@ -668,14 +682,21 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * Open-roof furnished interior (Smallville cutaway): a tiled floor over the
-   * whole footprint, a back-wall strip along the top, kind-specific furniture,
-   * and the hanging/emoji sign above. No opaque roof, so agents standing on the
-   * bed/door tiles read as being *inside* the room.
+   * Open-roof furnished interior (Smallville cutaway): kind-specific furniture
+   * over the room and the hanging/emoji sign above. The tile layer (drawTile)
+   * now owns the floor + interior wall ring (single-owner rule), so this method
+   * paints furniture + sign ONLY — no floor-fill, no wall-strip — to avoid
+   * double-paint. Furniture is decoration only (passability is tile-driven;
+   * agents y-sort above props). Interior cells span [x0+1,y0+1]..[x1-1,y1-1].
    */
   private paintInterior(b: (typeof BUILDINGS)[number], signFrame?: number): void {
     const { x0, y0, x1, y1, kind } = b;
     const hasFurn = this.textures.exists("furniture_wood");
+    // Interior bounds (inside the wall ring).
+    const ix0 = x0 + 1;
+    const iy0 = y0 + 1;
+    const ix1 = x1 - 1;
+    const iy1 = y1 - 1;
     const put = (
       x: number,
       y: number,
@@ -689,32 +710,40 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         .setDepth(depth);
     };
 
-    // Floor across the whole footprint, then the back wall along the top row.
-    for (let y = y0; y <= y1; y++)
-      for (let x = x0; x <= x1; x++)
-        put(x, y, "interior", INTERIOR_FRAMES.FLOOR, DEPTH_FACADE);
-    for (let x = x0; x <= x1; x++)
-      put(x, y0, "interior", INTERIOR_FRAMES.WALL[(x - x0) % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
-
-    // Kind-specific furnishing (props sit above the floor; agents y-sort over them).
+    // Kind-specific furnishing (props sit at prop depth above the floor; agents
+    // y-sort over them). Placed on interior floor cells only.
     if (kind === "house") {
+      // 2×2 bed in the NW interior corner over the bedTile region.
       if (hasFurn) {
-        put(x0, y0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
-        put(x0 + 1, y0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
-        put(x0, y1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
-        put(x0 + 1, y1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
+        put(ix0, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
+        put(ix0 + 1, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
+        put(ix0, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
+        put(ix0 + 1, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
+        // A small table + chair in the SE interior corner.
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
       }
-      put(x1, y0 + 1, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      // A shelf on the back wall, NE interior corner.
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
     } else if (kind === "shop") {
-      put(x0, y0 + 1, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
-      put(x1, y0 + 1, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
-      // Produce crates flanking the storefront (kept from the old facade look).
-      put(x0, y1, "farming", CRATE_FRAMES[0], DEPTH_PROP);
-      put(x1, y1, "farming", CRATE_FRAMES[1], DEPTH_PROP);
+      // Shelves/cabinet along the back wall; counter crates at the doorway.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
+      put(ix0, iy1, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP); // counter unit
+      // Produce crates flanking the storefront (kept from the old shop look),
+      // never over the centre shopTile (the BUY/SELL gate cell stays clear).
+      put(ix1, iy1, "farming", CRATE_FRAMES[1], DEPTH_PROP);
     } else if (kind === "tavern") {
-      if (hasFurn) put(x0 + 1, y0 + 1, "furniture_wood", FURNITURE_FRAMES.TABLE_ROUND, DEPTH_PROP);
-      put(x0, y1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
-      put(x1, y1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+      // Bar counter along the back wall, tables + chairs, corner barrels.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
+      put(ix0 + 1, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix0 + 2, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_ROUND, DEPTH_PROP);
+        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+        put(ix0 + 3, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
+      }
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+      put(ix1, iy1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
     }
 
     // Sign above the room: real hanging sign for shop/tavern, emoji for houses.

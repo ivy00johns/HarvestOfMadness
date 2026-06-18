@@ -6,11 +6,16 @@
 import { describe, expect, it } from "vitest";
 import type { WorldApi } from "@contracts/types";
 import { World } from "../../src/world/World";
+import { FIELD_RECT } from "../../src/world/map";
+
+// Two soil cells from the first homestead's plot (follows any map relayout).
+const PLOT_A = { x: FIELD_RECT.x0, y: FIELD_RECT.y0 };
+const PLOT_B = { x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 };
 
 describe("scripted demo loop (till->plant->water->sleep->harvest->sell)", () => {
   it("one parsnip yields gold delta +15", () => {
     const world: WorldApi = new World();
-    const plot = { x: 9, y: 9 };
+    const plot = { ...PLOT_A };
     let gold = 100;
 
     // BUY seed (gold mutation is executor-side; price is the world's).
@@ -38,7 +43,7 @@ describe("scripted demo loop (till->plant->water->sleep->harvest->sell)", () => 
 
   it("the loop respects ordering: harvesting a day early is rejected", () => {
     const world: WorldApi = new World();
-    const plot = { x: 10, y: 10 };
+    const plot = { ...PLOT_B };
     world.till(plot);
     world.plant(plot, "parsnip");
     for (let day = 0; day < 3; day++) {

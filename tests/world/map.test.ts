@@ -14,9 +14,9 @@ const map = generateMap();
 const at = (p: Vec2): TileType => map.tiles[p.y][p.x];
 
 describe("town generator", () => {
-  it("is 48x32 with an intact wall ring", () => {
-    expect(map.width).toBe(48);
-    expect(map.height).toBe(32);
+  it("is MAP_WIDTH×MAP_HEIGHT with an intact wall ring", () => {
+    expect(map.width).toBe(MAP_WIDTH);
+    expect(map.height).toBe(MAP_HEIGHT);
     for (let x = 0; x < MAP_WIDTH; x++) {
       expect(map.tiles[0][x]).toBe("wall");
       expect(map.tiles[MAP_HEIGHT - 1][x]).toBe("wall");
@@ -27,17 +27,69 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly twelve homesteads, each a house + bed + door + plot", () => {
+  it("has exactly twelve walkable homesteads: 15 wall + 1 floor door perimeter, 8 floor + 1 bed interior", () => {
     expect(HOMESTEADS).toHaveLength(12);
     for (const h of HOMESTEADS) {
-      for (let y = h.house.y; y <= h.house.y + 2; y++) {
-        for (let x = h.house.x; x <= h.house.x + 2; x++) {
+      const x0 = h.house.x;
+      const y0 = h.house.y;
+      const x1 = h.house.x + 4;
+      const y1 = h.house.y + 4;
+
+      // -- perimeter: exactly 15 wall + exactly 1 floor (the door-gap) --------
+      let perimWall = 0;
+      let perimFloor = 0;
+      let theDoor: Vec2 | null = null;
+      for (let y = y0; y <= y1; y++) {
+        for (let x = x0; x <= x1; x++) {
+          const onPerim = x === x0 || x === x1 || y === y0 || y === y1;
+          if (!onPerim) continue;
           const t = map.tiles[y][x];
-          expect(t === "building" || t === "bedTile", `house tile ${x},${y}`).toBe(true);
+          if (t === "wall") perimWall++;
+          else if (t === "floor") {
+            perimFloor++;
+            theDoor = { x, y };
+          } else {
+            throw new Error(`unexpected perimeter tile ${t} at ${x},${y}`);
+          }
         }
       }
-      expect(at(h.bed)).toBe("bedTile");
-      expect(at(h.door)).toBe("path");
+      expect(perimWall, `${h.id} perimeter wall count`).toBe(15);
+      expect(perimFloor, `${h.id} perimeter floor (door) count`).toBe(1);
+      expect(theDoor, `${h.id} door`).toEqual(h.door);
+
+      // -- door-gap is `floor`; its exterior neighbour is a passable road -----
+      expect(at(h.door)).toBe("floor");
+      const ext =
+        h.doorSide === "N"
+          ? { x: h.door.x, y: h.door.y - 1 }
+          : h.doorSide === "S"
+            ? { x: h.door.x, y: h.door.y + 1 }
+            : h.doorSide === "E"
+              ? { x: h.door.x + 1, y: h.door.y }
+              : { x: h.door.x - 1, y: h.door.y };
+      expect(at(ext), `${h.id} door exterior neighbour is a road path`).toBe("path");
+
+      // -- interior 3×3: exactly 8 floor + exactly 1 bedTile (== h.bed) -------
+      let intFloor = 0;
+      let intBed = 0;
+      let theBed: Vec2 | null = null;
+      for (let y = y0 + 1; y <= y1 - 1; y++) {
+        for (let x = x0 + 1; x <= x1 - 1; x++) {
+          const t = map.tiles[y][x];
+          if (t === "floor") intFloor++;
+          else if (t === "bedTile") {
+            intBed++;
+            theBed = { x, y };
+          } else {
+            throw new Error(`unexpected interior tile ${t} at ${x},${y}`);
+          }
+        }
+      }
+      expect(intFloor, `${h.id} interior floor count`).toBe(8);
+      expect(intBed, `${h.id} interior bedTile count`).toBe(1);
+      expect(theBed, `${h.id} bed`).toEqual(h.bed);
+
+      // -- plot is all soil ---------------------------------------------------
       for (let y = h.plot.y0; y <= h.plot.y1; y++) {
         for (let x = h.plot.x0; x <= h.plot.x1; x++) {
           expect(at({ x, y }), `plot tile ${x},${y}`).toBe("soil");
@@ -46,11 +98,17 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly 12 bedTiles and the expected landmark counts", () => {
+  it("has exactly 12 bedTiles, zero `building` tiles, and the expected landmark counts", () => {
     let beds = 0;
+    let buildings = 0;
     for (let y = 0; y < MAP_HEIGHT; y++)
-      for (let x = 0; x < MAP_WIDTH; x++) if (map.tiles[y][x] === "bedTile") beds++;
+      for (let x = 0; x < MAP_WIDTH; x++) {
+        if (map.tiles[y][x] === "bedTile") beds++;
+        if (map.tiles[y][x] === "building") buildings++;
+      }
     expect(beds).toBe(12);
+    // `building` is retained-but-unused: no tile stamps it anymore.
+    expect(buildings).toBe(0);
     const count = (k: string) => map.landmarks.filter((l) => l.kind === k).length;
     expect(count("bed")).toBe(12);
     expect(count("house")).toBe(12);
@@ -66,8 +124,10 @@ describe("town generator", () => {
     expect(at({ x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 })).toBe("soil");
   });
 
-  it("connects every homestead door + the shop to the tavern via passable tiles", () => {
+  it("connects every homestead door + the shop + every bed to the tavern via passable tiles", () => {
     const tavern = map.landmarks.find((l) => l.kind === "tavern")!.pos;
+    // impassable set: walls/water/building stop the flood; `floor` is passable
+    // and must NOT be added (door-gaps + interiors are reachable on purpose).
     const impassable = new Set<TileType>(["wall", "water", "building"]);
     const key = (p: Vec2) => `${p.x},${p.y}`;
     const seen = new Set<string>([key(tavern)]);
@@ -82,7 +142,11 @@ describe("town generator", () => {
         queue.push(n);
       }
     }
-    for (const h of HOMESTEADS) expect(seen.has(key(h.door)), `door ${h.id}`).toBe(true);
+    for (const h of HOMESTEADS) {
+      expect(seen.has(key(h.door)), `door ${h.id}`).toBe(true);
+      // Interior reachability: the bed inside each room is reachable too.
+      expect(seen.has(key(h.bed)), `bed ${h.id}`).toBe(true);
+    }
     expect(seen.has(key(SHOP_POS)), "shop").toBe(true);
   });
 
@@ -114,7 +178,9 @@ describe("town generator", () => {
   });
 
   it("every building footprint is actually built and its door is in range", () => {
-    const built = new Set<TileType>(["building", "bedTile", "shopTile"]);
+    // Walkable rooms: a footprint is built out of wall ring + floor interior +
+    // the bed/shop overlay cells (NOT the legacy `building` type).
+    const built = new Set<TileType>(["wall", "floor", "bedTile", "shopTile"]);
     for (const b of BUILDINGS) {
       expect(b.doorX, `${b.kind} doorX in [x0,x1]`).toBeGreaterThanOrEqual(b.x0);
       expect(b.doorX).toBeLessThanOrEqual(b.x1);
