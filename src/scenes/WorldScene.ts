@@ -40,8 +40,6 @@ import {
   REG_ASSETS_ON,
   REG_ASSET_MANIFEST,
   SPEECH_DURATION_MS,
-  SPEECH_FONT_SIZE,
-  SPEECH_MAX_CHARS,
   TILE_COLORS,
   WALK_MS_PER_TILE,
   WATERED_SOIL_TINT,
@@ -1407,25 +1405,28 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * Transient speech bubble (~4s), truncated to ~60 chars; the border is
-   * tinted by the speaker's emotion (v2).
+   * Transient "is speaking" indicator (~4s). HISTORICALLY this drew the full
+   * utterance (up to 160 chars, word-wrapped) as a bubble over the speaker —
+   * which, with agents clustered at the tavern, stacked into the unreadable text
+   * soup of Image #8. Smallville shows only a small balloon glyph over the
+   * speaker and keeps the words in a side panel. So the in-world bubble is now a
+   * compact 💬 glyph (border tinted by emotion); the FULL conversation text is
+   * carried by the CONVERSATION transcript panel (bus → renderTranscript). The
+   * `text` arg is retained for signature stability + future "focused agent"
+   * reveal, but is no longer rendered in the world.
    */
   showSpeech(name: string, text: string, emotion: Emotion = "neutral"): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.speechTimer?.remove();
     agent.speech?.destroy();
+    void text; // intentionally not rendered in-world (see doc comment)
 
-    const shown =
-      text.length > SPEECH_MAX_CHARS
-        ? `${text.slice(0, SPEECH_MAX_CHARS - 1)}…`
-        : text;
     const label = this.add
-      .text(0, 0, shown, {
+      .text(0, 0, "💬", {
         fontFamily: "ui-monospace, Menlo, monospace",
-        fontSize: `${SPEECH_FONT_SIZE}px`,
+        fontSize: "15px",
         color: "#101014",
-        wordWrap: { width: 260 },
       })
       .setOrigin(0.5, 0.5);
     const bounds = label.getBounds();
@@ -1479,21 +1480,19 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * v3 (Wave 2) — readable activity label: set the persistent plan-step text
-   * below an agent's name (Smallville "what they're doing"). Called by
-   * AgentRuntime after each decision with the agent's current planStep. Null or
-   * empty renders nothing; longer text is truncated to ~40 chars.
+   * v3 (Wave 2) — activity label. HISTORICALLY this drew the full plan-step text
+   * ("socialize at the tavern and catch up") UNDER every agent. With 26 agents
+   * clustered, those lines overlapped into unreadable soup (the Image #8
+   * problem). Smallville never renders sentence text in the world — only a small
+   * per-agent emoji (pronunciatio); the words live in the side panels. So this is
+   * now a deliberate world-side no-op: the plan step still surfaces in each
+   * agent's card + the conversation/events panels, the world stays calm and
+   * readable. Signature kept so AgentRuntime callers are unchanged.
    */
-  setActivityLabel(name: string, text: string | null): void {
+  setActivityLabel(name: string, _text: string | null): void {
     const agent = this.agents.get(name);
     if (!agent) return;
-    if (!text) {
-      agent.activityText.setText("");
-      return;
-    }
-    const flat = text.replace(/\s+/g, " ");
-    const shown = flat.length > 40 ? `${flat.slice(0, 39)}…` : flat;
-    agent.activityText.setText(shown);
+    agent.activityText.setText("");
   }
 
   /** v2 — transient ~2s emote symbol floating up above the sprite. */

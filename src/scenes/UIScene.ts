@@ -200,8 +200,10 @@ export class UIScene extends Phaser.Scene {
   // agent cards
   private cards = new Map<string, CardUi>();
   private cardLayoutKey = "";
-  /** card order on screen — index ↔ cardIndexAt() hit test */
+  /** card order on screen — index ↔ cardIndexAt() hit test (windowed view) */
   private cardNames: string[] = [];
+  /** horizontal scroll: index of the FIRST agent shown in the strip window */
+  private cardScroll = 0;
 
   // trace panel
   private selectedAgent: string | null = null;
@@ -959,16 +961,19 @@ export class UIScene extends Phaser.Scene {
       .setVisible(false);
     this.transcriptRows = [];
     const rowTop = r.y + 28;
-    // Single-line rows (the render clips each composed line to the panel width),
-    // comfortably spaced now that the conversation region fills the right panel.
-    const rowH = FONT_SIZE_SMALL + 8;
+    // WORD-WRAPPED rows: each utterance wraps to the panel width and the render
+    // pass reflows them by measured height, so full sentences are readable
+    // instead of clipped to "Good to se…" (Smallville keeps the full text in the
+    // side panel). renderTranscript repositions each row's Y on every refresh.
     for (let i = 0; i < UIScene.TRANSCRIPT_MAX_LINES; i++) {
       this.transcriptRows.push(
         this.add
-          .text(r.x + 10, rowTop + i * rowH, "", {
-            fontFamily: MONO_FONT,
+          .text(r.x + 10, rowTop, "", {
+            fontFamily: HUD_FONT,
             fontSize: PX_SMALL,
             color: COLOR_TEXT,
+            wordWrap: { width: r.w - 20 },
+            lineSpacing: 2,
           })
           .setDepth(DEPTH_HUD_TEXT)
           .setVisible(false),
@@ -988,7 +993,7 @@ export class UIScene extends Phaser.Scene {
     const view = buildTranscript(
       this.latestConversation,
       UIScene.TRANSCRIPT_MAX_LINES,
-      this.transcriptLineMaxChars(),
+      240, // keep near-full utterances; the row Text word-wraps to the panel
     );
     if (view.empty || this.selectedAgent) {
       this.setTranscriptVisible(false);
@@ -998,26 +1003,29 @@ export class UIScene extends Phaser.Scene {
     this.transcriptTitle?.setText(
       this.clip(`${p0 ?? ""}${p1 ? ` ↔ ${p1}` : ""}`, 40),
     );
+    // Reflow word-wrapped rows top→down by their measured height; the two
+    // speakers alternate color. Rows that would spill past the panel bottom are
+    // hidden (conversations are short, so the recent turns fit).
+    const r = this.hud.transcriptRect;
+    let y = r.y + 28;
+    const bottom = r.y + r.h - 4;
     for (let i = 0; i < this.transcriptRows.length; i++) {
       const row = this.transcriptRows[i];
       const line = view.lines[i];
-      if (line) {
-        // Clip the COMPOSED "[speaker]: text" line to the panel width so each
-        // row stays single-line and rows never collide.
-        row.setText(this.clip(`[${line.speaker}]: ${line.text}`, this.transcriptLineMaxChars()));
+      if (line && y < bottom) {
+        // Full utterance (capped against a pathological single huge turn); the
+        // Text object word-wraps it to the panel width.
+        row.setText(`[${line.speaker}]: ${this.clip(line.text, 240)}`);
         row.setColor(line.speaker === p0 ? COLOR_GOAL : COLOR_PLAN);
+        row.setY(Math.round(y));
         row.setVisible(true);
+        y += row.height + 4;
       } else {
         if (row.text !== "") row.setText("");
         row.setVisible(false);
       }
     }
     this.setTranscriptVisible(true);
-  }
-
-  /** Rough char budget for a transcript row at 13px monospace in the panel. */
-  private transcriptLineMaxChars(): number {
-    return Math.max(20, Math.floor((this.hud.transcriptW - 20) / 8.0));
   }
 
   private setTranscriptVisible(visible: boolean): void {
@@ -1035,43 +1043,56 @@ export class UIScene extends Phaser.Scene {
 
   private renderCards(): void {
     const agents = this.conn?.controls.agents() ?? [];
-    // v4 — cards lay out LEFT→RIGHT in the bottom strip. Only the cards that
-    // fit left of the right panel are created; the rest are off-strip. The
-    // "AGENTS · N" header reports the full count so off-screen agents are
-    // accounted for. Width changes (resize) re-key the layout via `visible`.
-    let visible = 0;
-    for (let i = 0; i < agents.length; i++) {
-      const r = this.hud.cardRect(i, agents.length);
-      if (r.x + r.w > this.hud.rightX) break; // only fully-visible cards
-      visible++;
-    }
-    const layoutKey = `${agents.length}/${visible}:${agents.map((a) => a.name).join(",")}`;
+    // The bottom strip shows full agent cards in a single row that SCROLLS
+    // horizontally, so every agent's card is reachable (wheel over the strip, or
+    // the ◀ ▶ buttons). `cardScroll` is the first agent in the visible window.
+    const total = agents.length;
+    const perPage = this.hud.cardsPerPage();
+    const maxScroll = Math.max(0, total - perPage);
+    this.cardScroll = Math.max(0, Math.min(this.cardScroll, maxScroll));
+    const start = this.cardScroll;
+    const windowed = agents.slice(start, start + perPage);
+
+    const layoutKey = `${total}/${start}/${perPage}:${windowed.map((a) => a.name).join(",")}`;
     if (layoutKey !== this.cardLayoutKey) {
       this.destroyCards();
       this.cardLayoutKey = layoutKey;
-      this.cardNames = agents.map((a) => a.name);
-      for (let i = 0; i < visible; i++) {
-        const agent = agents[i];
-        const rect = this.hud.cardRect(i, agents.length);
-        this.cards.set(agent.name, this.createCard(rect.x, rect.y, rect.h, true));
+      this.cardNames = windowed.map((a) => a.name);
+      for (let slot = 0; slot < windowed.length; slot++) {
+        const rect = this.hud.cardRect(slot, windowed.length);
+        this.cards.set(windowed[slot].name, this.createCard(rect.x, rect.y, rect.h));
       }
     }
-    for (const agent of agents) {
+    for (const agent of windowed) {
       const ui = this.cards.get(agent.name);
       if (ui) this.updateCard(ui, buildAgentCard(agent));
     }
-    // Update the "AGENTS · N" header (with a "+k more" hint when clipped).
+    // Header: total count + which window is shown, plus a scroll affordance.
     if (this.agentsHeader) {
-      const total = agents.length;
-      const hidden = total - visible;
-      const label =
-        total === 0
-          ? "AGENTS"
-          : hidden > 0
-            ? `AGENTS · ${total}  (+${hidden} more)`
-            : `AGENTS · ${total}`;
-      this.agentsHeader.setText(label);
+      if (total === 0) {
+        this.agentsHeader.setText("AGENTS");
+      } else if (total <= perPage) {
+        this.agentsHeader.setText(`AGENTS · ${total}`);
+      } else {
+        const lo = start + 1;
+        const hi = Math.min(total, start + windowed.length);
+        const left = start > 0 ? "◀" : "·";
+        const right = start < maxScroll ? "▶" : "·";
+        this.agentsHeader.setText(
+          `AGENTS · ${total}   ${left} ${lo}–${hi} ${right}   (scroll)`,
+        );
+      }
     }
+  }
+
+  /** Scroll the agent strip by `delta` cards (clamped); re-renders the window. */
+  private scrollCards(delta: number): void {
+    const total = this.conn?.controls.agents().length ?? 0;
+    const maxScroll = Math.max(0, total - this.hud.cardsPerPage());
+    const next = Math.max(0, Math.min(this.cardScroll + delta, maxScroll));
+    if (next === this.cardScroll) return;
+    this.cardScroll = next;
+    this.renderCards();
   }
 
   private destroyCards(): void {
@@ -1089,18 +1110,15 @@ export class UIScene extends Phaser.Scene {
   }
 
   /**
-   * v4 — COMPACT bottom-strip card. Flat absolute-positioned children (no
-   * containers — Phaser 4.1 gotcha) laid out in a fixed vertical stack inside a
-   * ~212×162 card. Preserves ALL the information the old vertical card showed —
-   * just condensed to single lines: header (swatch + name·role + FSM), a
-   * gold/energy row with the progress bar, plan, goal (+ needs), one thought
-   * line, action, the top relationship row, and the meta row. The full decision
-   * trace / persona still opens on click via the right-panel trace panel.
-   *
-   * The `compact` flag is retained for signature stability but the layout is
-   * always the compact strip card now.
+   * COMPACT bottom-strip card. Flat absolute-positioned children (no containers —
+   * Phaser 4.1 gotcha) laid out in a fixed vertical stack inside a ~246×162 card:
+   * header (swatch + name·role + FSM), a gold/energy row with the progress bar,
+   * plan, goal, the intrinsic-drive needs row, one thought line, action, the top
+   * relationship row, and the meta row. The full decision trace / persona opens
+   * on click via the right-panel trace panel. The strip SCROLLS horizontally
+   * (cardScroll) so every agent's card is reachable.
    */
-  private createCard(x: number, y: number, cardH: number, _compact: boolean): CardUi {
+  private createCard(x: number, y: number, cardH: number): CardUi {
     const cardW = this.hud.cardW;
     const padX = 9;
     const small = { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
@@ -1427,6 +1445,12 @@ export class UIScene extends Phaser.Scene {
   }
 
   private onWheel(pointer: Phaser.Input.Pointer, deltaY: number): void {
+    // Bottom agent strip: wheel scrolls the card row horizontally (one card per
+    // notch), so all 26 agents are reachable without shrinking the cards.
+    if (pointer.y >= this.hud.stripY && pointer.x < this.hud.rightX) {
+      this.scrollCards(deltaY > 0 ? 1 : -1);
+      return;
+    }
     if (!this.selectedAgent) return;
     if (!pointInRect(pointer.x, pointer.y, this.hud.panelRect)) return;
     this.traceScroll -= deltaY * 0.25;

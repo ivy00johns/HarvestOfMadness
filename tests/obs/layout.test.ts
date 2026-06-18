@@ -196,6 +196,15 @@ describe("v4 — bottom strip card layout", () => {
     expect(a.w).toBe(hud.cardW);
   });
 
+  it("a scroll page holds at least a few cards on a desktop viewport", () => {
+    const hud = computeHud(VW, VH);
+    // every card that fits the page sits left of the right panel
+    const perPage = hud.cardsPerPage();
+    expect(perPage).toBeGreaterThanOrEqual(3);
+    const last = hud.cardRect(perPage - 1, perPage);
+    expect(last.x + last.w).toBeLessThanOrEqual(hud.rightX);
+  });
+
   it("at least a few cards fit before the right panel on a desktop viewport", () => {
     const hud = computeHud(VW, VH);
     let visible = 0;

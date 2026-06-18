@@ -95,8 +95,9 @@ export const RIGHT_HEADER_H = 22;
 export const STRIP_H = 200;
 /** Header gutter above the strip cards ("AGENTS · N"). */
 export const STRIP_HEADER_H = 18;
-/** Compact bottom-strip card metrics — laid out LEFT→RIGHT. Wide enough for the
- *  full intrinsic-drive needs row (E▓▓▓▓ W▓▓▓▓ S▓▓▓▓ N▓▓▓▓ P▓▓▓▓) on its own line. */
+/** Full bottom-strip card — laid out LEFT→RIGHT in a single row; the strip
+ *  scrolls horizontally so every agent's card is reachable (UIScene cardScroll).
+ *  Wide enough for the full intrinsic-drive needs row on its own line. */
 export const CARD_W = 246;
 export const CARD_H = STRIP_H - STRIP_HEADER_H - 8; // card body height inside strip
 export const CARD_GAP = 8;
@@ -197,6 +198,8 @@ export interface HudLayout {
 
   cardHeight(count: number): number;
   cardRect(index: number, count: number): Rect;
+  /** How many full cards fit in the strip row (the horizontal scroll page). */
+  cardsPerPage(): number;
   feedLineRect(i: number): Rect;
   cardIndexAt(px: number, py: number, count: number): number | null;
   feedLineIndexAt(px: number, py: number): number | null;
@@ -287,18 +290,18 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const panelH = Math.max(60, convBottom - panelY);
   const panelRect: Rect = { x: panelX, y: panelY, w: panelW, h: panelH };
 
-  // -- BOTTOM strip cards: laid out LEFT→RIGHT, wrapping to a 2nd row. The
-  //    strip spans x=0 .. rightX (left of the right panel).
+  // -- BOTTOM strip cards: full-size cards laid out LEFT→RIGHT in a single row
+  //    from x=4. The strip SCROLLS horizontally (UIScene windows the agent list
+  //    by cardScroll), so `index`/`count` here are SLOT positions in the current
+  //    visible window — every agent's card is reachable by scrolling. Cards whose
+  //    slot runs past the right panel are not drawn (they're scrolled to).
   const cardTop = stripY + STRIP_HEADER_H;
   const cardW = CARD_W;
   const cardHeight = (_count: number): number => {
-    // Single full-height row of compact cards inside the strip body.
+    // Single full-height row of cards inside the strip body.
     const body = stripH - STRIP_HEADER_H - 6;
     return Math.max(40, Math.min(CARD_H, body));
   };
-  /** Cards lay out LEFT→RIGHT in a single row from x=4; the strip clips any that
-   *  run past its right edge (rightX). The "AGENTS · N" header shows the total
-   *  so the spectator knows how many are off-screen. */
   const cardRect = (index: number, count: number): Rect => {
     const ch = cardHeight(count);
     const x = 4 + index * (cardW + CARD_GAP);
@@ -310,11 +313,17 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     w: logW,
     h: LOG_LINE_H,
   });
+  /** How many full cards fit in one row before the right panel (the scroll
+   *  window size). At least 1 so a narrow viewport still shows a card. */
+  const cardsPerPage = (): number => {
+    let n = 0;
+    while (4 + (n + 1) * (cardW + CARD_GAP) - CARD_GAP <= rightX) n++;
+    return Math.max(1, n);
+  };
   const cardIndexAt = (px: number, py: number, count: number): number | null => {
     for (let i = 0; i < count; i++) {
       const r = cardRect(i, count);
-      // Only fully-visible cards (entirely left of the right panel) are
-      // rendered and clickable; stop at the first that would overrun it.
+      // Only slots that fit left of the right panel are drawn + clickable.
       if (r.x + r.w > rightX) break;
       if (pointInRect(px, py, r)) return i;
     }
@@ -381,6 +390,7 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     transcriptRect,
     cardHeight,
     cardRect,
+    cardsPerPage,
     feedLineRect,
     cardIndexAt,
     feedLineIndexAt,
