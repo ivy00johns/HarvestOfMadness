@@ -50,6 +50,14 @@ export interface PlannerDeps {
    * coercePlanSteps / 4-step / night-at-bed shape is UNCHANGED.
    */
   goalOf?: (agentName: string) => string | null;
+  /**
+   * Wave 5b — optional derived role. When present it is passed to mockDailyPlan
+   * so a purposeful agent visits the building tied to its role (merchant→shop,
+   * socialite→cafe, banker→office, wanderer→park). Optional → harnesses that
+   * leave it undefined get a byte-identical 2-arg / farmer plan. The goal still
+   * wins over the role; the coercePlanSteps fallback stays 2-arg.
+   */
+  roleOf?: (agentName: string) => string | null;
   /** appends a `plan` memory (cognition layer wiring; null on failure) */
   write: (
     agentName: string,
@@ -111,6 +119,8 @@ export class PlannerImpl implements Planner {
     // Wave 3a — optional synthesized standing goal (null when absent: existing
     // callers and test harnesses leave goalOf undefined → byte-identical mock).
     const goal = this.deps.goalOf?.(agentName) ?? undefined;
+    // Wave 5b — optional derived role (undefined when absent: byte-identical).
+    const role = this.deps.roleOf?.(agentName) ?? undefined;
     let steps: PlanStep[];
     let rawText: string;
 
@@ -119,10 +129,10 @@ export class PlannerImpl implements Planner {
       if (live) {
         ({ steps, rawText } = live);
       } else {
-        ({ steps, rawText } = mockDailyPlan(persona, day, goal)); // garbage -> mock fallback
+        ({ steps, rawText } = mockDailyPlan(persona, day, goal, role)); // garbage -> mock fallback
       }
     } else {
-      ({ steps, rawText } = mockDailyPlan(persona, day, goal));
+      ({ steps, rawText } = mockDailyPlan(persona, day, goal, role));
     }
 
     const plan: DailyPlan = { agentName, day, steps, rawText };

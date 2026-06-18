@@ -304,6 +304,7 @@ ${goalBlock}${reflections}${places}Plan your day. Produce exactly 4 steps, one f
 - A dreamy or wandering persona should stroll by the pond or wander the paths.
 - A frugal persona should browse the market, check prices, haggle.
 - A grumbling or methodical persona sticks mostly to the field but may visit the tavern in the evening.
+- Let your town role guide where you spend your afternoon: a merchant spends time at the store, a socialite over coffee at the cafe, a banker at the office, a wanderer at the park.
 - The morning is usually for farm work; afternoon/evening can include socializing, the market, or the pond.
 - The night step should end at the bed to sleep.
 

@@ -47,6 +47,7 @@ import type {
 } from "@contracts/types";
 import { CROPS } from "@contracts/types";
 import { extractFirstJsonObject } from "./parse";
+import { FUNCTIONAL_STEP_TEXT, preferredLocation } from "../agents/locations";
 
 const ACTION_TYPES: readonly ActionType[] = [
   "MOVE_TO",
@@ -152,6 +153,10 @@ function normalizeObservation(raw: unknown): Observation | null {
       : [];
   });
 
+  // Wave 5b — admit ALL 8 landmark kinds (5a left cafe/office/park inert here).
+  // Frozen-safe: a landmark is INERT to the heuristic unless a plan-step keyword
+  // targets it, and no existing branch references cafe/office/park — only the
+  // new Wave-5b functional branches do (mock-determinism / economy unaffected).
   const landmarks = asArray(nearby.landmarks).flatMap((e) => {
     const l = asRecord(e);
     const pos = asVec2(l.pos);
@@ -161,8 +166,11 @@ function normalizeObservation(raw: unknown): Observation | null {
         kind === "bed" ||
         kind === "water" ||
         kind === "house" ||
-        kind === "tavern")
-      ? [{ kind: kind as "shop" | "bed" | "water" | "house" | "tavern", pos }]
+        kind === "tavern" ||
+        kind === "cafe" ||
+        kind === "office" ||
+        kind === "park")
+      ? [{ kind: kind as Landmark["kind"], pos }]
       : [];
   });
 
@@ -561,6 +569,94 @@ function decide(obs: Observation): AgentAction {
         }
       }
     }
+
+    // --- CAFE branch (Wave 5b functional locations) ---
+    // Socialite routine: coffee + catching up. DISPERSIVE — the TALK_TO fires
+    // ONLY for an ALREADY-ADJACENT neighbor (no move-to-converge), so this never
+    // creates a new convergence point that could undermine the party kill-switch.
+    const cafeIntent = planStep.includes("cafe") || planStep.includes("coffee");
+    if (cafeIntent) {
+      const cafeLm = obs.nearby.landmarks.find((l) => l.kind === "cafe");
+      if (cafeLm) {
+        if (isAdjacent(pos, cafeLm.pos) || samePos(pos, cafeLm.pos)) {
+          const neighbor = obs.nearby.agents.find((a) => cheb(pos, a.pos) <= 1);
+          if (neighbor && can("TALK_TO")) {
+            return act(
+              "TALK_TO",
+              `Coffee at the cafe — ${neighbor.name} is right here, time to catch up.`,
+              `${neighbor.name}! Care to share a cup?`,
+              { agentName: neighbor.name },
+            );
+          }
+          if (can("EMOTE")) {
+            return {
+              action: "EMOTE",
+              thought: "Enjoying a quiet coffee at the cafe.",
+              say: "Nothing like a good cup.",
+              emotion: "happy",
+            };
+          }
+          return act("WAIT", "Sipping coffee at the cafe.", "A fine brew today.");
+        }
+        if (can("MOVE_TO")) {
+          return moveTo(cafeLm.pos, "Plan says coffee — heading to the cafe.");
+        }
+      }
+    }
+
+    // --- OFFICE branch (Wave 5b functional locations) ---
+    // Banker routine: working the ledgers. DISPERSIVE — EMOTE/WAIT in place, no
+    // movement toward anyone (kill-switch safe).
+    const officeIntent =
+      planStep.includes("office") ||
+      planStep.includes("ledger") ||
+      planStep.includes("paperwork");
+    if (officeIntent) {
+      const officeLm = obs.nearby.landmarks.find((l) => l.kind === "office");
+      if (officeLm) {
+        if (isAdjacent(pos, officeLm.pos) || samePos(pos, officeLm.pos)) {
+          if (can("EMOTE")) {
+            return {
+              action: "EMOTE",
+              thought: "Hard at work at the office.",
+              say: "The ledgers won't balance themselves.",
+              emotion: "neutral",
+            };
+          }
+          return act("WAIT", "Working at the office.", "Back to the ledgers.");
+        }
+        if (can("MOVE_TO")) {
+          return moveTo(officeLm.pos, "Plan says work — heading to the office.");
+        }
+      }
+    }
+
+    // --- PARK branch (Wave 5b functional locations) ---
+    // Wanderer routine: fresh air in the green. DISPERSIVE — EMOTE/WAIT in place
+    // (kill-switch safe).
+    const parkIntent =
+      planStep.includes("park") ||
+      planStep.includes("fresh air") ||
+      planStep.includes("green");
+    if (parkIntent) {
+      const parkLm = obs.nearby.landmarks.find((l) => l.kind === "park");
+      if (parkLm) {
+        if (isAdjacent(pos, parkLm.pos) || samePos(pos, parkLm.pos)) {
+          if (can("EMOTE")) {
+            return {
+              action: "EMOTE",
+              thought: "Out in the park, taking in the fresh air.",
+              say: "What a lovely spot.",
+              emotion: "happy",
+            };
+          }
+          return act("WAIT", "Strolling in the park.", "So peaceful out here.");
+        }
+        if (can("MOVE_TO")) {
+          return moveTo(parkLm.pos, "Plan says fresh air — heading to the park.");
+        }
+      }
+    }
   }
   // end plan-intent follower — fall through to the farm ladder below
 
@@ -933,6 +1029,7 @@ export function mockDailyPlan(
   persona: string,
   day: number,
   goal?: string,
+  role?: string,
 ): { steps: PlanStep[]; rawText: string } {
   const p = (persona ?? "").toLowerCase();
   const social = p.includes("social");
@@ -1003,6 +1100,9 @@ export function mockDailyPlan(
   // ALWAYS ends at the bed (preserves planner.test 4-step + night-at-bed). The
   // goal NEVER adds/removes steps. Fully gated: when `goal` is omitted the
   // output below is byte-identical to the v2 mock plan (mock-daily/mock-v2).
+  // `goalConditioned` records whether a goal keyword claimed afternoon/evening,
+  // so the Wave-5b role block only fills phases the goal left at default.
+  let goalConditioned = false;
   if (goal) {
     const g = goal.toLowerCase();
     if (g.includes("tavern") || g.includes("sociali") || g.includes("chat") || g.includes("gather")) {
@@ -1010,11 +1110,13 @@ export function mockDailyPlan(
       afternoonLandmark = "tavern";
       eveningGoal = "gather at the tavern — share news and enjoy the company";
       eveningLandmark = "tavern";
+      goalConditioned = true;
     } else if (g.includes("market") || g.includes("sell") || g.includes("haggle") || g.includes("price")) {
       afternoonGoal = "browse the market and check prices before deciding what to grow";
       afternoonLandmark = "shop";
       eveningGoal = "haggle at the market, sell harvested crops at the best price";
       eveningLandmark = "shop";
+      goalConditioned = true;
     } else if (g.includes("wander") || g.includes("stroll") || g.includes("explore") || g.includes("novel")) {
       // Novelty is DISPERSIVE — wander/stroll the paths and pond, never a
       // tavern convergence (keeps the party kill-switch meaningful: only a
@@ -1023,21 +1125,47 @@ export function mockDailyPlan(
       afternoonLandmark = undefined;
       eveningGoal = "take a long evening stroll by the pond before heading home";
       eveningLandmark = "water";
+      goalConditioned = true;
     } else if (g.includes("pond") || g.includes("relax") || g.includes("reflect")) {
       afternoonGoal = "relax by the pond and reflect on the morning's work";
       afternoonLandmark = "water";
       eveningGoal = "sit by the pond and watch the stars come out";
       eveningLandmark = "water";
+      goalConditioned = true;
     } else if (g.includes("rest") || g.includes("sleep") || g.includes("home")) {
       afternoonGoal = "rest at home and conserve energy for the work ahead";
       afternoonLandmark = "bed";
       eveningGoal = "head home early to rest before nightfall";
       eveningLandmark = "bed";
+      goalConditioned = true;
     } else if (g.includes("farm") || g.includes("till") || g.includes("plant") || g.includes("water") || g.includes("crop")) {
       afternoonGoal = "tend the crops and till new ground for the next planting";
       afternoonLandmark = undefined;
       eveningGoal = "sell harvested crops and restock seeds at the shop";
       eveningLandmark = "shop";
+      goalConditioned = true;
+    }
+  }
+
+  // Wave 5b — ROLE CONDITIONING: a purposeful agent visits the building tied to
+  // its derived role (merchant→shop, socialite→cafe, banker→office,
+  // wanderer→park). STRICT no-op when `role` is undefined or "farmer", so the
+  // 2-arg / farmer path stays BYTE-IDENTICAL (mock-daily / mock-v2 / planner /
+  // mock-determinism all frozen). preferredLocation is PURE (no RNG/Date.now),
+  // so the plan stays deterministic. The role NEVER routes to the tavern (kind
+  // !== "tavern" guard) and only fills phases the goal block left at default
+  // (goal keyword always wins). Morning stays farm-ish; night stays bed.
+  if (role && role !== "farmer" && !goalConditioned) {
+    const kind = preferredLocation(role, goal);
+    // "school" is a dormant forward-compat kind (not a Landmark["kind"]) and
+    // "tavern" is excluded for kill-switch safety — neither is reached by any
+    // role default, only by a goal keyword no mock emits, but guard regardless.
+    if (kind && kind !== "tavern" && kind !== "school") {
+      const text = FUNCTIONAL_STEP_TEXT[kind];
+      afternoonGoal = text.afternoon;
+      afternoonLandmark = kind;
+      eveningGoal = text.evening;
+      eveningLandmark = kind;
     }
   }
 

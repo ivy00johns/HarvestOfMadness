@@ -288,6 +288,9 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       // Wave 3a — the synthesized standing goal (cache first, then the agent's
       // transient action.goal) feeds the plan prompt as an INPUT only.
       goalOf: (name) => this.goals.current(name) ?? this.agents.get(name)?.goal ?? null,
+      // Wave 5b — derived role (cached sync read, then the agent's stored role)
+      // routes a purposeful agent to its functional building in the mock plan.
+      roleOf: (name) => this.roles.role(name) ?? this.agents.get(name)?.role ?? null,
     });
 
     this.goals = new GoalsSystem({
