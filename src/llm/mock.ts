@@ -1093,10 +1093,26 @@ export function mockDailyPlan(
     afternoonLandmark = "shop";
   } else if (wanderer) {
     afternoonGoal = "wander across town, stopping to chat with any farmer in sight";
-  } else if (day % 2 === 0) {
-    afternoonGoal = "harvest anything ready and keep the plots tended";
   } else {
-    afternoonGoal = "tend the crops and till new ground for the next planting";
+    // Default farmers — spread the afternoon across a few divergent (and mostly
+    // plot-local) activities, deterministic per persona+day, so the town shows
+    // varied life instead of every default farmer doing the identical chore.
+    // No convergence landmark: keywords keep them at/near their own plot or
+    // strolling the paths (the party event remains the only town-wide pull).
+    switch (varietySeed) {
+      case 0:
+        afternoonGoal = "harvest anything ready and keep the plots tended";
+        break;
+      case 1:
+        afternoonGoal = "tend the crops and till new ground for the next planting";
+        break;
+      case 2:
+        afternoonGoal = "take a slow walk along the field paths, checking the crops";
+        break;
+      default:
+        afternoonGoal = "water every planted crop and tidy up around the plot edges";
+        break;
+    }
   }
 
   // Evening: social/leisure rotation or selling.
