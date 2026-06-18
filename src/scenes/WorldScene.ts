@@ -114,7 +114,8 @@ const TREE_FRAMES = [0, 10];
 const TREE_SPOTS: { x: number; y: number; frame: number }[] = [
   { x: 3, y: 17, frame: 0 },
   { x: 55, y: 6, frame: 10 },
-  { x: 55, y: 33, frame: 0 },
+  // (55,33) removed — it now falls inside the enlarged cafe. The deterministic
+  // decor scatter (map.ts, building-aware) supplies the town's trees.
 ];
 
 /**

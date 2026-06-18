@@ -466,13 +466,27 @@ export function generateMap(): MapData {
   const decor: DecorItem[] = [];
   const isGrass = (gx: number, gy: number): boolean =>
     gy >= 0 && gy < MAP_HEIGHT && gx >= 0 && gx < MAP_WIDTH && tiles[gy][gx] === "grass";
-  // A tree's canopy is bottom-anchored and ~2 tiles tall, extending NORTH (up),
-  // so the trunk tile's neighbourhood AND the two tiles above must be clear grass
-  // — otherwise the canopy overhangs a building roof to the north (the "tree
-  // growing out of the cafe" artefact).
-  const clearCanopy = (gx: number, gy: number): boolean =>
-    isGrass(gx, gy) && isGrass(gx - 1, gy) && isGrass(gx + 1, gy) &&
-    isGrass(gx, gy - 1) && isGrass(gx, gy + 1) && isGrass(gx, gy - 2);
+  // Building tile (room interior or wall) — a tree canopy over one of these
+  // reads as a tree growing out of the roof (the open-roof cutaway shows it).
+  const isBuilding = (gx: number, gy: number): boolean => {
+    if (gy < 0 || gy >= MAP_HEIGHT || gx < 0 || gx >= MAP_WIDTH) return false;
+    const t = tiles[gy][gx];
+    return t === "wall" || t === "floor" || t === "bedTile" || t === "shopTile";
+  };
+  // Fruit-tree sprites are 96×128 (3 tiles wide × 4 tall), bottom-anchored, so a
+  // tree at (gx,gy) paints the box cols gx-1..gx+1 × rows gy-3..gy. Place a tree
+  // only where its trunk sits on open grass AND that whole canopy box is clear of
+  // any building — otherwise the canopy overhangs a roof (the "tree in the cafe").
+  const clearCanopy = (gx: number, gy: number): boolean => {
+    if (!(isGrass(gx, gy) && isGrass(gx - 1, gy) && isGrass(gx + 1, gy) &&
+      isGrass(gx, gy - 1) && isGrass(gx, gy + 1))) return false;
+    for (let cy = gy - 3; cy <= gy; cy++) {
+      for (let cx = gx - 1; cx <= gx + 1; cx++) {
+        if (isBuilding(cx, cy)) return false;
+      }
+    }
+    return true;
+  };
   // Grass tile that touches a soil plot — keep the showier decor (bushes,
   // flowers) OFF these so fields read with clean borders instead of being
   // "fenced" by a ring of scatter.
