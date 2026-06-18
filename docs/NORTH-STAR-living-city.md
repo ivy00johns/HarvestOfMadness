@@ -181,7 +181,7 @@ focused gathering — host/know/invited/arrived + transcript) **plus** a
 Status: `[x]` done · `[~]` partial · `[ ]` planned.
 
 **Phase A — World re-layout to Option C (140×100)** — _the agreed next build_
-- [ ] A0. Bump dims (140×100), reach budget 40→100, retune camera. _(commit by itself; town clusters NW, still green)_
+- [x] A0. Bump dims (140×100), reach budget 40→100, retune camera. ✓ `7fc770c` — 1073 green, tsc clean; town clusters NW (expected intermediate).
 - [ ] A1. Road network (spine y=50, two residential roads, three trunks).
 - [ ] A2. Civic hub `COMMONS` (5 buildings straddling the spine + well/board).
 - [ ] A3. 12 homesteads (4 hamlets × 3), TDD-converge against map + party tests.
