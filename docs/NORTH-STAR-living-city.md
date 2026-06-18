@@ -24,6 +24,17 @@ capability.
 Smallville-class behavior (conversations, gossip, party planning, scale) running
 on the free LLM proxy, reached in phases.
 
+**Two load-bearing principles (2026-06-18):**
+- **Hand-crafted, not procedural.** The map is authored + deterministic, and it
+  should *read* that way. Algorithmic-looking artifacts (e.g. the diagonal tree
+  rows from the coprime decor hash) are a bug — decor must look naturally placed,
+  and over time the world is shaped by the *agents*, not by a noise function.
+- **A living world, not a video game.** Homes are not fixed set-dressing. Agents
+  acquire things, and those things need somewhere to go — so homes have **storage**,
+  agents **furnish** them by choosing from our large asset library, and homes can
+  **grow** over time. This is why we vendored so many assets: a palette for agents
+  to pick from. See [Living Homes](#3a-living-homes-agent-owned-furnishable-growable).
+
 ---
 
 ## 1. Why we kept wasting time (read this so we don't repeat it)
@@ -124,6 +135,38 @@ road-first (every door's exterior is a path tile), **zero RNG / zero `Date`**
 
 ---
 
+## 3a. Living Homes (agent-owned, furnishable, growable)
+
+_User direction, 2026-06-18 (from the zoomed-out review): "the houses are small,
+will they be made bigger? If they buy something they will want to put it
+somewhere… this is a living world not a traditional video game… or the ability
+for them to grow their homes? we are going to give them LOTS of assets and they
+can pick and choose what they want."_
+
+Homes stop being fixed set-dressing and become the agents' own evolving spaces.
+Four capabilities, smallest-to-largest:
+
+1. **Bigger, multi-room homes.** The A1 skeleton uses 5×6 cottages (tight to fit
+   12 + reserve lots on 140×100). They need to be **larger** — enough for a bed,
+   storage, and chosen furniture, with room to read as a real home. (The reserve
+   stretches + countryside give the spatial budget.)
+2. **Personal storage.** Agents already carry an `inventory`; add a **home storage**
+   (a chest/container in each home) so **bought/harvested goods have a place to
+   go**. Needs: a storage object per home + a deposit/withdraw path + per-agent
+   home-store state. This is the concrete near-term piece — the rest builds on it.
+3. **Agent-chosen furnishings.** Instead of one static stamped interior, agents
+   **acquire and place furniture** they pick from our large asset library
+   (per-home furniture list → render). The library variety exists *for this*.
+4. **Home growth.** Over time agents **expand** their home (add rooms / footprint).
+   This requires mutating the world grid — it shares machinery with the deferred
+   **build controls** (Phase C). The most ambitious; lands last.
+
+**Sequencing:** (1)+(2) fit naturally into **A5** (bigger homes + storage +
+rich interiors). (3)+(4) are a new headline system — **Phase D — Living Homes**
+in §5. All of it must stay **hand-crafted, not procedural** (see principles in §0).
+
+---
+
 ## 4. UI overhaul — FINALIZED design (SpaceCon HUD)
 
 > **UI source of truth is now [`docs/design_handoff_sim_hud/`](./design_handoff_sim_hud/)** —
@@ -185,11 +228,12 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 - [x] A1. Road network (spine y=50, two residential roads, three trunks). ✓ `9961b4b`
 - [x] A2. Civic hub `COMMONS` (5 buildings straddling the spine + well/board). ✓ `9961b4b`
 - [x] A3. 12 homesteads (4 hamlets × 3), TDD-converged against map + party tests. ✓ `9961b4b` — personas 10→12 (clem, moss); all 12 doors ≤96 A* to tavern.
+- [x] A6b. **Camera fit-to-map** — zoom-out floor now frames the whole town (no clipped corners). ✓ `c3a7044`, visually verified.
 - [ ] A4. 14 reserve lots + new `reserve-lots.test.ts`; document future-hamlet ground.
-- [ ] A5. **Park/pond relocation** (east, spine-connected) + ~500 decor (kill the 16-cap) + ~1,300 interior pieces. _(park/pond/decor were left in place during A1.)_
+- [ ] A5. **Bigger multi-room homes + per-home storage** ([Living Homes](#3a-living-homes-agent-owned-furnishable-growable) 1+2) + **park/pond relocation** (east, spine-connected) + ~500 **natural-looking** decor (kill the 16-cap AND the diagonal tree-rows) + ~1,300 interior pieces. _(park/pond/decor were left in place during A1.)_
 - [x] A6. Reach budget 40→100 **floor only** — shipped inside A0 (`7fc770c`). _Distance-weighted attendance deferred to Phase C._
 
-**A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Remaining in Phase A: A4 (reserve lots) + A5 (park move + decor + interiors).**
+**A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Remaining in Phase A: A4 (reserve lots) + A5 (bigger homes + storage + park move + natural decor + interiors).**
 
 **Phase B — UI overhaul (SpaceCon HUD)** — _design finalized in [`docs/design_handoff_sim_hud/`](./design_handoff_sim_hud/); builds on the 140×100 world_
 - [ ] B1. **Gathering legibility (world side only):** spread agent **bodies**
@@ -211,8 +255,15 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 - [ ] Per-hamlet visual identity (roof palette per hamlet).
 - [ ] Terrain transition tiles (grass↔dirt↔path edges), second pond.
 - [ ] Activate reserve lots into live hamlets as the population grows.
-- [ ] Build controls (Minecraft-ish place/remove) — needs its own plan; grid is
-      currently frozen/immutable.
+
+**Phase D — Living Homes (agent-owned, furnishable, growable)** — _new headline system; see §3a_
+- [ ] D1. **Agent-chosen furnishings** — agents acquire + place furniture they pick
+      from the asset library; per-home furniture list replaces the static stamped
+      interior (Living Homes 3).
+- [ ] D2. **Home growth** — agents expand their home footprint/rooms over time;
+      mutates the world grid (shares machinery with build controls). Most ambitious.
+- [ ] D3. **Build controls** (Minecraft-ish place/remove) — the general grid-mutation
+      substrate D2 needs; grid is currently frozen/immutable. Needs its own plan.
 
 **Sequencing note:** do **Phase A before Phase B** — the UI overhaul should be
 built against the real 140×100 world (the finalized design already assumes it),

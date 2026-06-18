@@ -324,8 +324,9 @@
       <li data-id="a1" class="done"><input type="checkbox" checked><span class="txt">A1 · Road network — spine y50, two residential roads, three trunks<small>✓ shipped 9961b4b (with A2+A3 — the minimal green skeleton)</small></span></li>
       <li data-id="a2" class="done"><input type="checkbox" checked><span class="txt">A2 · Civic hub COMMONS — 5 buildings straddling the spine + well/board<small>✓ 9961b4b — well/notice moved to plaza (59,49)/(60,49)</small></span></li>
       <li data-id="a3" class="done"><input type="checkbox" checked><span class="txt">A3 · 12 homesteads (4 hamlets × 3), TDD-converged vs map + party tests<small>✓ 9961b4b — personas 10→12 (clem, moss); all 12 doors ≤96 A* to tavern</small></span></li>
+      <li data-id="a6b" class="done"><input type="checkbox" checked><span class="txt">A6b · Camera fit-to-map — zoom-out floor frames the whole town, no clipped corners<small>✓ shipped c3a7044, visually verified</small></span></li>
       <li data-id="a4"><input type="checkbox"><span class="txt">A4 · 14 reserve lots + new reserve-lots test; document future-hamlet ground</span></li>
-      <li data-id="a5"><input type="checkbox"><span class="txt">A5 · Park/pond relocation (east, spine-connected) + ~500 decor (kill the 16-cap) + ~1,300 interior pieces<small>park/pond/decor were left in place during A1</small></span></li>
+      <li data-id="a5"><input type="checkbox"><span class="txt">A5 · BIGGER multi-room homes + per-home STORAGE (Living Homes 1+2) + park/pond relocation + ~500 NATURAL-looking decor (kill the 16-cap AND the diagonal tree-rows) + ~1,300 interior pieces<small>park/pond/decor were left in place during A1</small></span></li>
       <li data-id="a6" class="done"><input type="checkbox" checked><span class="txt">A6 · Reach budget 40→100 floor only<small>✓ shipped inside A0 (7fc770c); distance-weighted attendance deferred to Phase C</small></span></li>
     </ul>
   </div>
@@ -351,7 +352,15 @@
       <li data-id="c2"><input type="checkbox"><span class="txt">Conversations &amp; gossip at Smallville fidelity on the free LLM proxy</span></li>
       <li data-id="c3"><input type="checkbox"><span class="txt">Per-hamlet visual identity (roof palette) · terrain transition tiles · second pond</span></li>
       <li data-id="c4"><input type="checkbox"><span class="txt">Activate reserve lots into live hamlets as the population grows</span></li>
-      <li data-id="c5"><input type="checkbox"><span class="txt">Build controls (Minecraft-ish place/remove) — needs its own plan; grid is frozen today</span></li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="head"><span class="tag" style="background:#2a1f36;color:#c3a6e8;border:1px solid #4a3a6b">Phase D</span><span class="name">Living Homes — agent-owned, furnishable, growable (new headline system)</span></div>
+    <ul class="check" data-phase="D">
+      <li data-id="d1"><input type="checkbox"><span class="txt">D1 · Agent-chosen furnishings — agents acquire + place furniture from the asset library; per-home furniture list replaces the static stamped interior</span></li>
+      <li data-id="d2"><input type="checkbox"><span class="txt">D2 · Home growth — agents expand their home footprint/rooms over time (mutates the world grid)</span></li>
+      <li data-id="d3"><input type="checkbox"><span class="txt">D3 · Build controls (Minecraft-ish place/remove) — the grid-mutation substrate D2 needs; grid is frozen today, needs its own plan</span></li>
     </ul>
   </div>
 </section>
