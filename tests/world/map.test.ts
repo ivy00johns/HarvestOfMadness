@@ -40,8 +40,8 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly twelve walkable homesteads: full wall ring + 1 floor door perimeter, floor interior + 1 bed", () => {
-    expect(HOMESTEADS).toHaveLength(12);
+  it("has exactly twenty-six walkable homesteads: full wall ring + 1 floor door perimeter, floor interior + 1 bed", () => {
+    expect(HOMESTEADS).toHaveLength(26);
     for (const h of HOMESTEADS) {
       // Room bounds are SIZE-derived (varied 4×4 / 5×5 / 6×5), never +4.
       const x0 = h.house.x;
@@ -120,7 +120,7 @@ describe("town generator", () => {
     expect(sizes.size).toBeGreaterThanOrEqual(2);
   });
 
-  it("has exactly 12 bedTiles, zero `building` tiles, and the expected landmark counts", () => {
+  it("has exactly 26 bedTiles, zero `building` tiles, and the expected landmark counts", () => {
     let beds = 0;
     let buildings = 0;
     for (let y = 0; y < MAP_HEIGHT; y++)
@@ -128,12 +128,12 @@ describe("town generator", () => {
         if (map.tiles[y][x] === "bedTile") beds++;
         if (map.tiles[y][x] === "building") buildings++;
       }
-    expect(beds).toBe(12);
+    expect(beds).toBe(26);
     // `building` is retained-but-unused: no tile stamps it anymore.
     expect(buildings).toBe(0);
     const count = (k: string) => map.landmarks.filter((l) => l.kind === k).length;
-    expect(count("bed")).toBe(12);
-    expect(count("house")).toBe(12);
+    expect(count("bed")).toBe(26);
+    expect(count("house")).toBe(26);
     expect(count("shop")).toBe(1);
     expect(count("tavern")).toBe(1);
     expect(count("water")).toBeGreaterThanOrEqual(1);
@@ -236,8 +236,8 @@ describe("town generator", () => {
         for (let x = b.x0; x <= b.x1; x++)
           expect(built.has(map.tiles[y][x]), `building tile ${x},${y} is ${map.tiles[y][x]}`).toBe(true);
     }
-    // Expect 17 rooms: 12 homesteads + shop + tavern + cafe + office + school.
-    expect(BUILDINGS).toHaveLength(17);
+    // Expect 31 rooms: 26 homesteads + shop + tavern + cafe + office + school.
+    expect(BUILDINGS).toHaveLength(31);
   });
 
   it("every building kind is present at least once (typology coverage)", () => {
