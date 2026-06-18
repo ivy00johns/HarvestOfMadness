@@ -47,6 +47,7 @@ import type { ExecutorCognitionHooks } from "./ActionExecutor";
 import { ConversationSystem } from "./Conversation";
 import { NeedsSystem } from "./Needs";
 import { GoalsSystem } from "./Goals";
+import { RolesSystem } from "./Roles";
 
 /** Memory texts injected into prompts are truncated to this many chars. */
 export const MEMORY_TEXT_MAX_CHARS = 200;
@@ -135,6 +136,8 @@ export class CognitionSystem implements ExecutorCognitionHooks {
   readonly needs = new NeedsSystem();
   /** Wave 3a — needs-driven standing-goal synthesis (cached, cadence-gated). */
   readonly goals: GoalsSystem;
+  /** Wave 4a — emergent role specialization (action-histogram, hysteresis-gated). */
+  readonly roles = new RolesSystem();
   /** v3 — back-and-forth conversation reply generator */
   private conversation!: ConversationSystem;
 
@@ -382,6 +385,14 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       this.needs.onOutcome(agent, action, result);
     } catch {
       /* defensive — needs bookkeeping must never block a decision */
+    }
+    // Wave 4a — histogram the (successful, role-bucketed) action toward the
+    // emergent role. Runs BEFORE the GIVE_GIFT early-return so gifts count
+    // toward the socialite bucket. Try-wrapped (rule 10).
+    try {
+      this.roles.onOutcome(agent, action, result);
+    } catch {
+      /* defensive — role bookkeeping must never block a decision */
     }
     if (action.action === "GIVE_GIFT" && result.ok) return;
     const text = outcomeText(action, result);
@@ -638,6 +649,13 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       } catch {
         /* defensive */
       }
+      // Wave 4a — once/game-day role derivation (synchronous, no LLM): apply
+      // the hysteresis-gated update and cache the result on the agent.
+      try {
+        agent.role = this.roles.update(agent);
+      } catch {
+        /* defensive — role derivation must never block the morning warm-up */
+      }
       void this.goals
         .refresh(agent.name, { force: true })
         .then((g) => {
@@ -691,6 +709,13 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         .catch(() => {});
       const cachedGoal = this.goals.current(agent.name);
       if (cachedGoal) obs.self.goal = cachedGoal;
+
+      // Wave 4a — surface the CACHED role (synchronous, deterministic; the
+      // hot path never re-derives — derivation happens once/game-day in
+      // onDayAdvanced). Keeps obs.self.role + the agent's cached role in sync.
+      const role = this.roles.role(agent.name);
+      obs.self.role = role;
+      agent.role = role;
 
       const query = step?.goal ?? DEFAULT_RETRIEVAL_QUERY;
       const memories = await this.memory.retrieve(agent.name, query);

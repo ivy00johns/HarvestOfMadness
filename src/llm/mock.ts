@@ -707,6 +707,49 @@ function decide(obs: Observation): AgentAction {
     }
   }
 
+  // Wave 4a — EMERGENT ROLE BIAS (lowest priority, only when nothing pressing).
+  // Gated on a non-default role so default-role agents stay byte-identical.
+  // Every nudge is DISPERSIVE or shop-only — NONE target the tavern or move an
+  // agent toward another, so the party kill-switch stays meaningful.
+  if (self.role && self.role !== "farmer") {
+    // merchant / banker — economic: take held crops to the shop to SELL next.
+    if ((self.role === "merchant" || self.role === "banker") && crops.length > 0) {
+      if (shop && !atShop && !samePos(pos, shop) && can("MOVE_TO")) {
+        return moveTo(shop, "A trader's instinct — taking my goods to the shop.");
+      }
+    }
+    // socialite — chat an ALREADY-ADJACENT neighbor (no movement → no
+    // convergence), hash-gated so it stays occasional.
+    if (self.role === "socialite" && can("TALK_TO") && seed % 3 === 0) {
+      const neighbor = obs.nearby.agents.find((a) => cheb(pos, a.pos) <= 1);
+      if (neighbor) {
+        return act(
+          "TALK_TO",
+          `A sociable sort — ${neighbor.name} is right here, why not chat.`,
+          `Lovely to run into you, ${neighbor.name}!`,
+          { agentName: neighbor.name },
+        );
+      }
+    }
+    // wanderer — drift to a nearby UNOCCUPIED, passable tile (dispersive: never
+    // toward the tavern, never toward another agent).
+    if (self.role === "wanderer" && can("MOVE_TO")) {
+      const occupied = (t: { x: number; y: number }): boolean =>
+        obs.nearby.agents.some((a) => samePos(a.pos, t));
+      const drifts = obs.nearby.tiles.filter(
+        (t) =>
+          (t.type === "grass" || t.type === "path" || t.type === "soil") &&
+          !t.crop &&
+          !samePos(t, pos) &&
+          !occupied(t),
+      );
+      const dest = nearest(pos, drifts);
+      if (dest) {
+        return moveTo({ x: dest.x, y: dest.y }, "Restless feet — wandering on a while.");
+      }
+    }
+  }
+
   // 9. otherwise → WAIT
   return act("WAIT", "Nothing pressing right now. Taking a breather.", null);
 }

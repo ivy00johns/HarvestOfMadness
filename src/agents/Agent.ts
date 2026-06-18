@@ -6,6 +6,7 @@
 import type {
   AgentFsmState,
   DecisionTraceEntry,
+  DerivedRole,
   InventoryEntry,
   NeedState,
   Vec2,
@@ -30,7 +31,12 @@ export const TRACE_CAP = 20;
 export class Agent {
   readonly name: string;
   readonly persona: { id: string; description: string };
-  readonly role = "farmer";
+  /**
+   * Wave 4a — derived, town-legible specialization (mutable). Set once per
+   * game-day by CognitionSystem (RolesSystem.update); read back into the
+   * Observation. Defaults to / falls back to "farmer".
+   */
+  role: DerivedRole = "farmer";
   readonly color: number;
 
   pos: Vec2;

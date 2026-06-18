@@ -959,7 +959,9 @@ export class UIScene extends Phaser.Scene {
 
   private updateCard(ui: CardUi, card: ObsAgentCardModel): void {
     if (typeof card.color === "number") ui.swatch.setFillStyle(card.color, 1);
-    ui.name.setText(this.clip(card.name, 22));
+    // Wave 4a — append the derived role to the name only when non-default.
+    const roleTag = card.role && card.role !== "farmer" ? ` · ${card.role}` : "";
+    ui.name.setText(this.clip(`${card.name}${roleTag}`, 22));
     ui.fsm.setText(card.fsm).setColor(FSM_COLORS[card.fsm] ?? "#8a8f98");
     ui.gold.setText(`${card.gold}g`);
     this.updateEnergy(ui, card.energy);

@@ -55,6 +55,8 @@ export interface InspectableAgent {
   planStep?: string | null;
   /** Wave 3a — intrinsic drive vector for the card's needs row */
   needs?: NeedState | null;
+  /** Wave 4a — derived role tag (one of ROLE_VOCABULARY) */
+  role?: string;
   /**
    * relationship rows — tolerated shapes: contract `{name, affinity, summary}`
    * arrays, RelationshipSummary `{otherName, affinity, summary}` arrays, or
@@ -229,6 +231,7 @@ export function buildAgentCard(agent: InspectableAgent): ObsAgentCardModel {
   if (typeof agent.color === "number") card.color = agent.color;
   if (agent.planStep !== undefined) card.planStep = agent.planStep;
   if (agent.needs) card.needs = agent.needs;
+  if (typeof agent.role === "string" && agent.role.length > 0) card.role = agent.role;
   if (relationships.length > 0) card.relationships = relationships;
   if (typeof agent.memoryCount === "number") card.memoryCount = agent.memoryCount;
   if (typeof agent.reflectionCount === "number") {

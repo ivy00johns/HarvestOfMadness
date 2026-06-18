@@ -98,6 +98,15 @@ export function buildUserPrompt(obs: Observation): string {
           .join("\n"),
     );
   }
+  // Wave 4a — emergent role. Advisory ONLY (never overrides the ladder), and
+  // gated on a non-default role so DEFAULT-role agents get a byte-identical
+  // prompt (mock-determinism + party-emergence stay green).
+  if (obs.self?.role && obs.self.role !== "farmer") {
+    sections.push(
+      `YOUR EMERGENT ROLE: the town sees you as a ${obs.self.role}. ` +
+        "Let it color your choices when nothing more urgent presses.",
+    );
+  }
   if (obs.self?.knownEvents && obs.self.knownEvents.length > 0) {
     const lines = obs.self.knownEvents.map(
       (e) =>

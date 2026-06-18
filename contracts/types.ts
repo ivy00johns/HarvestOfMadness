@@ -146,6 +146,27 @@ export interface NeedState {
 }
 
 // ---------------------------------------------------------------------------
+// Wave 4a — emergent role specialization
+// ---------------------------------------------------------------------------
+
+/**
+ * Town-legible role vocabulary. Roles are DERIVED inside the cognition layer
+ * (src/agents/Roles.ts) from each agent's recent successful-action histogram
+ * (+ a banker gold overlay), never seeded. "farmer" is the default / fallback /
+ * seed role, so a fresh or below-sample agent reads as a "farmer".
+ */
+export const ROLE_VOCABULARY = [
+  "farmer",
+  "merchant",
+  "socialite",
+  "wanderer",
+  "banker",
+] as const;
+
+/** A derived, town-legible specialization. Default/fallback is "farmer". */
+export type DerivedRole = (typeof ROLE_VOCABULARY)[number];
+
+// ---------------------------------------------------------------------------
 // §4.1 Observation (mission verbatim)
 // ---------------------------------------------------------------------------
 
@@ -153,6 +174,13 @@ export interface Observation {
   self: {
     name: string;
     persona: string;
+    /**
+     * Town-legible specialization. Wave 4a makes this DERIVED at runtime from
+     * the agent's recent-action histogram (src/agents/Roles.ts; one of
+     * ROLE_VOCABULARY). Type stays `string` (no narrowing → no breaking
+     * callers); "farmer" is the default. Advisory only — surfaced to the
+     * decision prompt to color choices, never to override them.
+     */
     role: string;
     pos: Vec2;
     energy: number;
@@ -417,6 +445,8 @@ export interface AgentCardModel {
   goal: string | null;
   /** Wave 3a — intrinsic drive vector for the card's needs row, when present. */
   needs?: NeedState;
+  /** Wave 4a — derived role tag for the card (one of ROLE_VOCABULARY), when non-default. */
+  role?: string;
   lastThought: string | null;
   lastSay: string | null;
   lastAction: { action: string; ok: boolean; reason?: string } | null;

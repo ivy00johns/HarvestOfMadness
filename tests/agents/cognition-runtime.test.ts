@@ -8,6 +8,7 @@
  */
 import { beforeEach, describe, expect, it } from "vitest";
 import type { AgentAction, Router, Vec2 } from "@contracts/types";
+import { ROLE_VOCABULARY } from "@contracts/types";
 import { getWorld, resetWorldForTests } from "../../src/world/instance";
 import { FIELD_RECT } from "../../src/world/map";
 import { Agent } from "../../src/agents/Agent";
@@ -136,6 +137,28 @@ describe("Wave 3a — needs + goal enrichment (mock)", () => {
     await cycle(a, { thought: "t", say: null, action: "WAIT" });
     await cycle(a, { thought: "t", say: null, action: "WAIT" });
     expect(a.goal).toBe(first); // cached — no per-decision re-derivation
+  });
+});
+
+describe("Wave 4a — role enrichment (mock)", () => {
+  it("after cycles + a day-advance the role is a valid vocabulary member and rides the obs", async () => {
+    // A few resolved actions feed the role histogram; the day-advance derives.
+    await cycle(a, { thought: "t", say: null, action: "TILL", target: { ...TILL_TARGET } });
+    await cycle(a, { thought: "t", say: null, action: "WAIT" });
+    cognition.onDayAdvanced();
+    await flush();
+    await cycle(a, { thought: "t", say: null, action: "WAIT" });
+
+    // The agent's derived role is always one of ROLE_VOCABULARY (a fresh agent
+    // with below-sample history is "farmer" — we do NOT assert a specific
+    // non-farmer role on day 1).
+    expect(ROLE_VOCABULARY).toContain(a.role);
+
+    // The role is surfaced onto the serialized observation (still typed string).
+    const obs = JSON.parse(a.trace[0].observationJson);
+    expect(typeof obs.self.role).toBe("string");
+    expect(ROLE_VOCABULARY).toContain(obs.self.role);
+    expect(obs.self.role).toBe(a.role);
   });
 });
 

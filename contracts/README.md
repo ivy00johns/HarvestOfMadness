@@ -1,5 +1,11 @@
 # Harvest of Madness — Contracts (v2.1)
 
+> **Wave 4a (emergent roles, additive):** `ROLE_VOCABULARY` + `DerivedRole`
+> (farmer/merchant/socialite/wanderer/banker) — roles are DERIVED at runtime
+> from the action histogram (src/agents/Roles.ts), never seeded.
+> `Observation.self.role` stays typed `string` (no narrowing); optional
+> `AgentCardModel.role` added. Advisory only — colors decisions, never overrides.
+
 > **v2.1 (M0 — LLM resilience, additive):** prep for the Smallville-scale build
 > (plans/cozy-toasting-russell.md). ADDITIVE only: `maxTokens` on
 > LlmRequest/CompleteRequest (decision retry boosts it on length/truncation);
