@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/colors.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/typography.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/styles.css">
+<script src="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/_ds_bundle.js"></script>
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:#0B1220;}
+  ::-webkit-scrollbar{height:10px;width:10px;}
+  ::-webkit-scrollbar-thumb{background:#33415C;border-radius:8px;border:2px solid #0B1220;}
+  ::-webkit-scrollbar-track{background:transparent;}
+</style>
+</helmet>
+<div style="width:100%;min-height:100vh;background:#0B1220;font-family:var(--font-sans);color:var(--ink-100);display:flex;flex-direction:column;">
+
+  <!-- ── Command bar ───────────────────────────────────── -->
+  <div style="display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid #1c2740;background:linear-gradient(180deg,#10192b,#0d1424);">
+    <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-weight:700;font-size:15px;color:#fff;letter-spacing:-.01em;">
+      <span style="width:9px;height:9px;border-radius:50%;background:var(--cyan-500);box-shadow:0 0 9px var(--cyan-500);"></span>MADOW VALLEY
+    </div>
+    <div style="display:flex;align-items:center;gap:2px;background:#0c1424;border:1px solid #24324d;border-radius:10px;padding:3px;">
+      <button onClick="{{ togglePause }}" style="display:flex;align-items:center;justify-content:center;width:32px;height:28px;border:none;border-radius:7px;cursor:pointer;background:{{ pauseBg }};color:{{ pauseFg }};font-size:13px;">{{ pauseIcon }}</button>
+      <button style="display:flex;align-items:center;justify-content:center;width:32px;height:28px;border:none;border-radius:7px;cursor:pointer;background:transparent;color:var(--ink-300);font-size:12px;" style-hover="background:#1a2742;">⏭</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px;background:#0c1424;border:1px solid #24324d;border-radius:10px;padding:3px;">
+      <sc-for list="{{ speeds }}" as="sp" hint-placeholder-count="4">
+        <button onClick="{{ sp.set }}" style="{{ sp.style }}">{{ sp.label }}</button>
+      </sc-for>
+    </div>
+    <!-- mock / live toggle -->
+    <div style="display:flex;align-items:center;gap:2px;background:#0c1424;border:1px solid #24324d;border-radius:10px;padding:3px;">
+      <button onClick="{{ setMock }}" style="{{ mockStyle }}">Mock</button>
+      <button onClick="{{ setLive }}" style="{{ liveStyle }}">Live</button>
+    </div>
+    <div style="flex:1;min-width:12px;"></div>
+    <div style="display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-weight:600;font-size:15px;color:#fff;">
+      <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);">Day</span>2
+      <span style="color:var(--p2-500);">☀</span><span style="color:var(--ink-300);font-weight:500;">morning</span>
+    </div>
+    <div style="display:flex;gap:7px;">
+      <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--ink-300);border:1px solid #24324d;border-radius:6px;padding:3px 8px;"><span style="color:var(--cyan-300);">⟳</span> {{ inflight }}</span>
+      <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--ink-300);border:1px solid #24324d;border-radius:6px;padding:3px 8px;">{{ latency }}</span>
+      <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:var(--ink-300);border:1px solid #24324d;border-radius:6px;padding:3px 8px;">{{ tokens }}</span>
+      <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:{{ costColor }};border:1px solid #24324d;border-radius:6px;padding:3px 8px;">{{ cost }}</span>
+    </div>
+  </div>
+
+  <!-- ── Body ──────────────────────────────────────────── -->
+  <div style="display:flex;gap:16px;padding:16px;align-items:stretch;flex:1;min-height:0;">
+
+    <!-- LEFT column -->
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:16px;">
+
+      <!-- KPI band -->
+      <div style="display:flex;gap:12px;">
+        <div style="flex:1;background:#111c30;border:1px solid #1f2c46;border-radius:12px;padding:12px 15px;">
+          <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px;">Agents live</div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:#fff;line-height:1;">12</div>
+        </div>
+        <div style="flex:1;background:#111c30;border:1px solid #1f2c46;border-radius:12px;padding:12px 15px;">
+          <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px;">Conversations</div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--cyan-300);line-height:1;">3</div>
+        </div>
+        <div style="flex:1;background:#111c30;border:1px solid #1f2c46;border-radius:12px;padding:12px 15px;">
+          <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px;">Avg energy</div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:var(--positive-500);line-height:1;">71%</div>
+        </div>
+        <div style="flex:1;background:#111c30;border:1px solid #1f2c46;border-radius:12px;padding:12px 15px;">
+          <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px;">Economy</div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:#fff;line-height:1;">2,400<span style="font-size:14px;color:var(--ink-400);">g</span></div>
+        </div>
+        <div style="flex:1;background:#111c30;border:1px solid #1f2c46;border-radius:12px;padding:12px 15px;">
+          <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px;">Decisions</div>
+          <div style="font-family:var(--font-display);font-weight:700;font-size:24px;color:#fff;line-height:1;">284</div>
+        </div>
+      </div>
+
+      <!-- Map viewport -->
+      <div style="position:relative;background:#0d1626;border:1px solid #1f2c46;border-radius:14px;overflow:hidden;flex:1;min-height:360px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.3);">
+        <canvas id="hud-map" style="display:block;width:100%;height:100%;"></canvas>
+        <div style="position:absolute;top:12px;left:14px;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-200);background:rgba(11,18,32,.62);backdrop-filter:blur(6px);border:1px solid #24324d;border-radius:7px;padding:5px 10px;">Organic core · 140×100 · downtown</div>
+        <div style="{{ followChipStyle }}">◎ Following · {{ followName }}</div>
+      </div>
+
+      <!-- Agent cards -->
+      <div>
+        <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:10px;">Agents · 12 · click to inspect →</div>
+        <div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:6px;">
+          <sc-for list="{{ agents }}" as="a" hint-placeholder-count="4">
+            <div onClick="{{ a.select }}" style="{{ a.cardStyle }}">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:11px;">
+                <span style="flex:none;width:11px;height:11px;border-radius:3px;background:{{ a.color }};"></span>
+                <span style="font-family:var(--font-display);font-weight:600;font-size:14.5px;color:#fff;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ a.name }}</span>
+                <span style="{{ a.stateStyle }}">{{ a.stateLabel }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:9px;">
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--p2-500);font-weight:600;">{{ a.gold }}g</span>
+                <div style="flex:1;height:6px;border-radius:4px;background:#1c2840;overflow:hidden;">
+                  <div style="height:100%;width:{{ a.energyW }};background:{{ a.energyColor }};border-radius:4px;"></div>
+                </div>
+                <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--ink-400);">E{{ a.energy }}</span>
+              </div>
+              <div style="font-size:12px;color:var(--ink-300);line-height:1.35;margin-bottom:9px;min-height:32px;">{{ a.goal }}</div>
+              <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+                <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.04em;color:{{ a.actionColor }};">{{ a.action }}</span>
+                <span style="color:var(--positive-500);font-size:12px;">✓</span>
+              </div>
+              <div style="font-size:12px;color:var(--ink-400);font-style:italic;line-height:1.35;border-top:1px solid #1c2840;padding-top:8px;">“{{ a.thought }}”</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT rail -->
+    <div style="width:372px;flex:none;display:flex;flex-direction:column;gap:16px;min-height:0;">
+
+      <!-- ── INSPECTOR (when an agent is selected) ── -->
+      <sc-if value="{{ showInspector }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#111c30;border:1px solid {{ insp.accentBorder }};border-radius:14px;padding:16px 17px;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;">
+          <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:13px;">
+            <span style="flex:none;width:13px;height:13px;border-radius:4px;background:{{ insp.color }};margin-top:3px;"></span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-family:var(--font-display);font-weight:700;font-size:18px;color:#fff;line-height:1.1;">{{ insp.name }}</div>
+              <div style="font-size:12px;color:var(--ink-400);margin-top:3px;">{{ insp.persona }}</div>
+            </div>
+            <span style="{{ insp.stateStyle }}">{{ insp.stateLabel }}</span>
+            <button onClick="{{ clearSelection }}" style="flex:none;width:26px;height:26px;border:1px solid #24324d;background:#0c1424;color:var(--ink-300);border-radius:7px;cursor:pointer;font-size:13px;line-height:1;" style-hover="background:#1a2742;color:#fff;">✕</button>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <div style="flex:1;background:#0d1626;border:1px solid #1f2c46;border-radius:9px;padding:7px 10px;"><div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);">Gold</div><div style="font-family:var(--font-display);font-weight:700;font-size:16px;color:var(--p2-500);">{{ insp.gold }}</div></div>
+            <div style="flex:1;background:#0d1626;border:1px solid #1f2c46;border-radius:9px;padding:7px 10px;"><div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);">Energy</div><div style="font-family:var(--font-display);font-weight:700;font-size:16px;color:{{ insp.energyColor }};">{{ insp.energy }}</div></div>
+            <div style="flex:1;background:#0d1626;border:1px solid #1f2c46;border-radius:9px;padding:7px 10px;"><div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);">Decisions</div><div style="font-family:var(--font-display);font-weight:700;font-size:16px;color:#fff;">{{ insp.decisions }}</div></div>
+          </div>
+
+          <div style="overflow-y:auto;display:flex;flex-direction:column;gap:13px;padding-right:2px;">
+            <!-- decision trace -->
+            <div>
+              <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-500);margin-bottom:9px;">Last decision · trace</div>
+              <div style="display:flex;flex-direction:column;gap:0;">
+                <div style="display:flex;gap:10px;">
+                  <div style="flex:none;display:flex;flex-direction:column;align-items:center;"><span style="width:9px;height:9px;border-radius:50%;background:var(--ink-500);"></span><span style="width:2px;flex:1;background:#1f2c46;"></span></div>
+                  <div style="padding-bottom:11px;flex:1;"><div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);margin-bottom:3px;">Observation</div><div style="font-size:12.5px;color:var(--ink-300);line-height:1.4;">{{ insp.obs }}</div></div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                  <div style="flex:none;display:flex;flex-direction:column;align-items:center;"><span style="width:9px;height:9px;border-radius:50%;background:var(--cyan-500);"></span><span style="width:2px;flex:1;background:#1f2c46;"></span></div>
+                  <div style="padding-bottom:11px;flex:1;"><div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--cyan-300);margin-bottom:3px;">Thought</div><div style="font-size:12.5px;color:var(--ink-200);line-height:1.4;font-style:italic;">{{ insp.thought }}</div></div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                  <div style="flex:none;display:flex;flex-direction:column;align-items:center;"><span style="width:9px;height:9px;border-radius:50%;background:var(--brand-500);"></span><span style="width:2px;flex:1;background:#1f2c46;"></span></div>
+                  <div style="padding-bottom:11px;flex:1;"><div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--brand-400);margin-bottom:3px;">Action</div><div style="font-family:var(--font-mono);font-size:12.5px;color:#fff;">{{ insp.actionFull }}</div></div>
+                </div>
+                <div style="display:flex;gap:10px;">
+                  <div style="flex:none;display:flex;flex-direction:column;align-items:center;"><span style="width:9px;height:9px;border-radius:50%;background:var(--positive-500);"></span></div>
+                  <div style="flex:1;"><div style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--positive-500);margin-bottom:3px;">Result</div><div style="font-size:12.5px;color:var(--ink-300);line-height:1.4;">{{ insp.result }}</div></div>
+                </div>
+              </div>
+            </div>
+            <!-- model / cost strip -->
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#0d1626;border:1px solid #1f2c46;border-radius:9px;padding:9px 11px;">
+              <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.04em;color:{{ insp.modelColor }};font-weight:600;">{{ insp.model }}</span>
+              <span style="color:#2c3a55;">·</span>
+              <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--ink-400);">{{ insp.modelLatency }}</span>
+              <span style="color:#2c3a55;">·</span>
+              <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--ink-400);">{{ insp.modelTokens }}</span>
+            </div>
+            <!-- memory stream -->
+            <div>
+              <div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-500);margin-bottom:9px;">Memory stream · recent</div>
+              <div style="display:flex;flex-direction:column;gap:7px;">
+                <sc-for list="{{ insp.memory }}" as="m" hint-placeholder-count="4">
+                  <div style="display:flex;gap:9px;align-items:flex-start;">
+                    <span style="{{ m.tagStyle }}">{{ m.tag }}</span>
+                    <span style="flex:1;font-size:12px;color:var(--ink-300);line-height:1.4;">{{ m.text }}</span>
+                    <span style="font-family:var(--font-mono);font-size:10px;color:var(--ink-500);flex:none;" title="importance">{{ m.imp }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ── DEFAULT rail (no selection): conversation + events ── -->
+      <sc-if value="{{ showDefault }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:16px;flex:1;min-height:0;">
+          <div style="background:#111c30;border:1px solid #1f2c46;border-radius:14px;padding:16px 17px;">
+            <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:13px;">Active conversation</div>
+            <div style="display:flex;align-items:flex-start;gap:9px;margin-bottom:6px;">
+              <span style="color:var(--brand-400);font-size:16px;line-height:1.2;">★</span>
+              <div style="font-family:var(--font-display);font-weight:600;font-size:17px;color:#fff;line-height:1.2;">A gathering at the tavern</div>
+            </div>
+            <div style="font-size:12.5px;color:var(--ink-400);margin-bottom:13px;padding-left:25px;">host <span style="color:var(--ink-200);">Social Sage</span> · day 2 evening</div>
+            <div style="display:flex;gap:8px;margin-bottom:14px;">
+              <div style="flex:1;background:#0d1626;border:1px solid #1f2c46;border-radius:9px;padding:8px 10px;"><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);">Know</div><div style="font-family:var(--font-display);font-weight:700;font-size:17px;color:#fff;">5<span style="color:var(--ink-500);font-size:13px;">/10</span></div></div>
+              <div style="flex:1;background:#0d1626;border:1px solid #1f2c46;border-radius:9px;padding:8px 10px;"><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);">Invited</div><div style="font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--brand-400);">4</div></div>
+              <div style="flex:1;background:#0d1626;border:1px solid #1f2c46;border-radius:9px;padding:8px 10px;"><div style="font-family:var(--font-mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);">Arrived</div><div style="font-family:var(--font-display);font-weight:700;font-size:17px;color:var(--ink-300);">0</div></div>
+            </div>
+            <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-500);margin-bottom:9px;">Social Sage ↔ Grumbling Gus</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div style="background:#16243c;border-radius:10px 10px 10px 3px;padding:9px 11px;font-size:13px;color:var(--ink-100);line-height:1.4;max-width:88%;">Come to my gathering at the tavern this evening!</div>
+              <div style="background:#1d2336;border-radius:10px 10px 3px 10px;padding:9px 11px;font-size:13px;color:var(--ink-200);line-height:1.4;max-width:88%;align-self:flex-end;">Hmph. If you say so.</div>
+              <div style="background:#16243c;border-radius:10px 10px 10px 3px;padding:9px 11px;font-size:13px;color:var(--ink-100);line-height:1.4;max-width:88%;">Always good to see you, Grumbling Gus!</div>
+            </div>
+          </div>
+          <div style="background:#111c30;border:1px solid #1f2c46;border-radius:14px;padding:16px 17px;flex:1;min-height:0;display:flex;flex-direction:column;">
+            <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:13px;">Event log</div>
+            <div style="display:flex;flex-direction:column;gap:1px;overflow-y:auto;">
+              <sc-for list="{{ events }}" as="e" hint-placeholder-count="8">
+                <div style="display:flex;align-items:baseline;gap:9px;padding:6px;border-radius:7px;" style-hover="background:#16243c;">
+                  <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--ink-500);flex:none;width:42px;">{{ e.t }}</span>
+                  <span style="flex:none;width:7px;height:7px;border-radius:50%;background:{{ e.color }};align-self:center;"></span>
+                  <span style="font-size:12.5px;color:var(--ink-200);line-height:1.35;"><span style="color:#fff;font-weight:500;">{{ e.who }}</span> {{ e.what }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { paused: false, speed: 1, mode: "mock", selected: null };
+
+  componentDidMount() { this._draw(); setTimeout(() => this._draw(), 80); setTimeout(() => this._draw(), 450); window.addEventListener("resize", () => this._draw()); }
+  componentDidUpdate() { this._draw(); }
+
+  // ── single source of agent data (cards + inspector + map) ──
+  _agents() {
+    return [
+      { color: "#D64550", name: "Diligent Dora", persona: "Methodical optimizer · north", st: "exec", gold: 240, energy: 80, decisions: 31, map: { x: 62, y: 49 },
+        goal: "Sell harvested crops, then chat at the tavern before dusk.", action: "MOVE_TO", actionFull: "MOVE_TO (66,49) — shop",
+        thought: "Plan says rest — but I'll bank the haul on the way home.",
+        obs: "At (61,48). Shop 5 tiles SE. 14 parsnip in inventory. Energy 80. Gathering invite pending.",
+        result: "Path accepted · 5 tiles · walking",
+        latLive: "612 ms", tokLive: "1.2k tok",
+        memory: [ ["obs", "Sold 9 parsnip to the shop yesterday for 180g", 4], ["reflect", "I earn most by selling at dusk when prices peak", 8], ["obs", "Social Sage invited me to a gathering", 5], ["plan", "Day 2: harvest → sell → rest", 6] ] },
+      { color: "#4179DA", name: "Reckless Rusty", persona: "Impulsive · plants cheap, forgets to water · south", st: "exec", gold: 120, energy: 64, decisions: 28, map: { x: 54, y: 47 },
+        goal: "Socialize at the tavern; worry about the dry field later.", action: "MOVE_TO", actionFull: "MOVE_TO (62,46) — tavern",
+        thought: "Plan says rest — the tavern's louder than my conscience.",
+        obs: "At (53,47). Tavern 8 tiles E. South plot unwatered (3 crops). Energy 64.",
+        result: "Path accepted · 8 tiles · walking",
+        latLive: "548 ms", tokLive: "1.1k tok",
+        memory: [ ["obs", "Forgot to water the cauliflower again", 6], ["obs", "Had a good time at the tavern last night", 5], ["reflect", "I spend more than I earn — gold keeps dropping", 7], ["plan", "Day 2: socialize first, farm if time", 4] ] },
+      { color: "#6A4BC2", name: "Social Sage", persona: "Connector · prioritizes talk + gatherings", st: "think", gold: 310, energy: 100, decisions: 27, map: { x: 66, y: 53 },
+        goal: "Pull a real crowd to tonight's gathering.", action: "TALK_TO", actionFull: "TALK_TO Proud Zola",
+        thought: "Off to invite Proud Zola — a party needs its proud ones.",
+        obs: "At (66,53) near plaza. Proud Zola 6 tiles N. 5/10 villagers know about the gathering.",
+        result: "Thinking… (LLM call in flight)",
+        latLive: "1.34 s", tokLive: "2.6k tok",
+        memory: [ ["reflect", "Gatherings work best when I invite people face-to-face", 9], ["obs", "Grumbling Gus reluctantly accepted my invite", 6], ["obs", "Only 5 of 10 know about tonight", 7], ["plan", "Day 2: invite 4 more, host at the tavern by evening", 8] ] },
+      { color: "#D9892B", name: "Grumbling Gus", persona: "Curmudgeon · complains, still shows up · north", st: "exec", gold: 200, energy: 72, decisions: 28, map: { x: 72, y: 55 },
+        goal: "Gather at the tavern and grumble about turnip prices.", action: "MOVE_TO", actionFull: "MOVE_TO (66,49) — tavern",
+        thought: "Plan says rest — fine. I'll grace them with my presence.",
+        obs: "At (72,55). Tavern 6 tiles NW. Accepted Sage's invite. Energy 72.",
+        result: "Path accepted · 6 tiles · walking",
+        latLive: "590 ms", tokLive: "1.2k tok",
+        memory: [ ["obs", "Turnip price dropped to 12g at the shop", 5], ["obs", "Social Sage invited me; I accepted", 4], ["reflect", "I complain, but the tavern is the one place I like", 7], ["plan", "Day 2: market, then the gathering", 5] ] },
+      { color: "#18996F", name: "Frugal Fern", persona: "Saver · stretches every coin · south", st: "idle", gold: 95, energy: 38, decisions: 24, map: { x: 80, y: 45 },
+        goal: "Water the plot at dawn; skip anything that costs.", action: "WAIT", actionFull: "WAIT — energy too low",
+        thought: "Energy's low — no sense walking to town empty-handed.",
+        obs: "At (80,45). Energy 38 (low). Plot watered. No urgent task. Bed 22 tiles S.",
+        result: "Idle · waiting one cooldown",
+        latLive: "0 ms", tokLive: "cached",
+        memory: [ ["obs", "Watered the parsnips at dawn", 4], ["reflect", "Walking to town when tired wastes a whole afternoon", 6], ["obs", "Saved 95g — most in the hamlet", 5], ["plan", "Day 2: water, rest, market only if energy allows", 5] ] },
+      { color: "#5187F2", name: "Proud Zola", persona: "Show-off · prize crops · south", st: "exec", gold: 415, energy: 88, decisions: 26, map: { x: 80, y: 58 },
+        goal: "Tend the prize parsnips, then make an entrance tonight.", action: "WATER", actionFull: "WATER (78,57) — parsnip",
+        thought: "These are the finest crops in the valley, and they know it.",
+        obs: "At (79,57). Parsnip adjacent, unwatered, stage 3. Energy 88. Gathering invite pending.",
+        result: "Watered · crop advances on sleep",
+        latLive: "634 ms", tokLive: "1.3k tok",
+        memory: [ ["obs", "My parsnips reached stage 3 — biggest in the valley", 6], ["reflect", "People notice me most when I arrive late and proud", 8], ["obs", "Social Sage will likely invite me", 5], ["plan", "Day 2: tend crops, then the gathering", 6] ] },
+    ];
+  }
+
+  renderVals() {
+    const segBase = "display:flex;align-items:center;justify-content:center;min-width:34px;height:28px;padding:0 9px;border:none;border-radius:7px;cursor:pointer;font-family:var(--font-mono);font-size:12px;letter-spacing:.03em;";
+    const speeds = [["½", 0.5], ["1×", 1], ["2×", 2], ["4×", 4]].map(([label, v]) => ({
+      label, set: () => this.setState({ speed: v }),
+      style: segBase + (this.state.speed === v ? "background:var(--brand-600);color:#fff;font-weight:600;" : "background:transparent;color:var(--ink-300);"),
+    }));
+    const seg2 = "display:flex;align-items:center;justify-content:center;height:28px;padding:0 12px;border:none;border-radius:7px;cursor:pointer;font-family:var(--font-mono);font-size:11px;letter-spacing:.05em;text-transform:uppercase;";
+    const live = this.state.mode === "live";
+
+    const stateMeta = (t) => ({ exec: ["Executing", "var(--positive-500)", "rgba(19,126,92,.16)"], think: ["Thinking", "var(--p2-500)", "rgba(185,118,15,.16)"], idle: ["Idle", "var(--ink-400)", "rgba(81,96,124,.16)"] }[t]);
+    const stateStyle = (t) => { const m = stateMeta(t); return `font-family:var(--font-mono);font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;color:${m[1]};background:${m[2]};border-radius:5px;padding:3px 6px;flex:none;`; };
+    const eColor = (e) => e > 55 ? "var(--positive-500)" : e > 25 ? "var(--p2-500)" : "var(--p1-500)";
+    const sel = this.state.selected;
+
+    const agents = this._agents().map((a, i) => {
+      const m = stateMeta(a.st);
+      const selected = sel === i;
+      return {
+        ...a, energyW: a.energy + "%", energyColor: eColor(a.energy),
+        stateLabel: m[0], stateStyle: stateStyle(a.st),
+        actionColor: a.action.startsWith("TALK") ? "var(--cyan-300)" : a.action === "WAIT" ? "var(--ink-400)" : "var(--brand-400)",
+        select: () => this.setState({ selected: selected ? null : i }),
+        cardStyle: "flex:none;width:248px;border-radius:12px;padding:13px 14px;cursor:pointer;transition:border-color .14s;" +
+          (selected ? "background:#15233c;border:1px solid var(--brand-500);box-shadow:0 0 0 1px var(--brand-500);" : "background:#111c30;border:1px solid #1f2c46;"),
+      };
+    });
+
+    // inspector
+    let insp = null;
+    if (sel != null) {
+      const a = this._agents()[sel];
+      const m = stateMeta(a.st);
+      const tagMeta = { obs: ["OBS", "var(--ink-300)", "#1f2c46"], reflect: ["REFLECT", "var(--cyan-300)", "rgba(42,169,214,.16)"], plan: ["PLAN", "var(--brand-400)", "rgba(30,80,200,.16)"] };
+      insp = {
+        ...a, color: a.color, accentBorder: "#2f4a6b",
+        stateLabel: m[0], stateStyle: stateStyle(a.st), energyColor: eColor(a.energy),
+        model: live ? "fable-5" : "mock", modelColor: live ? "var(--cyan-300)" : "var(--ink-400)",
+        modelLatency: live ? a.latLive : "0 ms", modelTokens: live ? a.tokLive : "0 tok",
+        result: live ? a.result : (a.st === "think" ? "Canned reply (mock)" : a.result),
+        memory: a.memory.map(([type, text, imp]) => {
+          const tm = tagMeta[type];
+          return { tag: tm[0], text, imp, tagStyle: `flex:none;font-family:var(--font-mono);font-size:8.5px;letter-spacing:.05em;font-weight:600;color:${tm[1]};background:${tm[2]};border-radius:4px;padding:3px 5px;min-width:48px;text-align:center;` };
+        }),
+      };
+    }
+
+    const followName = sel != null ? this._agents()[sel].name : "";
+    return {
+      speeds,
+      togglePause: () => this.setState({ paused: !this.state.paused }),
+      pauseIcon: this.state.paused ? "▶" : "⏸", pauseBg: this.state.paused ? "var(--brand-600)" : "transparent", pauseFg: this.state.paused ? "#fff" : "var(--ink-300)",
+      setMock: () => this.setState({ mode: "mock" }), setLive: () => this.setState({ mode: "live" }),
+      mockStyle: seg2 + (!live ? "background:var(--brand-600);color:#fff;font-weight:600;" : "background:transparent;color:var(--ink-300);"),
+      liveStyle: seg2 + (live ? "background:var(--brand-600);color:#fff;font-weight:600;" : "background:transparent;color:var(--ink-300);"),
+      modeBadge: live ? "Live · fable-5" : "Mock mode · canned",
+      modeBadgeStyle: "font-family:var(--font-mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;border-radius:6px;padding:3px 9px;" +
+        (live ? "color:var(--cyan-300);background:rgba(42,169,214,.14);border:1px solid rgba(42,169,214,.4);" : "color:var(--status-open);background:var(--status-open-bg);border:1px solid #e8cd9a;"),
+      inflight: live ? "1/3" : "0/3",
+      latency: live ? "612ms" : "0ms",
+      tokens: live ? "18.4k" : "0 tok",
+      cost: live ? "$0.07" : "$0.00", costColor: live ? "var(--p2-500)" : "var(--positive-500)",
+      agents, insp,
+      showInspector: sel != null, showDefault: sel == null,
+      clearSelection: () => this.setState({ selected: null }),
+      followName,
+      followChipStyle: "position:absolute;top:12px;right:14px;white-space:nowrap;font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:#fff;background:rgba(30,80,200,.5);backdrop-filter:blur(6px);border:1px solid var(--brand-400);border-radius:7px;padding:5px 10px;display:" + (sel != null ? "block" : "none") + ";",
+      events: [
+        { t: "D2·mor", color: "var(--positive-500)", who: "Proud Zola", what: "plan: day 2 — water, then tavern" },
+        { t: "D2·mor", color: "var(--positive-500)", who: "Salty Ford", what: "plan: day 2 — water the south plot" },
+        { t: "D2·mor", color: "var(--brand-400)", who: "Wandering Wren", what: "plan: day 2 — wander the lanes" },
+        { t: "D2·mor", color: "var(--p2-500)", who: "Nervous Nell", what: "plan: day 2 — avoid the crowd" },
+        { t: "D2·mor", color: "var(--positive-500)", who: "Tinkering Brix", what: "plan: day 2 — fix the fence" },
+        { t: "D2·mor", color: "var(--positive-500)", who: "Frugal Fern", what: "plan: day 2 — save, then market" },
+        { t: "D2·mor", color: "var(--status-decision)", who: "Grumbling Gus", what: "accepted invite to the gathering" },
+        { t: "D2·mor", color: "var(--cyan-300)", who: "Social Sage", what: "is hosting a gathering at the tavern" },
+        { t: "D2·mor", color: "var(--positive-500)", who: "Reckless Rusty", what: "plan: day 2 — socialize first" },
+        { t: "D2·mor", color: "var(--positive-500)", who: "Diligent Dora", what: "plan: day 2 — sell, then rest" },
+      ],
+    };
+  }
+
+  // ── map renderer ──
+  _rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  _rr(ctx, x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  _draw() {
+    const cv = document.getElementById("hud-map"); if (!cv) return;
+    const W = cv.clientWidth, H = cv.clientHeight; if (!W || !H) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = W * dpr; cv.height = H * dpr;
+    const ctx = cv.getContext("2d"); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const cols = 56, s = W / cols, rowsVis = Math.ceil(H / s), ox = 46, oy = 30;
+    const tx = (x) => (x - ox) * s, ty = (y) => (y - oy) * s;
+    const rnd = this._rng(7);
+    const C = { grass: "#5aa64a", grassHi: "#64b052", grassLo: "#4d9540", path: "#cb9a63", plaza: "#dac9a4", waterLo: "#3b8aac", floor: "#bb9163", floorAlt: "#b1875a", wall: "#5e4327", bed: "#e9e4d8", table: "#9a652f", chair: "#7c4f28", shelf: "#5f4124", counter: "#86592f", trunk: "#6b4a2c", canopy: "#3c7a32", canopyHi: "#4f9a40", canopyLo: "#2f6328", bush: "#42883a", shadow: "rgba(0,0,0,0.16)" };
+
+    ctx.fillStyle = C.grass; ctx.fillRect(0, 0, W, H);
+    for (let i = 0; i < cols * rowsVis * 0.5; i++) { ctx.fillStyle = rnd() > .5 ? C.grassHi : C.grassLo; ctx.fillRect(Math.floor(rnd() * cols) * s, Math.floor(rnd() * H), s, s); }
+
+    const B = [ { x: 57, y: 41, w: 14, h: 10, kind: "tavern" }, { x: 73, y: 40, w: 18, h: 12, kind: "store" }, { x: 57, y: 53, w: 11, h: 9, kind: "cafe" }, { x: 70, y: 54, w: 12, h: 9, kind: "office" }, { x: 84, y: 54, w: 17, h: 14, kind: "apartments" }, { x: 93, y: 39, w: 14, h: 12, kind: "school" } ];
+    const plaza = { x: 67, y: 51, w: 6, h: 4 };
+    ctx.strokeStyle = C.path; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.lineWidth = 2.4 * s;
+    for (const pts of [[[40, 34], [56, 48], [66, 53]], [[104, 40], [86, 50], [73, 53]], [[58, 60], [67, 56]], [[70, 53], [70, 38]]]) { ctx.beginPath(); ctx.moveTo(tx(pts[0][0]), ty(pts[0][1])); for (let i = 1; i < pts.length; i++) ctx.lineTo(tx(pts[i][0]), ty(pts[i][1])); ctx.stroke(); }
+    ctx.fillStyle = C.plaza; ctx.fillRect(tx(plaza.x), ty(plaza.y), plaza.w * s, plaza.h * s);
+    ctx.fillStyle = C.waterLo; ctx.beginPath(); ctx.arc(tx(plaza.x + 3), ty(plaza.y + 2), s * .9, 0, 7); ctx.fill();
+
+    for (const b of B) {
+      const x = tx(b.x), y = ty(b.y), w = b.w * s, h = b.h * s, pad = s * .9;
+      ctx.fillStyle = C.shadow; ctx.fillRect(x + s * .5, y + s * .6, w, h);
+      ctx.fillStyle = C.floor; ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = C.floorAlt; for (let i = 1; i < b.h; i += 2) ctx.fillRect(x, y + i * s, w, Math.max(1, s * .5));
+      if (b.kind === "store") { const n = 4; for (let i = 0; i < n; i++) { ctx.fillStyle = C.shelf; ctx.fillRect(x + pad + i * ((w - pad * 2) / n) + s * .4, y + pad + s, Math.max(2, s * 1.1), h - pad * 2 - s * 1.6); } ctx.fillStyle = C.counter; ctx.fillRect(x + pad, y + h - pad - s, w - pad * 2, s); }
+      else if (b.kind === "school") { for (let r = 0; r < b.h - 3; r += 2) for (let c = 0; c < b.w - 2; c += 2) { ctx.fillStyle = C.chair; ctx.fillRect(x + pad + c * s, y + pad + r * s, s * 1.1, s * .9); } }
+      else if (b.kind === "tavern" || b.kind === "cafe") { const gx = 3, gy = Math.max(2, Math.floor(b.h / 3)); for (let r = 0; r < gy; r++) for (let c = 0; c < gx; c++) { const cxp = x + pad + (c + .5) * ((w - pad * 2) / gx), cyp = y + pad + (r + .6) * ((h - pad * 2) / gy); ctx.fillStyle = C.table; ctx.beginPath(); ctx.arc(cxp, cyp, s * .85, 0, 7); ctx.fill(); ctx.fillStyle = C.chair; ctx.fillRect(cxp - s * 1.5, cyp - s * .3, s * .55, s * .55); ctx.fillRect(cxp + s * .9, cyp - s * .3, s * .55, s * .55); } ctx.fillStyle = C.counter; ctx.fillRect(x + pad, y + pad - s * .1, w - pad * 2, s * .8); }
+      else if (b.kind === "office") { for (let r = 0; r < b.h - 3; r += 2) { ctx.fillStyle = C.table; ctx.fillRect(x + pad, y + pad + r * s, s * 2.2, s); ctx.fillRect(x + w - pad - s * 2.2, y + pad + r * s, s * 2.2, s); } }
+      else { for (let ry = 0; ry < 2; ry++) for (let rx = 0; rx < 3; rx++) { const cxp = x + pad * .6 + rx * (w / 3), cyp = y + pad * .6 + ry * (h / 2); ctx.fillStyle = C.bed; ctx.fillRect(cxp, cyp, s * 1.6, s); ctx.fillStyle = C.table; ctx.fillRect(cxp + s * .2, cyp + s * 1.4, s * .9, s * .9); } }
+      ctx.strokeStyle = C.wall; ctx.lineWidth = Math.max(1.4, s * .5); ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+    }
+
+    const occ = (x, y) => { for (const b of B) if (x >= b.x - 1 && x <= b.x + b.w && y >= b.y - 1 && y <= b.y + b.h) return false; return true; };
+    const trees = [];
+    for (let i = 0; i < 90; i++) { const cx = ox + rnd() * cols, cy = oy + rnd() * rowsVis; if (!occ(Math.round(cx), Math.round(cy))) continue; const n = 2 + Math.floor(rnd() * 4); for (let j = 0; j < n; j++) { const px = cx + (rnd() - .5) * 5, py = cy + (rnd() - .5) * 5; if (occ(Math.round(px), Math.round(py))) trees.push({ x: px, y: py, r: 1.5 + rnd() * 1 }); } }
+    for (let i = 0; i < 160; i++) { const px = ox + rnd() * cols, py = oy + rnd() * rowsVis; if (!occ(Math.round(px), Math.round(py))) continue; if (rnd() < .35) { ctx.fillStyle = C.bush; ctx.beginPath(); ctx.arc(tx(px), ty(py), s * .7, 0, 7); ctx.fill(); } else { ctx.fillStyle = ["#e85b5b", "#f2c94c", "#9b6ad6", "#fff"][i % 4]; ctx.fillRect(tx(px), ty(py), Math.max(1, s * .4), Math.max(1, s * .4)); } }
+    trees.sort((a, b) => a.y - b.y);
+    for (const t of trees) { const cx = tx(t.x), cy = ty(t.y), r = t.r * s; ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(cx + r * .3, cy + r * .55, r * .95, r * .5, 0, 0, 7); ctx.fill(); ctx.fillStyle = C.trunk; ctx.fillRect(cx - s * .35, cy, s * .7, r * .8); ctx.fillStyle = C.canopyLo; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); ctx.fillStyle = C.canopy; ctx.beginPath(); ctx.arc(cx - r * .12, cy - r * .12, r * .82, 0, 7); ctx.fill(); ctx.fillStyle = C.canopyHi; ctx.beginPath(); ctx.arc(cx - r * .3, cy - r * .3, r * .4, 0, 7); ctx.fill(); }
+
+    // agents (selected gets a ring)
+    const agents = this._agents();
+    agents.forEach((a, i) => {
+      const cx = tx(a.map.x), cy = ty(a.map.y);
+      if (cx < -20 || cx > W + 20) return;
+      if (this.state.selected === i) { ctx.strokeStyle = "#5187F2"; ctx.lineWidth = Math.max(2, s * .4); ctx.beginPath(); ctx.arc(cx, cy, s * 1.6, 0, 7); ctx.stroke(); ctx.strokeStyle = "rgba(81,135,242,.35)"; ctx.lineWidth = Math.max(4, s * .9); ctx.beginPath(); ctx.arc(cx, cy, s * 2.1, 0, 7); ctx.stroke(); }
+      ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(cx, cy + s * .9, s * .8, s * .35, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = a.color; this._rr(ctx, cx - s * .6, cy - s * .3, s * 1.2, s * 1.3, s * .3); ctx.fill();
+      ctx.fillStyle = "#f0d9bf"; ctx.beginPath(); ctx.arc(cx, cy - s * .55, s * .55, 0, 7); ctx.fill();
+    });
+
+    if (this.state.selected == null) {
+      this._bubble(ctx, tx(66), ty(53) - s * 2.4, "Social Sage", "Come to the gathering tonight!", s);
+      this._bubble(ctx, tx(54), ty(47) - s * 2.4, "Reckless Rusty", "The tavern's calling…", s);
+    } else {
+      const a = agents[this.state.selected];
+      this._bubble(ctx, tx(a.map.x), ty(a.map.y) - s * 2.4, a.name, a.thought, s);
+    }
+  }
+
+  _bubble(ctx, x, y, name, text, s) {
+    ctx.font = "600 12px 'IBM Plex Sans', sans-serif";
+    const tw = Math.max(ctx.measureText(text).width, ctx.measureText(name).width) + 22;
+    const bw = Math.min(tw, 240), bh = 40, bx = Math.max(8, x - bw / 2), by = y - bh;
+    ctx.fillStyle = "rgba(11,18,32,0.5)"; this._rr(ctx, bx + 2, by + 3, bw, bh, 9); ctx.fill();
+    ctx.fillStyle = "#fff"; this._rr(ctx, bx, by, bw, bh, 9); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x - 6, by + bh - 1); ctx.lineTo(x + 6, by + bh - 1); ctx.lineTo(x, by + bh + 8); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#1E50C8"; ctx.font = "700 10px 'IBM Plex Mono', monospace"; ctx.fillText(name.toUpperCase(), bx + 11, by + 16);
+    ctx.fillStyle = "#0B1220"; ctx.font = "500 12px 'IBM Plex Sans', sans-serif";
+    let t = text; while (ctx.measureText(t).width > bw - 22 && t.length > 4) t = t.slice(0, -2); if (t !== text) t = t.slice(0, -1) + "…";
+    ctx.fillText(t, bx + 11, by + 31);
+  }
+}
+</script>
+</body>
+</html>

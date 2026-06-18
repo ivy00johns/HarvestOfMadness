@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harvest of Madness — Living City North Star</title>
+<style>
+  :root{
+    --bg:#0c1320; --panel:#121c2e; --panel2:#0f1828; --line:#22344f;
+    --ink:#e7eef8; --muted:#9fb2cc; --dim:#6b7f9e;
+    --teal:#39d6c4; --teal-d:#1f8f86; --gold:#f2b955; --rose:#ef7d8e;
+    --grass:#1f3a2a; --grass2:#264a32; --soil:#5a4327; --road:#6b5535;
+    --bldg:#7a5a3c; --bldgEdge:#9c7a52; --civic:#2a5e63; --civicEdge:#4fb3ac;
+    --water:#214a6b; --ghost:#33455f;
+    --ok:#46c98b; --warn:#f2b955;
+    --r:14px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:radial-gradient(1200px 800px at 70% -10%,#15233a 0%,var(--bg) 60%);
+    color:var(--ink); font-family:var(--font); line-height:1.55;
+    font-size:15px; -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--teal); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 22px 80px}
+
+  header.hero{padding:38px 22px 18px; max-width:1080px; margin:0 auto}
+  .eyebrow{font-family:var(--mono); font-size:12px; letter-spacing:.18em; text-transform:uppercase; color:var(--teal); margin:0 0 8px}
+  h1{font-size:30px; line-height:1.15; margin:0 0 6px; letter-spacing:-.01em}
+  .sub{color:var(--muted); font-size:16px; margin:0 0 18px; max-width:70ch}
+  .pills{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 4px}
+  .pill{font-family:var(--mono); font-size:12px; padding:5px 10px; border:1px solid var(--line);
+    border-radius:999px; color:var(--muted); background:var(--panel2); white-space:nowrap}
+  .pill b{color:var(--ink); font-weight:600}
+  .pill.ok b{color:var(--ok)} .pill.go b{color:var(--gold)}
+
+  nav.toc{position:sticky; top:0; z-index:5; background:rgba(12,19,32,.86); backdrop-filter:blur(8px);
+    border-top:1px solid var(--line); border-bottom:1px solid var(--line); margin:22px 0 0}
+  nav.toc .inner{max-width:1080px; margin:0 auto; padding:10px 22px; display:flex; gap:18px; flex-wrap:wrap; font-size:13px}
+  nav.toc a{color:var(--muted); font-family:var(--mono); font-size:12px; letter-spacing:.04em}
+  nav.toc a:hover{color:var(--teal); text-decoration:none}
+
+  section{margin:34px 0 0}
+  h2{font-size:13px; font-family:var(--mono); text-transform:uppercase; letter-spacing:.16em; color:var(--teal);
+    border-bottom:1px solid var(--line); padding-bottom:9px; margin:0 0 16px}
+  h3{font-size:16px; margin:18px 0 8px}
+  p{margin:0 0 12px; color:#d4deec}
+  .lead{font-size:16px; color:#dde6f2}
+  .muted{color:var(--muted)}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .card{background:linear-gradient(180deg,var(--panel) 0%,var(--panel2) 100%);
+    border:1px solid var(--line); border-radius:var(--r); padding:18px}
+  .card h3{margin-top:0}
+  .tag{display:inline-block; font-family:var(--mono); font-size:11px; letter-spacing:.08em;
+    padding:3px 8px; border-radius:6px; text-transform:uppercase}
+  .tag.now{background:rgba(57,214,196,.12); color:var(--teal); border:1px solid var(--teal-d)}
+  .tag.next{background:rgba(242,185,85,.12); color:var(--gold); border:1px solid #8a6a2c}
+  .kv{margin:10px 0 0; font-size:14px}
+  .kv div{display:flex; justify-content:space-between; gap:12px; padding:5px 0; border-bottom:1px dashed var(--line)}
+  .kv div:last-child{border-bottom:0}
+  .kv span:first-child{color:var(--muted)} .kv span:last-child{font-family:var(--mono); color:var(--ink)}
+
+  /* map */
+  .mapwrap{background:var(--panel2); border:1px solid var(--line); border-radius:var(--r); padding:14px}
+  .mapwrap svg{width:100%; height:auto; display:block; border-radius:10px; background:var(--grass)}
+  .legend{display:flex; flex-wrap:wrap; gap:14px; margin:12px 2px 0; font-size:12.5px; color:var(--muted)}
+  .legend span{display:inline-flex; align-items:center; gap:7px}
+  .sw{width:13px; height:13px; border-radius:3px; display:inline-block; border:1px solid rgba(255,255,255,.15)}
+
+  /* lessons table */
+  table{width:100%; border-collapse:collapse; font-size:14px; margin:4px 0 0}
+  th,td{text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); vertical-align:top}
+  th{color:var(--teal); font-family:var(--mono); font-size:11px; letter-spacing:.08em; text-transform:uppercase}
+  td.cause{color:var(--rose)} td.lesson{color:#cfe9e3}
+
+  /* checklist */
+  .phase{margin:0 0 16px}
+  .phase .head{display:flex; align-items:center; gap:10px; margin:0 0 6px}
+  .phase .head .name{font-weight:600; font-size:15px}
+  ul.check{list-style:none; margin:6px 0 0; padding:0}
+  ul.check li{display:flex; gap:10px; align-items:flex-start; padding:7px 10px; border:1px solid var(--line);
+    border-radius:10px; margin:0 0 7px; background:var(--panel2)}
+  ul.check li.done{opacity:.62}
+  ul.check li.done .txt{text-decoration:line-through; text-decoration-color:var(--dim)}
+  ul.check input{margin-top:3px; width:16px; height:16px; accent-color:var(--teal); cursor:pointer; flex:0 0 auto}
+  ul.check .txt{font-size:14px}
+  ul.check .txt small{color:var(--muted); display:block; margin-top:2px}
+  .seeded{color:var(--ok); font-family:var(--mono); font-size:11px; border:1px solid #2c5e44;
+    background:rgba(70,201,139,.1); padding:1px 6px; border-radius:5px; margin-left:6px}
+
+  ul.bullets{margin:6px 0 0; padding-left:18px}
+  ul.bullets li{margin:0 0 7px}
+  code{font-family:var(--mono); font-size:.86em; background:#0b1422; border:1px solid var(--line);
+    padding:1px 6px; border-radius:6px; color:#bfe9e2}
+  .decided{display:flex; gap:10px; padding:9px 12px; border:1px solid var(--line); border-radius:10px;
+    background:var(--panel2); margin:0 0 8px}
+  .decided .mk{color:var(--ok); font-weight:700; flex:0 0 auto}
+  .note{font-size:13px; color:var(--dim); margin-top:18px; border-top:1px solid var(--line); padding-top:14px}
+  .reset{font-family:var(--mono); font-size:11px; color:var(--dim); cursor:pointer; background:none;
+    border:1px solid var(--line); border-radius:6px; padding:3px 8px}
+  .reset:hover{color:var(--muted)}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <p class="eyebrow">Harvest of Madness · Living-City Program</p>
+  <h1>Growing the City &amp; Making It Alive</h1>
+  <p class="sub">One page to hold the goal so we stop re-deriving it. Where we are, the decided next move
+    (Option&nbsp;C → 140×100), and the locked UI decisions — drawn from the current code, not the rosy summary.</p>
+  <div class="pills">
+    <span class="pill">branch <b>feat/world-dressing</b></span>
+    <span class="pill">HEAD <b>c62fcb0</b></span>
+    <span class="pill ok">tests <b>~1073 green</b></span>
+    <span class="pill">now <b>96×64 · 10 homes</b></span>
+    <span class="pill go">target <b>140×100 · 12+14</b></span>
+    <span class="pill">updated <b>2026-06-18</b></span>
+  </div>
+</header>
+
+<nav class="toc"><div class="inner">
+  <a href="#goal">Goal</a>
+  <a href="#state">Now vs Target</a>
+  <a href="#map">Town Plan</a>
+  <a href="#lessons">Why we stalled</a>
+  <a href="#plan">The Plan</a>
+  <a href="#decisions">Decisions</a>
+  <a href="#constraints">Constraints</a>
+</div></nav>
+
+<div class="wrap">
+
+<section id="goal">
+  <h2>The goal, in one paragraph</h2>
+  <p class="lead">Make Harvest of Madness read like Stanford's <b>Smallville</b>: a dense, organic town where a
+    believable population <i>lives</i> — visiting real places, talking, gossiping, planning gatherings, farming,
+    feuding — and where the player can <b>read what's happening</b> without drowning in text. The bar is
+    <b>density and legibility, not map size or new assets.</b> We already own every asset we need. The recurring
+    failure has been <i>placement and presentation</i>, not capability.</p>
+</section>
+
+<section id="state">
+  <h2>Where we are vs. where we're going</h2>
+  <div class="grid2">
+    <div class="card">
+      <span class="tag now">Shipped · current build</span>
+      <h3>96 × 64 — the dressed village</h3>
+      <div class="kv">
+        <div><span>Homes</span><span>10 two-room</span></div>
+        <div><span>Personas</span><span>10</span></div>
+        <div><span>Civic</span><span>shop·tavern·café·school·office + park</span></div>
+        <div><span>Interiors</span><span>densely furnished (render-only)</span></div>
+        <div><span>Roads</span><span>warm dirt</span></div>
+        <div><span>In-world text</span><span>initials + emoji</span></div>
+      </div>
+      <p class="muted" style="margin-top:12px; font-size:13.5px">Honest gap: homes are cottage-scale and
+        grid-placed; at 96×64 there isn't room for big multi-room homes + plots + reachability at once.</p>
+    </div>
+    <div class="card">
+      <span class="tag next">Decided · Option C</span>
+      <h3>140 × 100 — civic hub + hamlets</h3>
+      <div class="kv">
+        <div><span>Homes</span><span>12 (4 hamlets × 3)</span></div>
+        <div><span>Reserve lots</span><span>14 (room to grow)</span></div>
+        <div><span>Civic</span><span>dense central hub on the spine</span></div>
+        <div><span>Decor</span><span>~500 (clusters, rim, avenues)</span></div>
+        <div><span>Interior pieces</span><span>~1,300</span></div>
+        <div><span>Reach budget</span><span>40 → 100 (floor)</span></div>
+      </div>
+      <p class="muted" style="margin-top:12px; font-size:13.5px">The fix is <b>density &amp; placement</b>. Plan:
+        <code>docs/2026-06-18-option-c-civic-hub-hamlets.md</code>.</p>
+    </div>
+  </div>
+</section>
+
+<section id="map">
+  <h2>The Option&nbsp;C town plan (drawn from the coordinates)</h2>
+  <p class="muted">Schematic of the decided 140×100 layout — every building, road, hamlet, reserve lot, and the
+    park/pond rendered from the plan's actual tile coordinates. This is the target the finalized UI design already assumes.</p>
+  <div class="mapwrap">
+    <svg viewBox="0 0 140 100" role="img" aria-label="Option C town plan, 140 by 100 tiles">
+      <!-- grass -->
+      <rect x="0" y="0" width="140" height="100" fill="#1f3a2a"/>
+      <!-- countryside rim hint -->
+      <rect x="0" y="0" width="140" height="100" fill="none" stroke="#264a32" stroke-width="14" opacity=".5"/>
+      <!-- wall ring -->
+      <rect x="0.5" y="0.5" width="139" height="99" fill="none" stroke="#3c5772" stroke-width="1"/>
+
+      <!-- ROADS -->
+      <g stroke="#6b5535" stroke-linecap="round">
+        <line x1="6" y1="50" x2="134" y2="50" stroke-width="2.6"/>   <!-- spine -->
+        <line x1="10" y1="20" x2="130" y2="20" stroke-width="2.1"/>  <!-- north road -->
+        <line x1="10" y1="80" x2="130" y2="80" stroke-width="2.1"/>  <!-- south road -->
+        <line x1="24" y1="20" x2="24" y2="80" stroke-width="1.7"/>   <!-- west trunk -->
+        <line x1="70" y1="20" x2="70" y2="80" stroke-width="1.7"/>   <!-- center trunk -->
+        <line x1="116" y1="20" x2="116" y2="80" stroke-width="1.7"/> <!-- east trunk -->
+      </g>
+
+      <!-- RESERVE LOTS (ghost) -->
+      <g fill="#33455f" fill-opacity=".28" stroke="#54708f" stroke-width=".4" stroke-dasharray="1.4 1.2">
+        <rect x="26" y="15" width="5" height="5"/><rect x="34" y="15" width="5" height="5"/>
+        <rect x="42" y="15" width="5" height="5"/><rect x="76" y="15" width="5" height="5"/>
+        <rect x="84" y="15" width="5" height="5"/><rect x="92" y="15" width="5" height="5"/>
+        <rect x="100" y="15" width="5" height="5"/>
+        <rect x="30" y="21" width="5" height="5"/><rect x="88" y="21" width="5" height="5"/>
+        <rect x="26" y="74" width="5" height="5"/><rect x="34" y="74" width="5" height="5"/>
+        <rect x="76" y="74" width="5" height="5"/><rect x="84" y="74" width="5" height="5"/>
+        <rect x="92" y="74" width="5" height="5"/>
+      </g>
+      <text x="58" y="13.5" fill="#7b90ad" font-size="2.6" font-family="monospace" letter-spacing=".1">RESERVE LOTS · ROOM TO GROW →</text>
+
+      <!-- PARK + POND -->
+      <rect x="96" y="40" width="14" height="11" fill="#21502f" stroke="#33683f" stroke-width=".5"/>
+      <rect x="99" y="42" width="7" height="6" rx="1.2" fill="#214a6b" stroke="#3a6f99" stroke-width=".4"/>
+      <text x="96.6" y="39.2" fill="#8fc2a3" font-size="2.4" font-family="monospace">PARK</text>
+
+      <!-- CIVIC HUB -->
+      <g stroke="#4fb3ac" stroke-width=".6">
+        <rect x="50" y="43" width="8" height="7" fill="#2a5e63"/>
+        <rect x="62" y="42" width="9" height="8" fill="#2f6a6f"/>
+        <rect x="73" y="44" width="7" height="6" fill="#2a5e63"/>
+        <rect x="60" y="51" width="9" height="8" fill="#2a5e63"/>
+        <rect x="72" y="51" width="8" height="7" fill="#2a5e63"/>
+      </g>
+      <g fill="#d6f2ee" font-family="monospace" font-size="2.2" text-anchor="middle">
+        <text x="54" y="47.2">SHOP</text>
+        <text x="66.5" y="46.6">TAVERN</text>
+        <text x="76.5" y="47.6">CAFÉ</text>
+        <text x="64.5" y="55.6">SCHOOL</text>
+        <text x="76" y="55">OFFICE</text>
+      </g>
+      <circle cx="59" cy="49" r=".8" fill="#f2b955"/> <!-- well -->
+
+      <!-- HOMESTEADS -->
+      <g stroke="#9c7a52" stroke-width=".5">
+        <!-- NW -->
+        <rect x="7" y="14" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="16" y="14" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="9" y="21" width="5" height="6" fill="#7a5a3c"/>
+        <!-- NE -->
+        <rect x="118" y="14" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="127" y="14" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="121" y="21" width="5" height="6" fill="#7a5a3c"/>
+        <!-- SW -->
+        <rect x="7" y="74" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="16" y="74" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="9" y="81" width="5" height="6" fill="#7a5a3c"/>
+        <!-- SE -->
+        <rect x="118" y="74" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="127" y="74" width="5" height="6" fill="#7a5a3c"/>
+        <rect x="121" y="81" width="5" height="6" fill="#7a5a3c"/>
+      </g>
+      <!-- plots (soil) -->
+      <g fill="#5a4327" fill-opacity=".9">
+        <rect x="12" y="15" width="3" height="4"/><rect x="21" y="15" width="3" height="4"/><rect x="14" y="22" width="3" height="4"/>
+        <rect x="123" y="16" width="3" height="4"/><rect x="132" y="16" width="3" height="4"/><rect x="126" y="22" width="3" height="4"/>
+        <rect x="12" y="75" width="3" height="4"/><rect x="21" y="75" width="3" height="4"/><rect x="14" y="82" width="3" height="4"/>
+        <rect x="123" y="75" width="3" height="4"/><rect x="132" y="75" width="3" height="4"/><rect x="126" y="82" width="3" height="4"/>
+      </g>
+      <!-- hamlet labels -->
+      <g fill="#cdb98f" font-family="monospace" font-size="3" letter-spacing=".15">
+        <text x="7" y="11.5">NW HAMLET</text>
+        <text x="112" y="11.5">NE HAMLET</text>
+        <text x="7" y="92">SW HAMLET</text>
+        <text x="112" y="92">SE HAMLET</text>
+      </g>
+
+      <!-- decor hint: a few cluster dots in countryside -->
+      <g fill="#2f5e3c">
+        <circle cx="40" cy="60" r="1.3"/><circle cx="44" cy="62" r="1"/><circle cx="38" cy="64" r="1.1"/>
+        <circle cx="100" cy="64" r="1.3"/><circle cx="104" cy="62" r="1"/><circle cx="97" cy="66" r="1.1"/>
+        <circle cx="58" cy="68" r="1.2"/><circle cx="84" cy="34" r="1.2"/><circle cx="48" cy="32" r="1.1"/>
+      </g>
+    </svg>
+  </div>
+  <div class="legend">
+    <span><i class="sw" style="background:#7a5a3c"></i>Homestead (12)</span>
+    <span><i class="sw" style="background:#5a4327"></i>Plot / soil</span>
+    <span><i class="sw" style="background:#2f6a6f"></i>Civic hub</span>
+    <span><i class="sw" style="background:#21502f"></i>Park</span>
+    <span><i class="sw" style="background:#214a6b"></i>Pond</span>
+    <span><i class="sw" style="background:#6b5535"></i>Road / spine</span>
+    <span><i class="sw" style="background:#33455f"></i>Reserve lot (14, ghost)</span>
+  </div>
+</section>
+
+<section id="lessons">
+  <h2>Why we kept stalling (so we don't repeat it)</h2>
+  <p class="muted">Three rounds of the same complaint, because we kept fixing the wrong layer.</p>
+  <table>
+    <thead><tr><th>Round</th><th>The complaint</th><th>Real cause</th><th>Lesson</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Houses identical, veg used as fences, agents conga-line, "can't read this madness"</td>
+        <td class="cause">In-world text soup + a decor hash planting produce in columns</td>
+        <td class="lesson">Words don't belong in the world. Smallville shows only emoji/initials; sentences live in panels.</td></tr>
+      <tr><td>2</td><td>"I liked the original cards, I just couldn't access them — it can scroll"</td>
+        <td class="cause">We replaced rich cards with compact chips</td>
+        <td class="lesson">Don't trade richness for density — make richness scrollable.</td></tr>
+      <tr><td>3</td><td>"Still 25 agents, same houses, no stores with aisles. Did you look at their code?"</td>
+        <td class="cause">We studied the renderer, not the map data</td>
+        <td class="lesson">the_ville is 140×100, ~1,360 furniture tiles in large multi-room buildings (~9× density). Bigger, packed buildings — not more grass.</td></tr>
+    </tbody>
+  </table>
+  <p style="margin-top:14px"><b>The load-bearing insight:</b> <span class="muted">furniture is</span>
+    <b>render-only</b> — passability is tile-type-driven, so furniture sprites never block pathfinding.
+    Interiors can be packed arbitrarily dense with <b>zero</b> pathfinding or test risk. This is the lever for "alive".</p>
+</section>
+
+<section id="plan">
+  <h2>The plan <button class="reset" id="resetBtn" title="Clear saved check state">reset ✓</button></h2>
+  <p class="muted">Do <b>Phase A (world) before Phase B (UI)</b> — the overhaul should be built against the real
+    140×100 world the mockup already assumes. Check state saves in your browser only.</p>
+
+  <div class="phase">
+    <div class="head"><span class="tag next">Phase A</span><span class="name">World re-layout to Option C (140×100)</span></div>
+    <ul class="check" data-phase="A">
+      <li data-id="a0"><input type="checkbox"><span class="txt">A0 · Bump dims 140×100, reach budget 40→100 (floor), retune camera<small>commit on its own; town clusters NW, still green</small></span></li>
+      <li data-id="a1"><input type="checkbox"><span class="txt">A1 · Road network — spine y50, two residential roads, three trunks</span></li>
+      <li data-id="a2"><input type="checkbox"><span class="txt">A2 · Civic hub COMMONS — 5 buildings straddling the spine + well/board</span></li>
+      <li data-id="a3"><input type="checkbox"><span class="txt">A3 · 12 homesteads (4 hamlets × 3), TDD-converge vs map + party tests</span></li>
+      <li data-id="a4"><input type="checkbox"><span class="txt">A4 · 14 reserve lots + new reserve-lots test; document future-hamlet ground</span></li>
+      <li data-id="a5"><input type="checkbox"><span class="txt">A5 · Park + pond, ~500 decor (kill the 16-cap), ~1,300 interior pieces</span></li>
+      <li data-id="a6"><input type="checkbox"><span class="txt">A6 · Reach budget 40→100 floor only<small>distance-weighted attendance deferred to Phase C</small></span></li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="head"><span class="tag now">Phase B</span><span class="name">UI overhaul · SpaceCon HUD (design finalized in docs/design_handoff_sim_hud/; builds on the 140×100 world)</span></div>
+    <ul class="check" data-phase="B">
+      <li data-id="b1"><input type="checkbox"><span class="txt">B1 · Gathering legibility (world side) — spread agent bodies across tiles/seats when they converge<small>Font + bubble-cap already solved by the design: DS fonts + selected-agent-only bubbles</small></span></li>
+      <li data-id="b2"><input type="checkbox"><span class="txt">B2 · Command bar — wordmark, transport, speed, Mock↔Live toggle, clock, telemetry chips (in-flight/latency/tokens/cost)</span></li>
+      <li data-id="b3"><input type="checkbox"><span class="txt">B3 · KPI band (agents · conversations · energy · economy · decisions)</span></li>
+      <li data-id="b4"><input type="checkbox"><span class="txt">B4 · Map viewport overlays — context chip, follow chip, capped speech bubbles, selected-agent pulse ring</span></li>
+      <li data-id="b5"><input type="checkbox"><span class="txt">B5 · Agent cards (swatch/state-badge/energy bar/action/thought), horizontal scroller, click-to-inspect</span></li>
+      <li data-id="b6"><input type="checkbox"><span class="txt">B6 · Right rail DEFAULT — Active-conversation card + multi-thread conversation feed + Event log<small>BOTH: focused gathering card AND a feed of all active chats</small></span></li>
+      <li data-id="b7"><input type="checkbox"><span class="txt">B7 · Right rail INSPECTOR — decision trace + memory stream + model/cost strip<small>reads the real model-runner + cost accounting, not a visual toggle</small></span></li>
+      <li data-id="b8"><input type="checkbox"><span class="txt">B8 · Wire SpaceCon tokens (Space Grotesk / IBM Plex / Lucide) as single source of color/type; record in CLAUDE.md</span></li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="head"><span class="tag" style="background:#1b2436;color:#9fb2cc;border:1px solid #2b3a52">Phase C</span><span class="name">Deeper "alive" — toward full Smallville (backlog)</span></div>
+    <ul class="check" data-phase="C">
+      <li data-id="c1"><input type="checkbox"><span class="txt">Distance-weighted attendance — far hamlets attend big gatherings occasionally, not always</span></li>
+      <li data-id="c2"><input type="checkbox"><span class="txt">Conversations &amp; gossip at Smallville fidelity on the free LLM proxy</span></li>
+      <li data-id="c3"><input type="checkbox"><span class="txt">Per-hamlet visual identity (roof palette) · terrain transition tiles · second pond</span></li>
+      <li data-id="c4"><input type="checkbox"><span class="txt">Activate reserve lots into live hamlets as the population grows</span></li>
+      <li data-id="c5"><input type="checkbox"><span class="txt">Build controls (Minecraft-ish place/remove) — needs its own plan; grid is frozen today</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="decisions">
+  <h2>Decisions log · 2026-06-18</h2>
+  <div class="decided"><span class="mk">✓</span><div><b>UI source of truth — the finalized SpaceCon HUD handoff</b> (<code>docs/design_handoff_sim_hud/</code>)
+    supersedes the rough mockup screenshot.</div></div>
+  <div class="decided"><span class="mk">✓</span><div><b>In-world labels — KEEP short name+sentence bubbles.</b> The "can't read this madness" was a
+    <b>bad font</b> + <b>every agent piling onto one tile during gatherings</b>, not sentences. The design fixes the font
+    (Space Grotesk/IBM Plex) and <b>caps bubbles</b> (selected agent + 2 ambient); only <b>B1 body-spreading</b> remains.</div></div>
+  <div class="decided"><span class="mk">✓</span><div><b>Agent roster — bottom horizontal scroll strip</b> (as design).</div></div>
+  <div class="decided"><span class="mk">✓</span><div><b>Reach change scope — floor-only (40→100) now</b>; distance-weighted attendance deferred to Phase C.</div></div>
+  <div class="decided"><span class="mk">✓</span><div><b>Build order — world re-layout (Phase A) before UI overhaul (Phase B).</b></div></div>
+  <div class="decided"><span class="mk">✓</span><div><b>Conversation panel — BOTH.</b> An Active-conversation card (focused gathering) <b>and</b> a multi-thread feed of all
+    conversations, with the event log.</div></div>
+  <div class="decided"><span class="mk" style="color:var(--muted)">⏸</span><div><b>Design tokens — deferred.</b> Keep SpaceCon tokens in the handoff README for now; recording them in
+    <code>CLAUDE.md</code> is on hold (user: not yet).</div></div>
+  <p class="muted" style="margin-top:14px"><b>Still open (non-blocking):</b> the B1 body-spreading technique, whether "MADOW VALLEY" is the final town name.</p>
+</section>
+
+<section id="constraints">
+  <h2>Hard constraints (never violate)</h2>
+  <ul class="bullets">
+    <li><b>Determinism</b> — no <code>Math.random</code>, no <code>Date</code> in map/sim generation. Re-running <code>generateMap()</code> is byte-identical.</li>
+    <li><b>Tests stay green</b> (~1073). Map structure/counts/connectivity, personas, party-emergence, observation, integration. TDD-converge coordinates — the tests are the source of truth.</li>
+    <li><b>Reachability</b> — every door → tavern paths through passable tiles within the budget (40 → 100). Plots ≤ Chebyshev-4 of doors.</li>
+    <li><b>Assets</b> — owned/credited only (CC0/CC-BY-SA, attributed in CREDITS.md <i>and</i> CREDITS.txt; the manifest test reads <code>.txt</code>). No Smallville commercial tilesets.</li>
+    <li><b>Furniture is render-only</b> — exploit it for density; it can't break paths.</li>
+    <li><b>Toolchain</b> — nvm shadows binaries; use absolute node paths; tests via <code>node_modules/vitest/vitest.mjs run</code>, tsc via <code>node_modules/typescript/bin/tsc --noEmit</code>.</li>
+    <li><b>Commits</b> — only when verified; <code>--no-gpg-sign</code>.</li>
+  </ul>
+
+  <p class="note">Sources of truth: <code>docs/NORTH-STAR-living-city.md</code> (canonical text) ·
+    <code>docs/2026-06-18-option-c-civic-hub-hamlets.md</code> (the layout plan) ·
+    <code>docs/design_handoff_sim_hud/</code> (<b>finalized UI design</b> — SpaceCon HUD, README + .dc.html prototypes) ·
+    reference world <code>/Users/johns/Projects/generative_agents</code>.
+    This page is the shareable artifact view; the Markdown is canonical.</p>
+</section>
+
+</div>
+
+<script>
+  // Persist checklist state locally (no backend — CSP-safe).
+  var KEY = 'hom-northstar-checks-v1';
+  function load(){ try { return JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(e){ return {}; } }
+  function save(s){ try { localStorage.setItem(KEY, JSON.stringify(s)); } catch(e){} }
+  var state = load();
+  var items = document.querySelectorAll('ul.check li');
+  items.forEach(function(li){
+    var id = li.getAttribute('data-id');
+    var box = li.querySelector('input');
+    if (state[id]) { box.checked = true; li.classList.add('done'); }
+    box.addEventListener('change', function(){
+      state[id] = box.checked;
+      li.classList.toggle('done', box.checked);
+      save(state);
+    });
+  });
+  document.getElementById('resetBtn').addEventListener('click', function(){
+    state = {}; save(state);
+    items.forEach(function(li){ li.querySelector('input').checked = false; li.classList.remove('done'); });
+  });
+</script>
+</body>
+</html>
