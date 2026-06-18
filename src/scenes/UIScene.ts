@@ -51,6 +51,7 @@ import {
 } from "../obs/layout";
 import { formatCognitionMeter } from "../obs/CognitionMeter";
 import { buildPartyPanel } from "../obs/PartyPanel";
+import { buildGovernancePanel } from "../obs/GovernancePanel";
 import { buildTranscript, conversationFromEvent } from "../obs/Transcript";
 import type { Conversation } from "@contracts/types";
 import type { ObsConnection } from "../obs/wiring";
@@ -164,6 +165,15 @@ export class UIScene extends Phaser.Scene {
    *  Scene state — survives relayout(); arrivals live in Cognition, not EventBoard. */
   private readonly arrivedByEvent = new Map<string, Set<string>>();
 
+  // Wave 4c — live governance showcase strip (shares the party band; the party
+  // event takes priority when both are present).
+  private govBg: Phaser.GameObjects.Rectangle | null = null;
+  private govTitle: Phaser.GameObjects.Text | null = null;
+  private govMeta: Phaser.GameObjects.Text | null = null;
+  private govTally: Phaser.GameObjects.Text | null = null;
+  /** Whether the governance strip is currently shown — gates HUD click-through. */
+  private govVisible = false;
+
   // v3 (Wave 2) — conversation transcript panel (left band, below the party strip)
   private transcriptBg: Phaser.GameObjects.Rectangle | null = null;
   private transcriptTitle: Phaser.GameObjects.Text | null = null;
@@ -205,6 +215,7 @@ export class UIScene extends Phaser.Scene {
     this.buildBadgeRow();
     this.buildFeedChrome();
     this.buildPartyChrome();
+    this.buildGovernanceChrome();
     this.buildTranscriptChrome();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
       this.onPointerDown(p.x, p.y),
@@ -259,6 +270,12 @@ export class UIScene extends Phaser.Scene {
     this.partyKnow = null;
     this.partyInvited = null;
     this.partyArrived = null;
+    // Wave 4c — governance strip objects were destroyed too; drop stale refs.
+    this.govBg = null;
+    this.govTitle = null;
+    this.govMeta = null;
+    this.govTally = null;
+    this.govVisible = false;
     // removeAll(true) destroyed the transcript chrome too — drop the stale refs;
     // buildTranscriptChrome() recreates them. latestConversation is sim state, kept.
     this.transcriptBg = null;
@@ -269,6 +286,7 @@ export class UIScene extends Phaser.Scene {
     this.buildBadgeRow();
     this.buildFeedChrome();
     this.buildPartyChrome();
+    this.buildGovernanceChrome();
     this.buildTranscriptChrome();
     this.refreshAll();
     if (reopen) this.toggleTracePanel(reopen);
@@ -284,12 +302,17 @@ export class UIScene extends Phaser.Scene {
     let rect = null;
     if (this.selectedAgent) {
       rect = this.hud.panelRect;
-    } else if (this.partyVisible && this.transcriptVisible) {
-      rect = unionRect(this.hud.partyRect, this.hud.transcriptRect);
-    } else if (this.partyVisible) {
-      rect = this.hud.partyRect;
-    } else if (this.transcriptVisible) {
-      rect = this.hud.transcriptRect;
+    } else {
+      // The party strip and the governance strip share the same band
+      // (hud.partyRect); union it with the transcript rect when visible.
+      const bandVisible = this.partyVisible || this.govVisible;
+      if (bandVisible && this.transcriptVisible) {
+        rect = unionRect(this.hud.partyRect, this.hud.transcriptRect);
+      } else if (bandVisible) {
+        rect = this.hud.partyRect;
+      } else if (this.transcriptVisible) {
+        rect = this.hud.transcriptRect;
+      }
     }
     this.registry.set(REG_HUD, rect);
   }
@@ -366,6 +389,7 @@ export class UIScene extends Phaser.Scene {
     this.renderFeed();
     this.renderCards();
     this.renderParty();
+    this.renderGovernance();
     this.renderTranscript();
     if (this.selectedAgent) this.rebuildPanelEntries();
   }
@@ -738,6 +762,88 @@ export class UIScene extends Phaser.Scene {
     this.partyKnow?.setVisible(visible);
     this.partyInvited?.setVisible(visible);
     this.partyArrived?.setVisible(visible);
+    // Keep the click-through guard in sync with what's actually drawn.
+    this.publishPanelRect();
+  }
+
+  // -- live governance showcase strip (Wave 4c) ----------------------------------
+
+  /**
+   * Build the standing governance strip chrome (backing rect + texts) at
+   * hud.partyRect — it shares the party band, shown only when there is no party
+   * event to display. Starts hidden; renderGovernance() shows it when there is
+   * an open town proposal. No nested containers (Phaser 4.1 gotcha).
+   */
+  private buildGovernanceChrome(): void {
+    const r = this.hud.partyRect;
+    this.govBg = this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
+      .setDepth(DEPTH_HUD)
+      .setVisible(false);
+    const mk = (
+      dy: number,
+      style: Phaser.Types.GameObjects.Text.TextStyle,
+    ): Phaser.GameObjects.Text =>
+      this.add
+        .text(r.x + 8, r.y + dy, "", style)
+        .setDepth(DEPTH_HUD_TEXT)
+        .setVisible(false);
+    this.govTitle = mk(5, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_BASE,
+      fontStyle: "bold",
+      color: COLOR_PLAN,
+    });
+    this.govMeta = mk(22, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_DIM,
+    });
+    this.govTally = mk(40, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_TEXT,
+    });
+  }
+
+  /**
+   * Render the live governance showcase. Reads the current proposal tally via
+   * the optional wiring seam. Hidden when there is no proposal, while a trace
+   * panel is open, or while the party strip occupies the band (the party event
+   * wins). Event-driven via markDirty()→refreshAll() throttle — not per-frame.
+   */
+  private renderGovernance(): void {
+    if (this.destroyed || !this.govBg) return;
+    const controls = this.conn?.controls;
+    const tally = controls?.governanceTally?.();
+    // The party strip owns the band when an event is showing; only show
+    // governance when neither the party strip nor a trace panel is up.
+    if (!tally || this.selectedAgent || this.partyVisible) {
+      this.setGovernanceVisible(false);
+      return;
+    }
+    const town = controls?.agents().length ?? 0;
+    const view = buildGovernancePanel(tally, town);
+    const verb =
+      view.status === "adopted"
+        ? "ADOPTED"
+        : view.status === "rejected"
+          ? "REJECTED"
+          : "town rule up for a vote";
+    this.govTitle?.setText(this.clip(`⚖ ${view.ruleText}`, 40));
+    this.govMeta?.setText(this.clip(`by ${view.proposer} · ${verb}`, 40));
+    this.govTally?.setText(view.tallyLine);
+    this.setGovernanceVisible(true);
+  }
+
+  private setGovernanceVisible(visible: boolean): void {
+    this.govVisible = visible;
+    this.govBg?.setVisible(visible);
+    this.govTitle?.setVisible(visible);
+    this.govMeta?.setVisible(visible);
+    this.govTally?.setVisible(visible);
     // Keep the click-through guard in sync with what's actually drawn.
     this.publishPanelRect();
   }

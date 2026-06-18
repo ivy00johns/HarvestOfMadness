@@ -48,7 +48,8 @@ ${cropTable()}
 - BUY and SELL only work at the shop, with itemIds like "seed:parsnip" (buy) and "crop:parsnip" (sell). You need gold to buy seeds; you start with ${STARTING_GOLD} gold.
 - TALK_TO another agent only when they are within 1 tile. MOVE_TO takes a map coordinate. WAIT does nothing for one beat.
 - GIVE_GIFT hands 1 item from your inventory to an agent within 1 tile (builds friendship). EMOTE shows a feeling above your head; it is always allowed and changes nothing in the world.
-- USE_OBJECT interacts with a nearby world object (well, notice_board, bench): USE the well to draw water and refresh yourself; USE the notice_board to read town news (you may learn about upcoming events); USE the bench to rest. Target: {"objectId": "<id>"}. Only available (in availableActions) when you are adjacent to a usable object.
+- USE_OBJECT interacts with a nearby world object (well, notice_board, bench): USE the well to draw water and refresh yourself; USE the notice_board to read town news (you may learn about upcoming events OR a proposed town rule); USE the bench to rest. Target: {"objectId": "<id>"}. Only available (in availableActions) when you are adjacent to a usable object.
+- VOTE casts your ballot on the one active TOWN RULE proposal: support it (true) or oppose it (false). It is town-wide — no adjacency, no energy cost. Target: {"proposalId": "<id>", "support": true|false}. Only available (in availableActions) when you know an open proposal and have not voted yet; vote once.
 - Your observation lists nearby tiles, agents, landmarks (shop, bed, water, house), your inventory, gold, energy, the result of your last action, and which actions are currently available. Choose ONLY from availableActions.
 - Your observation may also include MEMORIES (relevant past experiences), a CURRENT PLAN STEP (your goal for this phase of the day), RELATIONSHIPS (how you feel about others), and NEARBY OBJECTS (well/notice_board/bench within sight). Let them guide your choice.
 
@@ -56,8 +57,8 @@ RESPONSE FORMAT — exactly one JSON object with this shape:
 {
   "thought": string,            // brief private reasoning
   "say": string | null,         // optional short spoken line
-  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE"|"USE_OBJECT",
-  "target": {"x":number,"y":number} | {"itemId":string,"qty":number} | {"agentName":string} | {"agentName":string,"itemId":string,"qty":number} | {"objectId":string},  // GIVE_GIFT uses {"agentName","itemId","qty":1}; USE_OBJECT uses {"objectId":"..."}; omit for SLEEP/WAIT/EMOTE
+  "action": "MOVE_TO"|"TILL"|"PLANT"|"WATER"|"HARVEST"|"BUY"|"SELL"|"TALK_TO"|"SLEEP"|"WAIT"|"GIVE_GIFT"|"EMOTE"|"USE_OBJECT"|"VOTE",
+  "target": {"x":number,"y":number} | {"itemId":string,"qty":number} | {"agentName":string} | {"agentName":string,"itemId":string,"qty":number} | {"objectId":string} | {"proposalId":string,"support":boolean},  // GIVE_GIFT uses {"agentName","itemId","qty":1}; USE_OBJECT uses {"objectId":"..."}; VOTE uses {"proposalId":"...","support":true|false}; omit for SLEEP/WAIT/EMOTE
   "goal": string,               // optional, your current standing goal
   "emotion": "neutral"|"happy"|"annoyed"|"sad"|"excited"  // optional, defaults to "neutral"
 }
@@ -129,6 +130,26 @@ export function buildUserPrompt(obs: Observation): string {
       "You are hosting a gathering — these folks haven't heard yet:\n" + lines.join("\n"),
     );
   }
+  // Wave 4c — surface the active town-rule proposal when the agent knows one.
+  // Byte-identical when absent (gated on obs.self.activeProposal), so frozen
+  // mock-determinism / party-emergence scenes are unaffected.
+  if (obs.self?.activeProposal) {
+    const ap = obs.self.activeProposal;
+    const lines = [
+      `- proposed by ${ap.proposer}: "${ap.ruleText}"`,
+      `- tally so far: ${ap.yes} yes / ${ap.no} no, ${ap.awareCount} aware`,
+    ];
+    if (obs.self.myVote !== undefined) {
+      lines.push(
+        `- you have already voted ${obs.self.myVote ? "YES" : "NO"} — you cannot vote again.`,
+      );
+    } else if (obs.availableActions.includes("VOTE")) {
+      lines.push(
+        `- cast a VOTE on proposal id "${ap.id}" — set target.proposalId to it and target.support to true or false.`,
+      );
+    }
+    sections.push("ACTIVE PROPOSAL (town rule up for a vote):\n" + lines.join("\n"));
+  }
   // v3 — surface nearby world objects when present.
   if (obs.nearby?.objects && obs.nearby.objects.length > 0) {
     const OBJECT_DESCRIPTIONS: Record<string, string> = {
@@ -141,7 +162,9 @@ export function buildUserPrompt(obs: Observation): string {
         `- ${o.kind} (id:"${o.id}") at (${o.pos.x},${o.pos.y}) — ${OBJECT_DESCRIPTIONS[o.kind] ?? "interact"}`,
     );
     if (obs.availableActions.includes("USE_OBJECT")) {
-      lines.push("You are adjacent to one of these — USE_OBJECT with {\"objectId\":\"<id>\"} to interact.");
+      // Brace-free by design: a literal {...} here would be grabbed by the mock
+      // router's extractFirstJsonObject before the real observation JSON.
+      lines.push("You are adjacent to one of these — USE_OBJECT with objectId set to one of the ids listed above to interact.");
     }
     sections.push("NEARBY OBJECTS:\n" + lines.join("\n"));
   }

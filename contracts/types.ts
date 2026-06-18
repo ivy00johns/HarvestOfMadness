@@ -114,6 +114,7 @@ export const ENERGY_COSTS: Record<ActionType, number> = {
   SLEEP: 0,
   WAIT: 0,
   USE_OBJECT: 0,
+  VOTE: 0, // Wave 4c — town-wide governance vote; free, no adjacency (like EMOTE)
 };
 export const STARTING_GOLD = 200;
 /** starting inventory: 5× "seed:parsnip" */
@@ -206,6 +207,28 @@ export interface Observation {
     knownEvents?: (SimEvent & { isNow: boolean })[];
     /** v3 — for an event host: town agents who have NOT yet heard about it (with positions), so the host can go invite them. */
     inviteTargets?: { name: string; pos: Vec2 }[];
+    /**
+     * Wave 4c — the one active town proposal this agent is AWARE of, surfaced so
+     * the decision prompt can show it and the agent can cast a VOTE. Additive +
+     * client-only (no server/wire change); absent when there is no open proposal
+     * the agent knows about. `yes`/`no` are the live tally; `awareCount` is how
+     * many agents have heard of it.
+     */
+    activeProposal?: {
+      id: string;
+      proposer: string;
+      ruleText: string;
+      day: number;
+      awareCount: number;
+      yes: number;
+      no: number;
+    };
+    /**
+     * Wave 4c — this agent's recorded stance on `activeProposal` (true = yes,
+     * false = no), or absent when the agent has not voted yet. Drives the
+     * VOTE-injection gate in Cognition.enrichObservation (no re-vote once set).
+     */
+    myVote?: boolean;
   };
   time: TimeState;
   nearby: {
@@ -244,7 +267,8 @@ export type ActionType =
   | "EMOTE" // v2 — always legal; renders a transient emote above the sprite
   | "SLEEP"
   | "WAIT"
-  | "USE_OBJECT"; // v3 — target {objectId: string}; adjacency to the object required
+  | "USE_OBJECT" // v3 — target {objectId: string}; adjacency to the object required
+  | "VOTE"; // Wave 4c — target {proposalId: string; support: boolean}; town-wide governance vote, no adjacency
 
 /** v2 — surfaced on speech bubbles and emotes */
 export type Emotion = "neutral" | "happy" | "annoyed" | "sad" | "excited";
@@ -258,7 +282,8 @@ export interface AgentAction {
     | { itemId: string; qty: number }
     | { agentName: string }
     | { agentName: string; itemId: string; qty: number } // GIVE_GIFT
-    | { objectId: string }; // USE_OBJECT — v3
+    | { objectId: string } // USE_OBJECT — v3
+    | { proposalId: string; support: boolean }; // VOTE — Wave 4c
   goal?: string;
   /** v2 — optional; defaults to "neutral" */
   emotion?: Emotion;
@@ -807,3 +832,64 @@ export interface SimEvent {
   /** Human-readable description, e.g. "a gathering at the tavern". */
   description: string;
 }
+
+// ---------------------------------------------------------------------------
+// Wave 4c — Governance v1 (propose + vote on a town rule). CLIENT-ONLY (no
+// server/wire change): the model lives entirely in src/agents/Governance.ts,
+// diffuses like an event, and surfaces additively on Observation.self. PROPOSE
+// rides USE_OBJECT on the notice_board; VOTE is the only new ActionType.
+// ---------------------------------------------------------------------------
+
+/**
+ * Lifecycle status of a town proposal. `open` is the only non-terminal state;
+ * `adopted`/`rejected` are absorbing (resolveIfDue guarantees termination via
+ * the dual rule: early majority OR deadline-with-quorum). Open union — consumers
+ * MUST tolerate unknown statuses.
+ */
+export type ProposalStatus = "open" | "adopted" | "rejected" | string;
+
+/**
+ * A proposed town rule (farming/economy conduct, NEVER a gathering — preserves
+ * the party kill-switch). Exactly one may be `open` at a time. The deadline is
+ * the evening of `day + 1` (closeDay/closePhase). In-memory only; never persisted.
+ */
+export interface TownProposal {
+  id: string;
+  /** Agent name who opened the proposal (auto-aware + auto-yes). */
+  proposer: string;
+  /** The conduct rule, e.g. "always water a neighbour's thirsty crop". */
+  ruleText: string;
+  /** Game-day the proposal opened. */
+  day: number;
+  /** Phase the proposal opened. */
+  phase: Phase;
+  /** Deadline day (openDay + 1) — at this day's evening the tally resolves. */
+  closeDay: number;
+  /** Deadline phase ("evening"). */
+  closePhase: Phase;
+  status: ProposalStatus;
+}
+
+/**
+ * Read-only tally snapshot for the observability HUD + the VOTE-injection gate.
+ * Pure data; arrays are fresh copies.
+ */
+export interface ProposalTally {
+  id: string;
+  proposer: string;
+  ruleText: string;
+  status: ProposalStatus;
+  yes: number;
+  no: number;
+  /** Agents who have heard of the proposal (proposer included). */
+  awareCount: number;
+  /** Agents who have cast a vote (yes or no). */
+  votedCount: number;
+  /** Names of agents who voted, newest-last. */
+  voterNames: string[];
+}
+
+// Wave 4c EventKind additions (open union — documented, not enforced):
+//   "proposal_opened"    payload { proposalId, proposer, ruleText }
+//   "proposal_heard"     payload { proposalId, from, to }
+//   "proposal_resolved"  payload { proposalId, adopted, yes, no, awareCount }

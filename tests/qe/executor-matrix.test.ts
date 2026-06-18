@@ -488,3 +488,98 @@ describe("unknown action from a hostile payload", () => {
     expect(r.reason).toContain("DELETE_FARM");
   });
 });
+
+describe("VOTE precondition (Wave 4c — additive; target-shape only)", () => {
+  // VOTE has no adjacency and no energy cost (like EMOTE). The executor's only
+  // job is the {proposalId, support} target-shape gate + firing the onVote hook;
+  // awareness/open/idempotency live in the cognition layer (Governance).
+  it("valid {proposalId, support} → ok:true and the onVote hook is called", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    const calls: Array<{ name: string; proposalId: string; support: boolean }> = [];
+    const cognition = {
+      onGift: () => {},
+      onTalk: () => {},
+      onVote: (a: Agent, proposalId: string, support: boolean) =>
+        calls.push({ name: a.name, proposalId, support }),
+    };
+    const r = await executeAction(
+      agent,
+      action({ action: "VOTE", target: { proposalId: "prop-1", support: true } }),
+      world,
+      [],
+      { ...INSTANT, cognition },
+    );
+    expect(r.ok).toBe(true);
+    expect(calls).toEqual([{ name: "Probe", proposalId: "prop-1", support: true }]);
+  });
+
+  it("a NO vote forwards support:false to the hook", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    let captured: boolean | null = null;
+    const cognition = {
+      onGift: () => {},
+      onTalk: () => {},
+      onVote: (_a: Agent, _id: string, support: boolean) => {
+        captured = support;
+      },
+    };
+    const r = await executeAction(
+      agent,
+      action({ action: "VOTE", target: { proposalId: "prop-1", support: false } }),
+      world,
+      [],
+      { ...INSTANT, cognition },
+    );
+    expect(r.ok).toBe(true);
+    expect(captured).toBe(false);
+  });
+
+  it("malformed targets are rejected with a readable reason, hook never fires", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    let called = false;
+    const cognition = {
+      onGift: () => {},
+      onTalk: () => {},
+      onVote: () => {
+        called = true;
+      },
+    };
+    const attacks: Array<AgentAction["target"]> = [
+      undefined,
+      { proposalId: "prop-1" } as unknown as AgentAction["target"], // missing support
+      { support: true } as unknown as AgentAction["target"], // missing proposalId
+      { proposalId: 5, support: true } as unknown as AgentAction["target"], // wrong type
+      { proposalId: "prop-1", support: "yes" } as unknown as AgentAction["target"], // wrong type
+      { x: 1, y: 2 } as AgentAction["target"], // a tile target
+    ];
+    for (const target of attacks) {
+      const r = await executeAction(
+        agent,
+        action({ action: "VOTE", target }),
+        world,
+        [],
+        { ...INSTANT, cognition },
+      );
+      expect(r.ok, JSON.stringify(target)).toBe(false);
+      expect(r.reason, JSON.stringify(target)).toBeTruthy();
+      expect((r.reason ?? "").length, JSON.stringify(target)).toBeGreaterThan(10);
+    }
+    expect(called).toBe(false);
+  });
+
+  it("no cognition hooks → still ok:true on a valid target (never crashes)", async () => {
+    const world = new World();
+    const agent = makeAgent({ x: 3, y: 6 });
+    const r = await executeAction(
+      agent,
+      action({ action: "VOTE", target: { proposalId: "prop-1", support: true } }),
+      world,
+      [],
+      INSTANT,
+    );
+    expect(r.ok).toBe(true);
+  });
+});

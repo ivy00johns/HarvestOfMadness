@@ -48,6 +48,7 @@ import { ConversationSystem } from "./Conversation";
 import { NeedsSystem } from "./Needs";
 import { GoalsSystem } from "./Goals";
 import { RolesSystem } from "./Roles";
+import { Governance } from "./Governance";
 
 /** Memory texts injected into prompts are truncated to this many chars. */
 export const MEMORY_TEXT_MAX_CHARS = 200;
@@ -77,6 +78,35 @@ export const GOSSIP_MIN_RELAY_IMPORTANCE_FLOOR = 1;
 function clampRoundImportance(v: number): number {
   return Math.min(10, Math.max(1, Math.round(v)));
 }
+
+/** djb2 — deterministic non-negative string hash (mirrors mock.ts/Governance). */
+function govHash(s: string): number {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 33) ^ s.charCodeAt(i);
+  }
+  return h >>> 0;
+}
+
+// ---------------------------------------------------------------------------
+// Wave 4c — governance importance hints + the deterministic open-gate.
+// ---------------------------------------------------------------------------
+
+/** Importance of the proposer's own "I proposed a town rule" memory. */
+export const GOVERNANCE_PROPOSE_IMPORTANCE = 8;
+/** Importance of a "I heard about the proposed rule" memory (notice board / talk). */
+export const GOVERNANCE_HEARD_IMPORTANCE = 7;
+/** Importance of a relayed-via-talk "X told me about the proposed rule" memory. */
+export const GOVERNANCE_DIFFUSE_IMPORTANCE = 6;
+/** Importance of the adopted-norm memory written to every aware agent. */
+export const GOVERNANCE_NORM_IMPORTANCE = 7;
+/**
+ * Open-gate divisor — a notice-board interaction opens a NEW proposal only when
+ * `hash(name + day) % GOVERNANCE_OPEN_GATE_N === 0` (rare + replayable, no RNG),
+ * AND no proposal is currently open. Tuned so a proposal opens occasionally over
+ * a multi-day sim rather than on every board read.
+ */
+export const GOVERNANCE_OPEN_GATE_N = 4;
 
 /**
  * Wave 4b — strip the gossip wrapper to recover the bounded core story, so the
@@ -169,6 +199,8 @@ export class CognitionSystem implements ExecutorCognitionHooks {
   readonly relationships: RelationshipStoreImpl;
   /** v3 — seeded social events + knowledge diffusion (EventBoard). */
   readonly events = new EventBoard();
+  /** Wave 4c — town governance: one active proposal, diffusion, voting, tally. */
+  readonly governance = new Governance();
   /** live cognition LLM calls, by purpose (budget visibility) */
   readonly metrics: CognitionMetrics = {
     planCalls: 0,
@@ -560,6 +592,13 @@ export class CognitionSystem implements ExecutorCognitionHooks {
           } catch {
             /* defensive — diffusion must not interrupt the interaction */
           }
+          // Wave 4c — governance rides the notice board (no PROPOSE ActionType):
+          // open a new proposal (rare, hash-gated) or learn the open one.
+          try {
+            this.maybeOpenOrLearn(agent);
+          } catch {
+            /* defensive — governance must not interrupt the interaction */
+          }
           break;
         }
         default:
@@ -570,6 +609,144 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       this.writeObservation(agent.name, memText, importance);
     } catch {
       /* rule 10: never block a decision on cognition */
+    }
+  }
+
+  // -- Wave 4c governance ----------------------------------------------------
+
+  /**
+   * Notice-board governance seam. With NO open proposal AND a deterministic gate
+   * firing (`hash(name+day) % N === 0`, rare + replayable), the agent OPENS a new
+   * proposal: composeRule from its role + dominant drive, emit `proposal_opened`,
+   * write an importance-8 memory. Otherwise, if there is an open proposal the
+   * agent does not yet know, it LEARNS it: markAware + importance-7 memory +
+   * `proposal_heard`. Fire-and-forget; never throws.
+   */
+  private maybeOpenOrLearn(agent: Agent): void {
+    const t = this.now();
+    if (!this.governance.hasOpen()) {
+      // Deterministic, rare open-gate — no RNG, replayable.
+      if (govHash(`${agent.name}:${t.day}`) % GOVERNANCE_OPEN_GATE_N !== 0) return;
+      let drive: string;
+      try {
+        drive = this.needs.dominant(agent.name);
+      } catch {
+        drive = "social";
+      }
+      const role = typeof agent.role === "string" ? agent.role : "farmer";
+      const ruleText = Governance.composeRule(role, drive, t.day);
+      const proposal = this.governance.open({
+        id: `prop-${agent.name}-d${t.day}`,
+        proposer: agent.name,
+        ruleText,
+        day: t.day,
+        phase: t.phase,
+        closeDay: t.day + 1,
+        closePhase: "evening",
+        status: "open",
+      });
+      if (!proposal) return; // a proposal opened concurrently — nothing to do
+      void this.write(
+        agent.name,
+        "observation",
+        `I proposed a town rule: ${ruleText}`,
+        GOVERNANCE_PROPOSE_IMPORTANCE,
+      ).catch(() => {});
+      this.bus.emit({
+        day: t.day,
+        phase: t.phase,
+        kind: "proposal_opened",
+        agentName: agent.name,
+        text: `${agent.name} proposed a town rule: ${ruleText}`,
+        payload: {
+          proposalId: proposal.id,
+          proposer: agent.name,
+          ruleText,
+        },
+      });
+      return;
+    }
+
+    // There is an open proposal — learn it if this agent doesn't know it yet.
+    const open = this.governance.current();
+    if (!open) return;
+    const isNew = this.governance.markAware(open.id, agent.name);
+    if (!isNew) return;
+    void this.write(
+      agent.name,
+      "observation",
+      `I read on the notice board a proposed town rule: ${open.ruleText}`,
+      GOVERNANCE_HEARD_IMPORTANCE,
+    ).catch(() => {});
+    this.bus.emit({
+      day: t.day,
+      phase: t.phase,
+      kind: "proposal_heard",
+      agentName: agent.name,
+      text: `${agent.name} read about the proposed rule on the notice board`,
+      payload: { proposalId: open.id, from: "notice_board", to: agent.name },
+    });
+  }
+
+  /**
+   * Executor hook (ExecutorCognitionHooks.onVote). Records the agent's vote
+   * (first vote sticks), writes an importance-4 memory, and lazily resolves the
+   * tally. Voting an unknown/closed proposal is a silent no-op. Never throws.
+   */
+  onVote(agent: Agent, proposalId: string, support: boolean): void {
+    try {
+      const recorded = this.governance.vote(proposalId, agent.name, support);
+      if (recorded) {
+        const open = this.governance.get(proposalId);
+        const ruleText = open?.ruleText ?? "the town rule";
+        this.writeObservation(
+          agent.name,
+          `I voted ${support ? "for" : "against"} the proposed rule: ${ruleText}`,
+          4,
+        );
+      }
+      this.maybeResolve();
+    } catch {
+      /* rule 10: never block a decision on cognition */
+    }
+  }
+
+  /**
+   * Lazy tally resolution (no global tick). On a terminal transition emits
+   * `proposal_resolved` and, on adopt, writes a norm memory to every aware
+   * agent. Idempotent (resolveIfDue returns null after the first transition).
+   * Fire-and-forget; never throws.
+   */
+  private maybeResolve(): void {
+    try {
+      const now = this.now();
+      const r = this.governance.resolveIfDue(now);
+      if (!r) return;
+      this.bus.emit({
+        day: now.day,
+        phase: now.phase,
+        kind: "proposal_resolved",
+        text: `The town ${r.adopted ? "adopted" : "rejected"} the rule: ${r.tally.ruleText} (yes ${r.tally.yes}, no ${r.tally.no})`,
+        payload: {
+          proposalId: r.id,
+          adopted: r.adopted,
+          yes: r.tally.yes,
+          no: r.tally.no,
+          awareCount: r.tally.awareCount,
+        },
+      });
+      if (r.adopted) {
+        for (const name of this.governance.awareNames(r.id)) {
+          void this.write(
+            name,
+            "observation",
+            `The town adopted a new rule: ${r.tally.ruleText}`,
+            GOVERNANCE_NORM_IMPORTANCE,
+          ).catch(() => {});
+        }
+      }
+    } catch {
+      /* defensive — resolution must never throw into the decision loop */
     }
   }
 
@@ -755,6 +932,40 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     } catch {
       /* defensive — gossip must never throw into the decision loop */
     }
+
+    // Wave 4c — governance diffusion: if the speaker knows the OPEN proposal and
+    // the listener does not, the listener learns it (markAware + importance-6
+    // memory + proposal_heard). Touches NO gossip/event sets — its own state and
+    // its own try/catch, so it can never perturb event-diffusion or gossip.
+    try {
+      const open = this.governance.current();
+      if (
+        open &&
+        this.governance.isAware(open.id, speaker.name) &&
+        !this.governance.isAware(open.id, listener.name)
+      ) {
+        const isNew = this.governance.markAware(open.id, listener.name);
+        if (isNew) {
+          void this.write(
+            listener.name,
+            "observation",
+            `${speaker.name} told me about the proposed town rule: ${open.ruleText}`,
+            GOVERNANCE_DIFFUSE_IMPORTANCE,
+          ).catch(() => {});
+          const t = this.now();
+          this.bus.emit({
+            day: t.day,
+            phase: t.phase,
+            kind: "proposal_heard",
+            agentName: listener.name,
+            text: `${speaker.name} told ${listener.name} about the proposed rule`,
+            payload: { proposalId: open.id, from: speaker.name, to: listener.name },
+          });
+        }
+      }
+    } catch {
+      /* defensive — governance diffusion must never throw into the talk hook */
+    }
   }
 
   // -- planning + observation enrichment -------------------------------------
@@ -770,6 +981,8 @@ export class CognitionSystem implements ExecutorCognitionHooks {
 
   /** Pre-warm every registered agent's plan (day_advanced / bootstrap). */
   onDayAdvanced(): void {
+    // Wave 4c — a new day may cross a proposal's deadline; resolve lazily.
+    this.maybeResolve();
     for (const agent of this.agents.values()) {
       // Wave 3a — morning cadence: recompute derive-on-read drives, apply the
       // daily regen pulse, force a goal refresh, THEN pre-warm the plan so the
@@ -921,6 +1134,37 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       } catch {
         /* defensive — inviteTargets must never interrupt enrichment */
       }
+
+      // Wave 4c — governance surfacing + VOTE injection. Additive: only fires
+      // when there is an OPEN proposal the agent is AWARE of, so frozen
+      // mock-determinism scenes (no proposal) stay byte-identical. VOTE is
+      // injected here (NOT in computeAvailableActions) only when the agent is
+      // aware + has not yet voted.
+      try {
+        const open = this.governance.current();
+        if (open && this.governance.isAware(open.id, agent.name)) {
+          const vote = this.governance.myVote(open.id, agent.name);
+          obs.self.activeProposal = {
+            id: open.id,
+            proposer: open.proposer,
+            ruleText: open.ruleText,
+            day: open.day,
+            awareCount: this.governance.awareCount(open.id),
+            yes: this.governance.yesCount(open.id),
+            no: this.governance.noCount(open.id),
+          };
+          if (vote !== undefined) {
+            obs.self.myVote = vote;
+          } else if (!obs.availableActions.includes("VOTE")) {
+            obs.availableActions = [...obs.availableActions, "VOTE"];
+          }
+        }
+      } catch {
+        /* defensive — governance surfacing must never interrupt enrichment */
+      }
+
+      // Wave 4c — lazy deadline/early-majority resolution on the hot path.
+      this.maybeResolve();
     } catch {
       /* rule 10: never block/break a decision on cognition */
     }
@@ -953,6 +1197,7 @@ const OK_IMPORTANCE_HINTS: Partial<Record<AgentAction["action"], number>> = {
   SELL: 2,
   SLEEP: 2,
   USE_OBJECT: 3,
+  VOTE: 4, // Wave 4c — a cast governance vote is a notable civic act
 };
 
 /** First-person memory text for a resolved action. */
@@ -961,7 +1206,16 @@ export function outcomeText(
   result: { ok: boolean; reason?: string },
 ): string {
   const t = action.target as
-    | { x?: number; y?: number; itemId?: string; qty?: number; agentName?: string; objectId?: string }
+    | {
+        x?: number;
+        y?: number;
+        itemId?: string;
+        qty?: number;
+        agentName?: string;
+        objectId?: string;
+        proposalId?: string;
+        support?: boolean;
+      }
     | undefined;
   if (!result.ok) {
     return `I tried to ${action.action} but failed: ${result.reason ?? "unknown reason"}`;
@@ -991,6 +1245,8 @@ export function outcomeText(
       return "I slept through the night; a new day begins";
     case "USE_OBJECT":
       return `I used the ${t?.objectId ?? "object"}`;
+    case "VOTE":
+      return `I voted ${t?.support ? "for" : "against"} the town proposal`;
     case "WAIT":
     default:
       return "I waited for a while";

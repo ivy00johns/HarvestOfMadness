@@ -1,5 +1,7 @@
 # Harvest of Madness — Contracts (v2.1)
 
+> **Wave 4c (governance v1, additive + CLIENT-ONLY):** one new `ActionType` `VOTE` (target `{proposalId, support}`, `ENERGY_COSTS.VOTE = 0`, no adjacency — like EMOTE); PROPOSE rides the existing `USE_OBJECT` on the notice_board (no PROPOSE ActionType). `Observation.self` gains optional `activeProposal?` (`{id, proposer, ruleText, day, awareCount, yes, no}`) + `myVote?: boolean` — both additive, absent when no known open proposal, so frozen mock scenes stay byte-identical. New shared `TownProposal` + `ProposalStatus` + `ProposalTally`. The whole model lives in src/agents/Governance.ts (one active proposal; deadline = openDay+1 evening; dual termination — early adopt when `yes > aware/2` OR deadline adopt iff `yes > voted/2 AND voted >= 2`, else reject — guarantees no deadlock). Norms are farming/economy conduct, NEVER a tavern gathering (party kill-switch preserved). Open-union EventKind doc += `proposal_opened`/`proposal_heard`/`proposal_resolved`. NO server/wire change — `CompleteRequest`/`CompleteResponse`/openapi.yaml untouched.
+
 > **Wave 4b (multi-hop gossip, additive):** `MemoryEntry` gains optional `origin?: string` (stable first-hand source memory id) + `hop?: number` (relay distance, hop 1 = direct) — both absent on non-gossip memories; drives bounded multi-hop relay with origin-dedup, hop cap, and belief decay in src/agents/Cognition.ts.
 
 > **Wave 4a (emergent roles, additive):** `ROLE_VOCABULARY` + `DerivedRole`

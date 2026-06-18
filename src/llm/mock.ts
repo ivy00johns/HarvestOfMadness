@@ -62,6 +62,7 @@ const ACTION_TYPES: readonly ActionType[] = [
   "SLEEP",
   "WAIT",
   "USE_OBJECT", // v3 — heuristic emits when adjacent + plan calls for it
+  "VOTE", // Wave 4c — heuristic emits when enrichObservation injected it (aware + unvoted)
 ];
 
 const PHASES = ["morning", "afternoon", "evening", "night"] as const;
@@ -196,6 +197,23 @@ function normalizeObservation(raw: unknown): Observation | null {
     return typeof it.name === "string" && pos ? [{ name: it.name, pos }] : [];
   });
 
+  // Wave 4c — preserve activeProposal pass-through (defensive: all fields typed).
+  const apRec = asRecord(self.activeProposal);
+  const activeProposal =
+    typeof apRec.id === "string" &&
+    typeof apRec.proposer === "string" &&
+    typeof apRec.ruleText === "string"
+      ? {
+          id: apRec.id,
+          proposer: apRec.proposer,
+          ruleText: apRec.ruleText,
+          day: asFiniteNumber(apRec.day, 1),
+          awareCount: asFiniteNumber(apRec.awareCount, 0),
+          yes: asFiniteNumber(apRec.yes, 0),
+          no: asFiniteNumber(apRec.no, 0),
+        }
+      : null;
+
   const selfOut: Observation["self"] = {
     name: asString(self.name, "unknown"),
     persona: asString(self.persona, ""),
@@ -228,6 +246,20 @@ function normalizeObservation(raw: unknown): Observation | null {
   }
   if (knownEvents.length > 0) selfOut.knownEvents = knownEvents;
   if (inviteTargets.length > 0) selfOut.inviteTargets = inviteTargets;
+  // Wave 4c — governance surface pass-through.
+  if (activeProposal) selfOut.activeProposal = activeProposal;
+  if (typeof self.myVote === "boolean") selfOut.myVote = self.myVote;
+  // Wave 4c — relationships pass-through (affinity bias for the VOTE branch).
+  // Defensive: keep only well-shaped {name, affinity} rows.
+  const relationships = asArray(self.relationships).flatMap((e) => {
+    const r = asRecord(e);
+    return typeof r.name === "string" &&
+      typeof r.affinity === "number" &&
+      Number.isFinite(r.affinity)
+      ? [{ name: r.name, affinity: r.affinity }]
+      : [];
+  });
+  if (relationships.length > 0) selfOut.relationships = relationships;
 
   // v3 — parse nearby.objects (well / notice_board / bench pass-through)
   const nearbyObjects = asArray(nearby.objects).flatMap((e) => {
@@ -388,6 +420,43 @@ function decide(obs: Observation): AgentAction {
       } else if (can("MOVE_TO")) {
         return moveTo(targetPos, `Off to invite ${target.name} to the gathering.`);
       }
+    }
+  }
+
+  // Wave 4c. VOTE: when enrichObservation injected VOTE (the agent is aware of
+  // an open proposal and has NOT voted), cast a deterministic ballot. Fires
+  // after the event ATTEND/INVITE branches (so a live gathering still wins) but
+  // before the plan-follower + farm ladder, so civic duty is not starved.
+  // Support = hash(name + proposalId) % 2 === 0, biased by affinity to the
+  // proposer (affinity >= 0 → lean yes). PURE — no RNG, no Date.now.
+  if (can("VOTE") && self.activeProposal) {
+    const ap = self.activeProposal;
+    let support = hash(`${self.name}${ap.id}`) % 2 === 0;
+    const rel = (self.relationships ?? []).find((r) => r.name === ap.proposer);
+    if (rel) support = rel.affinity >= 0; // affinity sign overrides the hash coin-flip
+    return act(
+      "VOTE",
+      `The town is deciding on a rule: "${ap.ruleText}". I'll cast my vote.`,
+      support ? "I'm for the new rule." : "I can't back that rule.",
+      { proposalId: ap.id, support },
+    );
+  }
+
+  // Wave 4c. PROPOSAL SPREAD: an agent AWARE of the open proposal (it surfaces
+  // on the obs only for knowers) talks it up to an already-adjacent neighbor so
+  // word diffuses. Mirrors the v3-C event spread: it is DISPERSIVE (chat in
+  // place, no movement toward anyone), so the party kill-switch stays intact.
+  // Fires after VOTE (so the agent votes first when it still can) but before the
+  // farm ladder, so civic word actually spreads instead of being starved.
+  if (self.activeProposal && can("TALK_TO")) {
+    const neighbor = obs.nearby.agents.find((a) => cheb(pos, a.pos) <= 1);
+    if (neighbor) {
+      return act(
+        "TALK_TO",
+        `${neighbor.name} should hear about the town rule we're voting on.`,
+        `Have you heard? There's a town rule up for a vote.`,
+        { agentName: neighbor.name },
+      );
     }
   }
 
