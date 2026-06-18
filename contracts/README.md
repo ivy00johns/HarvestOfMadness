@@ -1,5 +1,7 @@
 # Harvest of Madness — Contracts (v2.1)
 
+> **Wave 4b (multi-hop gossip, additive):** `MemoryEntry` gains optional `origin?: string` (stable first-hand source memory id) + `hop?: number` (relay distance, hop 1 = direct) — both absent on non-gossip memories; drives bounded multi-hop relay with origin-dedup, hop cap, and belief decay in src/agents/Cognition.ts.
+
 > **Wave 4a (emergent roles, additive):** `ROLE_VOCABULARY` + `DerivedRole`
 > (farmer/merchant/socialite/wanderer/banker) — roles are DERIVED at runtime
 > from the action histogram (src/agents/Roles.ts), never seeded.

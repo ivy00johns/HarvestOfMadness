@@ -56,6 +56,51 @@ export const DEFAULT_RETRIEVAL_QUERY = "what should I do now";
 /** Importance pinned for gifts, both sides (spec rule 9). */
 export const GIFT_IMPORTANCE = 7;
 
+// ---------------------------------------------------------------------------
+// Wave 4b — bounded multi-hop gossip (termination is non-negotiable)
+// ---------------------------------------------------------------------------
+
+/**
+ * Hard hop ceiling — the load-bearing terminator. A gossip memory at
+ * hop >= GOSSIP_MAX_HOPS is NEVER re-relayed, so the relay chain is at most
+ * A(first-hand) → hop1 → hop2 → hop3 and then stops.
+ */
+export const GOSSIP_MAX_HOPS = 3;
+/** Belief-decay factor applied to the source importance on each relay hop. */
+export const GOSSIP_DECAY = 0.6;
+/** Importance pinned for a hop-1 (first-hand) gossip listener memory. */
+export const GOSSIP_BASE_IMPORTANCE = 4;
+/** Decay backstop: a relay is suppressed once decayed importance drops below this. */
+export const GOSSIP_MIN_RELAY_IMPORTANCE_FLOOR = 1;
+
+/** Deterministic round-then-clamp into the [1,10] importance band. */
+function clampRoundImportance(v: number): number {
+  return Math.min(10, Math.max(1, Math.round(v)));
+}
+
+/**
+ * Wave 4b — strip the gossip wrapper to recover the bounded core story, so the
+ * relayed text does NOT grow across hops. Matches both the hop-1 legacy prefix
+ * `"<Name> mentioned: "` and the hop>=2 provenance prefix
+ * `"<Name> mentioned (heard from <Y>): "`. Returns the text unchanged when it
+ * is not a gossip-wrapped memory.
+ */
+export function gossipCore(text: string): string {
+  const m = /^[A-Za-z][^:]*? mentioned(?: \(heard from [^)]*\))?:\s*/.exec(text);
+  return m ? text.slice(m[0].length) : text;
+}
+
+/**
+ * Wave 4b — extract the prior teller name from a gossip-wrapped memory text.
+ * For a hop-1 memory `"<Teller> mentioned: ..."` returns `<Teller>`; for a
+ * hop>=2 memory `"<Relayer> mentioned (heard from <Origin>): ..."` returns
+ * `<Relayer>` (the immediate prior teller). Returns null when not gossip text.
+ */
+export function gossipTeller(text: string): string | null {
+  const m = /^([A-Za-z][^:]*?) mentioned(?: \(heard from [^)]*\))?:\s*/.exec(text);
+  return m ? m[1] : null;
+}
+
 /** VITE_MODEL_MODE, read defensively (absent under plain node) — mirrors getRouter(). */
 function detectModelMode(): string | undefined {
   return typeof import.meta !== "undefined" && import.meta.env
@@ -146,8 +191,15 @@ export class CognitionSystem implements ExecutorCognitionHooks {
   private readonly heardSpeech = new Set<string>();
   /** v3 — tracks arrivals logged per agent+event to avoid duplicate feed events */
   private readonly arrivedAtEvent = new Set<string>();
-  /** v3 — dedup for gossip sharing: "speakerName|listenerName|memId" */
-  private readonly sharedGossip = new Set<string>();
+  /**
+   * Wave 4b — origin-dedup state: per agent, the set of story-origin ids that
+   * agent already holds. A relay to listener L happens ONLY if L is not already
+   * in knownOrigins[origin]; the write immediately marks L. This is the
+   * absorbing storm guard that REPLACES the v3 single-hop hearsay block —
+   * with N agents there are at most N−1 writes per origin (each agent learns an
+   * origin at most once), so the relay process provably reaches a fixed point.
+   */
+  private readonly knownOrigins = new Map<string, Set<string>>();
 
   private readonly bus: EventBus;
   private readonly router: Router;
@@ -316,6 +368,7 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     text: string,
     importance: number,
     sourceIds?: string[],
+    meta?: { origin?: string; hop?: number },
   ): Promise<MemoryEntry | null> {
     try {
       const clamped = Math.min(10, Math.max(1, Math.round(importance)));
@@ -326,6 +379,10 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         importance: clamped,
         createdAt: this.now(),
         ...(sourceIds && sourceIds.length > 0 ? { sourceIds } : {}),
+        // Wave 4b — additive gossip provenance; MemoryStore.append spreads
+        // ...e so these flow through unchanged when present.
+        ...(meta?.origin !== undefined ? { origin: meta.origin } : {}),
+        ...(meta?.hop !== undefined ? { hop: meta.hop } : {}),
       });
 
       const agent = this.agents.get(agentName);
@@ -352,6 +409,24 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Wave 4b — has `agentName` already heard the story with this `origin`?
+   * Used to suppress re-telling (origin-dedup, the absorbing storm guard).
+   */
+  private knowsOrigin(agentName: string, origin: string): boolean {
+    return this.knownOrigins.get(agentName)?.has(origin) ?? false;
+  }
+
+  /** Wave 4b — record that `agentName` now holds the story with this `origin`. */
+  private markOrigin(agentName: string, origin: string): void {
+    let set = this.knownOrigins.get(agentName);
+    if (!set) {
+      set = new Set<string>();
+      this.knownOrigins.set(agentName, set);
+    }
+    set.add(origin);
   }
 
   /** Heuristic-first importance, then hint, then (live only) fast-tier LLM. */
@@ -575,50 +650,107 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       /* defensive — event diffusion must never interrupt the talk hook */
     }
 
-    // v3 — gossip: speaker shares their single most salient first-person
-    // observation with the listener (single-hop, first-hand only, deduped).
+    // Wave 4b — bounded multi-hop gossip with origin tracking + belief decay.
+    // The speaker shares their single most salient story (first-hand OR a held
+    // relayable rumor) with the listener, UNLESS the listener already knows that
+    // story's origin. Termination rests on two monotone bounds: (1) origin-dedup
+    // is absorbing (a listener learns an origin at most once → ≤ N−1 writes per
+    // origin); (2) the hard hop cap GOSSIP_MAX_HOPS=3 (a hop>=cap memory is never
+    // re-relayed). Belief decay (importance × GOSSIP_DECAY^hop, floored at
+    // GOSSIP_MIN_RELAY_IMPORTANCE_FLOOR) is for narrative fade, not termination —
+    // at the default 4/0.6/floor-1 it bottoms out at 1 without crossing the floor,
+    // so the hop cap is what stops a chain. No feedback loop: a relayed memory
+    // carries the SAME origin, so re-sharing to any knower is suppressed.
     try {
-      // Hearsay-detection patterns: skip memories the speaker merely heard.
-      const hearsayRe = /^[A-Za-z].* (?:mentioned:|told me|said:)/;
       const speakerMems = this.memory.all(speaker.name);
-      // Consider only first-person observations with importance ≥ 5 that are
-      // not themselves relayed hearsay.
-      const candidates = speakerMems.filter(
-        (m) =>
-          m.type === "observation" &&
-          m.importance >= 5 &&
-          !hearsayRe.test(m.text),
-      );
-      if (candidates.length > 0) {
-        // Pick highest importance; break ties by last in array (most recent append).
-        let best = candidates[0];
-        for (const m of candidates) {
-          if (m.importance > best.importance) {
-            best = m;
-          } else if (m.importance === best.importance) {
-            // Prefer the one that appears later in the array (more recent).
-            best = m;
-          }
-        }
-        const dedupKey = `${speaker.name}|${listener.name}|${best.id}`;
-        if (!this.sharedGossip.has(dedupKey)) {
-          this.sharedGossip.add(dedupKey);
-          const gist = truncateText(best.text, 100);
-          void this.write(
-            listener.name,
-            "observation",
-            `${speaker.name} mentioned: ${gist}`,
-            4,
-          ).catch(() => {});
-          const t = this.now();
-          this.bus.emit({
-            day: t.day,
-            phase: t.phase,
-            kind: "gossip",
-            agentName: speaker.name,
-            text: `${speaker.name} told ${listener.name} the news`,
+
+      // Build relay candidates. A candidate exposes the SOURCE memory (for
+      // salience + provenance), the propagated origin id, the listener's
+      // out-hop, and the (possibly decayed) out-importance.
+      type GossipCandidate = {
+        source: MemoryEntry;
+        origin: string;
+        outHop: number;
+        outImportance: number;
+      };
+      const candidates: GossipCandidate[] = [];
+      for (const m of speakerMems) {
+        if (m.type !== "observation") continue;
+        if (m.origin === undefined) {
+          // First-hand: the STRUCTURAL origin===undefined gate REPLACES the
+          // deleted hearsay regex. Origin id = this source memory's own id
+          // (deterministic — never a UUID). Hop-1 importance pinned to 4 and
+          // the listener text stays byte-identical to the legacy single-hop.
+          if (m.importance < 5) continue;
+          candidates.push({
+            source: m,
+            origin: m.id,
+            outHop: 1,
+            outImportance: GOSSIP_BASE_IMPORTANCE,
+          });
+        } else {
+          // Relay: only when the held memory is below the hop cap AND its
+          // decayed importance still clears the floor. Origin propagates
+          // unchanged; the out-hop strictly increases.
+          if (m.hop === undefined || m.hop >= GOSSIP_MAX_HOPS) continue;
+          const decayed = clampRoundImportance(m.importance * GOSSIP_DECAY);
+          if (decayed < GOSSIP_MIN_RELAY_IMPORTANCE_FLOOR) continue;
+          candidates.push({
+            source: m,
+            origin: m.origin,
+            outHop: m.hop + 1,
+            outImportance: decayed,
           });
         }
+      }
+
+      // Origin-dedup: never re-tell the listener a story they already hold.
+      const tellable = candidates.filter(
+        (c) => !this.knowsOrigin(listener.name, c.origin),
+      );
+
+      if (tellable.length > 0) {
+        // Salience by SOURCE importance; ties broken by later-in-array (the
+        // most recently appended), which keeps the frozen "treasure chest
+        // imp 9" + first-hand-preference assertions green.
+        let best = tellable[0];
+        for (const c of tellable) {
+          if (c.source.importance >= best.source.importance) best = c;
+        }
+
+        // Origin-dedup is absorbing: mark BOTH the speaker (who holds it) and
+        // the listener (who now holds it) so neither re-receives this origin.
+        this.markOrigin(speaker.name, best.origin);
+        this.markOrigin(listener.name, best.origin);
+
+        // gossipCore strips the wrapper so the relayed gist does NOT grow hop
+        // over hop; truncate to the legacy 100-char bound.
+        const gist = truncateText(gossipCore(best.source.text), 100);
+        const text =
+          best.outHop === 1
+            ? `${speaker.name} mentioned: ${gist}` // BYTE-IDENTICAL legacy
+            : `${speaker.name} mentioned (heard from ${
+                gossipTeller(best.source.text) ?? speaker.name
+              }): ${gist}`;
+
+        void this.write(
+          listener.name,
+          "observation",
+          text,
+          best.outImportance,
+          [best.source.id],
+          { origin: best.origin, hop: best.outHop },
+        ).catch(() => {});
+
+        const t = this.now();
+        this.bus.emit({
+          day: t.day,
+          phase: t.phase,
+          kind: "gossip",
+          agentName: speaker.name,
+          text: `${speaker.name} told ${listener.name} the news`,
+          payload: { origin: best.origin, hop: best.outHop },
+        });
       }
     } catch {
       /* defensive — gossip must never throw into the decision loop */

@@ -587,6 +587,19 @@ export interface MemoryEntry {
   embedding?: number[];
   /** reflections cite the memory ids they were inferred from */
   sourceIds?: string[];
+  /**
+   * Wave 4b — stable story-origin id for a relayed-gossip memory: the id of
+   * the first-hand source observation (e.g. "Alice-m3"), minted once and
+   * propagated UNCHANGED through every relay hop. Absent on non-gossip memories.
+   * Drives origin-dedup (a listener already knowing an origin is never re-told).
+   */
+  origin?: string;
+  /**
+   * Wave 4b — relay distance for a gossip memory: hop 1 = heard directly from
+   * the first-hand sharer; hop n+1 = relayed from a hop-n holder. Capped at
+   * GOSSIP_MAX_HOPS. Absent on non-gossip memories.
+   */
+  hop?: number;
 }
 
 export interface RetrievalConfig {
