@@ -3,12 +3,185 @@
   "tileSize": 32,
   "characters": [
     {
+      "name": "Townsfolk 01",
+      "key": "char_townsfolk_01",
+      "path": "assets/characters/townsfolk_01.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 02",
+      "key": "char_townsfolk_02",
+      "path": "assets/characters/townsfolk_02.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 03",
+      "key": "char_townsfolk_03",
+      "path": "assets/characters/townsfolk_03.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 04",
+      "key": "char_townsfolk_04",
+      "path": "assets/characters/townsfolk_04.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 05",
+      "key": "char_townsfolk_05",
+      "path": "assets/characters/townsfolk_05.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 06",
+      "key": "char_townsfolk_06",
+      "path": "assets/characters/townsfolk_06.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 07",
+      "key": "char_townsfolk_07",
+      "path": "assets/characters/townsfolk_07.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 08",
+      "key": "char_townsfolk_08",
+      "path": "assets/characters/townsfolk_08.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 09",
+      "key": "char_townsfolk_09",
+      "path": "assets/characters/townsfolk_09.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 10",
+      "key": "char_townsfolk_10",
+      "path": "assets/characters/townsfolk_10.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 11",
+      "key": "char_townsfolk_11",
+      "path": "assets/characters/townsfolk_11.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
+      "name": "Townsfolk 12",
+      "key": "char_townsfolk_12",
+      "path": "assets/characters/townsfolk_12.png",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
+      "framesPerRow": 9
+    },
+    {
       "name": "Farmer",
       "key": "char_farmer",
       "path": "assets/characters/farmer_male.png",
       "frameWidth": 64,
       "frameHeight": 64,
-      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
       "framesPerRow": 9
     },
     {
@@ -17,7 +190,12 @@
       "path": "assets/characters/village_woman.png",
       "frameWidth": 64,
       "frameHeight": 64,
-      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
       "framesPerRow": 9
     },
     {
@@ -26,7 +204,12 @@
       "path": "assets/characters/soldier.png",
       "frameWidth": 64,
       "frameHeight": 64,
-      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
       "framesPerRow": 9
     },
     {
@@ -35,7 +218,12 @@
       "path": "assets/characters/princess.png",
       "frameWidth": 64,
       "frameHeight": 64,
-      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
       "framesPerRow": 9
     },
     {
@@ -44,7 +232,12 @@
       "path": "assets/characters/mage.png",
       "frameWidth": 64,
       "frameHeight": 64,
-      "rows": { "walkUp": 0, "walkLeft": 1, "walkDown": 2, "walkRight": 3 },
+      "rows": {
+        "walkUp": 0,
+        "walkLeft": 1,
+        "walkDown": 2,
+        "walkRight": 3
+      },
       "framesPerRow": 9
     }
   ],
@@ -54,28 +247,52 @@
       "path": "assets/lpc/crops/potato_strip.png",
       "frameWidth": 32,
       "frameHeight": 64,
-      "stageFrames": [0, 1, 2, 3, 4]
+      "stageFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
     },
     {
       "kind": "parsnip",
       "path": "assets/lpc/crops/parsnip_strip.png",
       "frameWidth": 32,
       "frameHeight": 64,
-      "stageFrames": [0, 1, 2, 3, 4]
+      "stageFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
     },
     {
       "kind": "carrot",
       "path": "assets/lpc/crops/carrot_strip.png",
       "frameWidth": 32,
       "frameHeight": 64,
-      "stageFrames": [0, 1, 2, 3, 4]
+      "stageFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
     },
     {
       "kind": "turnip",
       "path": "assets/lpc/crops/turnip_strip.png",
       "frameWidth": 32,
       "frameHeight": 64,
-      "stageFrames": [0, 1, 2, 3, 4]
+      "stageFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ]
     }
   ],
   "tilesets": [
