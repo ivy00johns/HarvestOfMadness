@@ -28,9 +28,9 @@ Get to Smallville-level: **city size, character density, structure details, item
 - [ ] 2b. More character sprite variety (optional)
 
 ### Wave 3 — New agent systems
-- [ ] 3a. Diaries (per-agent daily journal + memory + UI panel)
-- [ ] 3b. Jobs (formalized occupations/roles)
-- [ ] 3c. Death / murder / suicide (mortality + events)
+- [x] 3a. Diaries (eb8daa3): DiarySystem mirrors ReflectionEngine (live+mock), fires in onDayAdvanced, per-agent store, surfaces in feed as "<Name>'s journal: ...". 1047 green, behavior-proven deterministic.
+- [~] 3b. Jobs — LARGELY ALREADY EXISTS: RolesSystem (farmer/merchant/socialite/wanderer/banker from action histograms) + governance's role-based functional-location visiting. Enhancement (concrete occupations per archetype) is optional/deferred.
+- [ ] 3c. Death/murder/suicide — IN PROGRESS (workflow). Scoped: Agent alive/cause fields + pure deterministic MortalitySystem (starvation/despair/murder, conservative thresholds) + skip-dead in AgentManager + 💀 emoji + death bus event. No RenderApi/contract churn.
 
 ### Wave 4 — Big systems
 - [ ] 4a. UI revamp (readability; less GBA)
