@@ -93,6 +93,12 @@ export interface HudLayout {
   panelCloseRect: Rect;
   panelHeaderH: number;
   panelVisibleTrace: number;
+  /** v3 — live party showcase strip, docked top-left over the trace-panel band */
+  partyX: number;
+  partyY: number;
+  partyW: number;
+  partyH: number;
+  partyRect: Rect;
   cardHeight(count: number): number;
   cardRect(index: number, count: number): Rect;
   feedLineRect(i: number): Rect;
@@ -121,6 +127,16 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const panelW = Math.max(120, cardX - 8);
   const panelH = Math.max(60, logY - panelY - 4);
   const panelRect: Rect = { x: panelX, y: panelY, w: panelW, h: panelH };
+
+  // v3 — live party showcase: a slim strip (≤96px) overlaying the top of the
+  // trace-panel band (top-left). Reuses panelX/panelY/panelW; height is clamped
+  // so it never grows past the band. The trace panel is transient (opened on
+  // card click), so the strip overlays — never displaces — existing chrome.
+  const partyX = panelX;
+  const partyY = panelY;
+  const partyW = panelW;
+  const partyH = Math.min(96, Math.max(60, panelH));
+  const partyRect: Rect = { x: partyX, y: partyY, w: partyW, h: partyH };
 
   const cardHeight = (count: number): number => {
     if (count <= 3) return CARD_H_NORMAL;
@@ -179,6 +195,11 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     panelCloseRect: { x: panelX + panelW - 22, y: panelY, w: 22, h: 20 },
     panelHeaderH: PANEL_HEADER_H,
     panelVisibleTrace: PANEL_VISIBLE_TRACE,
+    partyX,
+    partyY,
+    partyW,
+    partyH,
+    partyRect,
     cardHeight,
     cardRect,
     feedLineRect,

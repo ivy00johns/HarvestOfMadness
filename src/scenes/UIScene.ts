@@ -47,6 +47,8 @@ import {
   pointInRect,
   type HudLayout,
 } from "../obs/layout";
+import { formatCognitionMeter } from "../obs/CognitionMeter";
+import { buildPartyPanel } from "../obs/PartyPanel";
 import type { ObsConnection } from "../obs/wiring";
 import { connectObservability } from "../obs/wiring";
 import { startAgents } from "../agents/bootstrap";
@@ -140,6 +142,22 @@ export class UIScene extends Phaser.Scene {
   private budgetBadge!: Phaser.GameObjects.Text;
   private pauseBtn!: Phaser.GameObjects.Text;
   private speedBtns = new Map<number, Phaser.GameObjects.Text>();
+  /** v3 — cognition-cost tally, right-aligned in the badge row */
+  private cogMeter!: Phaser.GameObjects.Text;
+
+  // v3 — live party showcase strip (top-left, over the trace-panel band)
+  private partyBg: Phaser.GameObjects.Rectangle | null = null;
+  private partyTitle: Phaser.GameObjects.Text | null = null;
+  private partyMeta: Phaser.GameObjects.Text | null = null;
+  private partyKnow: Phaser.GameObjects.Text | null = null;
+  private partyInvited: Phaser.GameObjects.Text | null = null;
+  private partyArrived: Phaser.GameObjects.Text | null = null;
+  /** Whether the party strip is currently shown — gates HUD click-through so
+   *  clicks on the visible strip don't pan/follow the world map underneath. */
+  private partyVisible = false;
+  /** arrivals accumulated from the bus (event_arrived), keyed by eventId.
+   *  Scene state — survives relayout(); arrivals live in Cognition, not EventBoard. */
+  private readonly arrivedByEvent = new Map<string, Set<string>>();
 
   // event feed
   private logTexts: Phaser.GameObjects.Text[] = [];
@@ -170,6 +188,7 @@ export class UIScene extends Phaser.Scene {
     this.buildTopBar();
     this.buildBadgeRow();
     this.buildFeedChrome();
+    this.buildPartyChrome();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
       this.onPointerDown(p.x, p.y),
     );
@@ -215,17 +234,34 @@ export class UIScene extends Phaser.Scene {
     this.panelEntryTexts = [];
     this.panelTraceEntries = [];
     this.selectedAgent = null;
+    // removeAll(true) destroyed the party strip objects — drop the stale refs;
+    // buildPartyChrome() recreates them. arrivedByEvent is sim state, kept.
+    this.partyBg = null;
+    this.partyTitle = null;
+    this.partyMeta = null;
+    this.partyKnow = null;
+    this.partyInvited = null;
+    this.partyArrived = null;
     this.buildTopBar();
     this.buildBadgeRow();
     this.buildFeedChrome();
+    this.buildPartyChrome();
     this.refreshAll();
     if (reopen) this.toggleTracePanel(reopen);
     this.publishPanelRect();
   }
 
-  /** WorldScene reads this rect to ignore camera clicks over the open panel. */
+  /** WorldScene reads this rect to ignore camera clicks over the open panel.
+   *  Priority: an open trace panel (covers the whole band) > the visible party
+   *  strip (same band, shorter) > nothing. Without the party case, clicks on the
+   *  visible strip fall through and pan/follow the world map underneath. */
   private publishPanelRect(): void {
-    this.registry.set(REG_HUD, this.selectedAgent ? this.hud.panelRect : null);
+    const rect = this.selectedAgent
+      ? this.hud.panelRect
+      : this.partyVisible
+        ? this.hud.partyRect
+        : null;
+    this.registry.set(REG_HUD, rect);
   }
 
   // -- wiring -----------------------------------------------------------------
@@ -236,10 +272,12 @@ export class UIScene extends Phaser.Scene {
 
     this.unsubscribers.push(this.feed.attach(conn.bus));
     this.unsubscribers.push(conn.bus.on((e) => this.onBusEvent(e)));
-    // sticky states emitted before we attached: budget latch + kill-switch
+    // sticky states emitted before we attached: budget latch + kill-switch,
+    // plus pre-attach event_arrived so the party strip counts early arrivals.
     for (const e of conn.bus.recent()) {
       if (e.kind === "budget_reached") this.budgetReached = true;
       this.killSwitch.apply(e.kind);
+      this.accumulateArrival(e);
     }
     this.unsubscribers.push(getTimeSystem().onChange(() => this.refreshTopBar()));
     this.time.addEvent({
@@ -253,7 +291,27 @@ export class UIScene extends Phaser.Scene {
   private onBusEvent(e: WorldEvent): void {
     if (e.kind === "budget_reached") this.budgetReached = true;
     if (this.killSwitch.apply(e.kind)) this.renderBadgeRow();
+    this.accumulateArrival(e);
     this.markDirty();
+  }
+
+  /**
+   * Accumulate party arrivals from the bus. `event_arrived` carries
+   * `{ eventId, agentName }`; arrived state lives in Cognition (not EventBoard),
+   * so the strip's arrived count is sourced here. Defensive on payload shape.
+   */
+  private accumulateArrival(e: WorldEvent): void {
+    if (e.kind !== "event_arrived") return;
+    const p = e.payload as { eventId?: unknown; agentName?: unknown } | undefined;
+    const eventId = typeof p?.eventId === "string" ? p.eventId : undefined;
+    const agentName = typeof p?.agentName === "string" ? p.agentName : undefined;
+    if (!eventId || !agentName) return;
+    let set = this.arrivedByEvent.get(eventId);
+    if (!set) {
+      set = new Set<string>();
+      this.arrivedByEvent.set(eventId, set);
+    }
+    set.add(agentName);
   }
 
   /** Trailing ~150ms throttle: many events coalesce into one re-render. */
@@ -270,8 +328,10 @@ export class UIScene extends Phaser.Scene {
     if (this.destroyed) return;
     this.refreshTopBar();
     this.renderBadgeRow();
+    this.renderCogMeter();
     this.renderFeed();
     this.renderCards();
+    this.renderParty();
     if (this.selectedAgent) this.rebuildPanelEntries();
   }
 
@@ -279,6 +339,7 @@ export class UIScene extends Phaser.Scene {
   private refreshLive(): void {
     if (this.destroyed) return;
     this.refreshTopBar();
+    this.renderCogMeter();
     const agents = this.conn?.controls.agents() ?? [];
     for (const agent of agents) {
       const ui = this.cards.get(agent.name);
@@ -409,7 +470,25 @@ export class UIScene extends Phaser.Scene {
       .setOrigin(0, 0)
       .setDepth(DEPTH_BADGE)
       .setVisible(false);
+    // v3 — cognition-cost tally, right-aligned in the badge row, distinct from
+    // the decision-layer model/latency/tokens shown on agent cards.
+    this.cogMeter = this.add
+      .text(this.hud.w - 6, this.hud.badgeRowY + 3, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        color: COLOR_DIM,
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH_BADGE);
     this.renderBadgeRow();
+    this.renderCogMeter();
+  }
+
+  /** Cognition LLM spend tally (badge row, right-aligned). Mock → zeroed. */
+  private renderCogMeter(): void {
+    if (this.destroyed || !this.cogMeter) return;
+    const metrics = this.conn?.controls.cognitionMetrics?.() ?? null;
+    this.cogMeter.setText(formatCognitionMeter(metrics).text);
   }
 
   /** Kill-switch pinned top-left (rule 13); PAUSED + BUDGET badges follow it. */
@@ -525,6 +604,107 @@ export class UIScene extends Phaser.Scene {
         line.setText("");
       }
     }
+  }
+
+  // -- live party showcase strip --------------------------------------------------
+
+  /**
+   * Build the standing party strip chrome (backing rect + texts) at
+   * hud.partyRect. Starts hidden; renderParty() shows it when there is a
+   * showcase event. No nested containers (Phaser 4.1 gotcha).
+   */
+  private buildPartyChrome(): void {
+    const r = this.hud.partyRect;
+    this.partyBg = this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.9)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER, 1)
+      .setDepth(DEPTH_HUD)
+      .setVisible(false);
+    const mk = (
+      dy: number,
+      style: Phaser.Types.GameObjects.Text.TextStyle,
+    ): Phaser.GameObjects.Text =>
+      this.add
+        .text(r.x + 8, r.y + dy, "", style)
+        .setDepth(DEPTH_HUD_TEXT)
+        .setVisible(false);
+
+    this.partyTitle = mk(5, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_BASE,
+      fontStyle: "bold",
+      color: COLOR_GOAL,
+    });
+    this.partyMeta = mk(22, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_DIM,
+    });
+    this.partyKnow = mk(40, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_TEXT,
+    });
+    this.partyInvited = mk(58, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_SMALL,
+      color: COLOR_PLAN,
+    });
+    this.partyArrived = this.add
+      .text(r.x + r.w - 8, r.y + 58, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        color: COLOR_OK,
+      })
+      .setOrigin(1, 0)
+      .setDepth(DEPTH_HUD_TEXT)
+      .setVisible(false);
+  }
+
+  /**
+   * Render the live party showcase. Reads the soonest non-past event via the
+   * optional wiring seams; hides the strip when there is no event (mock/absent)
+   * or while a trace panel is open (the panel overlays the same band). Event-
+   * driven via markDirty()→refreshAll() throttle — not per-frame.
+   */
+  private renderParty(): void {
+    if (this.destroyed || !this.partyBg) return;
+    const controls = this.conn?.controls;
+    const eventId = controls?.showcaseEventId?.() ?? null;
+    const snap = eventId ? controls?.attendanceSnapshot?.(eventId) : undefined;
+    // Hide while a card's trace panel is open (it occupies the same band).
+    if (!snap || this.selectedAgent) {
+      this.setPartyVisible(false);
+      return;
+    }
+    const town = controls?.agents().length ?? 0;
+    const arrived = (eventId && this.arrivedByEvent.get(eventId)) || new Set<string>();
+    const view = buildPartyPanel(snap, arrived, town);
+
+    this.partyTitle?.setText(this.clip(`★ ${view.description}`, 36));
+    this.partyMeta?.setText(
+      this.clip(
+        `host ${view.host} · day ${snap.event.day} ${snap.event.phase}`,
+        38,
+      ),
+    );
+    this.partyKnow?.setText(view.knowLine);
+    this.partyInvited?.setText(`invited: ${view.invitedCount}`);
+    this.partyArrived?.setText(`arrived: ${view.arrivedCount}`);
+    this.setPartyVisible(true);
+  }
+
+  private setPartyVisible(visible: boolean): void {
+    this.partyVisible = visible;
+    this.partyBg?.setVisible(visible);
+    this.partyTitle?.setVisible(visible);
+    this.partyMeta?.setVisible(visible);
+    this.partyKnow?.setVisible(visible);
+    this.partyInvited?.setVisible(visible);
+    this.partyArrived?.setVisible(visible);
+    // Keep the click-through guard in sync with what's actually drawn.
+    this.publishPanelRect();
   }
 
   // -- agent cards ----------------------------------------------------------------
@@ -734,6 +914,7 @@ export class UIScene extends Phaser.Scene {
       this.expandedTurnIds.add(first.turnId);
       this.rebuildPanelEntries();
     }
+    this.renderParty(); // hide the party strip behind the open panel
     this.publishPanelRect();
   }
 
@@ -784,6 +965,7 @@ export class UIScene extends Phaser.Scene {
     this.panelTraceEntries = [];
     for (const obj of this.panelObjects) obj.destroy();
     this.panelObjects = [];
+    this.renderParty(); // restore the party strip once the panel closes
     this.publishPanelRect();
   }
 

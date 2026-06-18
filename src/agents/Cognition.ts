@@ -220,6 +220,11 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     });
   }
 
+  /** Read-only snapshot of cognition LLM spend. Never mutates. */
+  metricsSnapshot(): Readonly<CognitionMetrics> {
+    return { ...this.metrics };
+  }
+
   // -- agent registry --------------------------------------------------------
 
   registerAgent(agent: Agent): void {
