@@ -292,17 +292,24 @@ interface CommonsSpec {
  * downtown loop / spine. The tavern is dead-centre so every homestead door is
  * ≤ 40 A* tiles away (party-emergence reachability gate).
  */
+// LARGE civic buildings (Smallville-scale rooms with space for aisles, desk
+// rows and full furnishing). Doors + the dead-centre tavern are UNCHANGED so the
+// party-emergence reachability budget (≤40 A* door→tavern) still holds; the rooms
+// just grow into the free rows above the plaza (y27-29) and below the spine
+// (y42-45), between the inner-strip homes (≤y26 / ≥y46). They straddle a few
+// vertical road trunks, but the spine + the other trunks keep the town connected.
 const COMMONS: CommonsSpec[] = [
-  // Tavern: 7×5, dead-centre above the spine; door S onto plaza row y=35.
-  { kind: "tavern", rect: { x0: 44, y0: 30, x1: 50, y1: 34 }, door: { x: 47, y: 34 }, doorSide: "S" },
-  // Shop: 5×5, west of tavern; door S onto plaza; shopTile centre interior.
-  { kind: "shop", rect: { x0: 34, y0: 30, x1: 38, y1: 34 }, door: { x: 36, y: 34 }, doorSide: "S", specialTile: { x: 36, y: 32 } },
-  // Cafe: 5×4, east of tavern; door S onto plaza.
-  { kind: "cafe", rect: { x0: 54, y0: 31, x1: 58, y1: 34 }, door: { x: 56, y: 34 }, doorSide: "S" },
-  // Office: 5×5, below the spine; door N onto the spine (exterior y=36).
-  { kind: "office", rect: { x0: 40, y0: 37, x1: 44, y1: 41 }, door: { x: 42, y: 37 }, doorSide: "N" },
-  // School: 6×5, below-right of the spine; door N onto the spine.
-  { kind: "school", rect: { x0: 50, y0: 37, x1: 55, y1: 41 }, door: { x: 52, y: 37 }, doorSide: "N" },
+  // Tavern: 9×6, dead-centre above the spine; door S onto plaza row y=35.
+  { kind: "tavern", rect: { x0: 43, y0: 29, x1: 51, y1: 34 }, door: { x: 47, y: 34 }, doorSide: "S" },
+  // Supermarket: 8×6, west of tavern; door S onto plaza; shopTile interior gate.
+  // (top at y=29, not y=28, to clear the inner-north homes' soil plots at y=27-28.)
+  { kind: "shop", rect: { x0: 32, y0: 29, x1: 39, y1: 34 }, door: { x: 36, y: 34 }, doorSide: "S", specialTile: { x: 36, y: 32 } },
+  // Cafe: 7×5, east of tavern; door S onto plaza.
+  { kind: "cafe", rect: { x0: 53, y0: 30, x1: 59, y1: 34 }, door: { x: 56, y: 34 }, doorSide: "S" },
+  // Office / town hall: 7×6, below the spine; door N onto the spine (ext y=36).
+  { kind: "office", rect: { x0: 39, y0: 37, x1: 45, y1: 42 }, door: { x: 42, y: 37 }, doorSide: "N" },
+  // School: 9×6, below-right of the spine; door N onto the spine.
+  { kind: "school", rect: { x0: 49, y0: 37, x1: 57, y1: 42 }, door: { x: 52, y: 37 }, doorSide: "N" },
 ];
 
 const SHOP_SPEC = COMMONS.find((c) => c.kind === "shop")!;
