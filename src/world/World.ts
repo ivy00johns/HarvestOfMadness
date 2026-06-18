@@ -99,7 +99,7 @@ export class World implements WorldApi {
 
   /** Non-interactive scenery for the renderer (defensive copy). */
   decor(): DecorItem[] {
-    return this.mapDecor.map((d) => ({ kind: d.kind, pos: { ...d.pos } }));
+    return this.mapDecor.map((d) => ({ kind: d.kind, pos: { ...d.pos }, variant: d.variant }));
   }
 
   time(): TimeState {

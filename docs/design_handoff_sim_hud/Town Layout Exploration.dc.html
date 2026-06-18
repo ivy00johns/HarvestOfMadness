@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/colors.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/typography.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/styles.css">
+<script src="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/_ds_bundle.js"></script>
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;}
+  ::-webkit-scrollbar{height:12px;width:12px;}
+  ::-webkit-scrollbar-thumb{background:#33415C;border-radius:8px;border:3px solid #0B1220;}
+  ::-webkit-scrollbar-track{background:#0B1220;}
+</style>
+</helmet>
+<div style="min-width:100%;width:max-content;min-height:100vh;box-sizing:border-box;padding:40px 48px 72px;font-family:var(--font-sans);color:var(--ink-100);background:radial-gradient(1100px 520px at 18% -8%, #18233c 0%, rgba(11,18,32,0) 60%), radial-gradient(2px 2px at 22% 30%, rgba(127,211,236,.55), transparent), radial-gradient(1.5px 1.5px at 62% 14%, rgba(255,255,255,.5), transparent), radial-gradient(1.5px 1.5px at 84% 42%, rgba(127,211,236,.4), transparent), radial-gradient(1.5px 1.5px at 40% 60%, rgba(255,255,255,.35), transparent), #0B1220;">
+
+  <!-- ── Header ─────────────────────────────────────────── -->
+  <div style="max-width:1180px;">
+    <div style="font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-300);margin-bottom:14px;display:flex;align-items:center;gap:10px;">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--cyan-500);box-shadow:0 0 8px var(--cyan-500);"></span>
+      Town layout · blueprint review · Madow Valley
+    </div>
+    <h1 style="font-family:var(--font-display);font-weight:700;font-size:42px;line-height:1.08;letter-spacing:-.02em;margin:0 0 14px;color:#fff;max-width:880px;">Making the town feel alive — without more assets</h1>
+    <p style="font-size:16px;line-height:1.55;color:var(--ink-300);margin:0;max-width:760px;text-wrap:pretty;">The problem isn't the tiles or the map size — it's the <strong style="color:#fff;font-weight:600;">layout model and density</strong>. A uniform road grid carves the map into empty lots, then almost nothing fills them. Below: your current build, then three ways to pack it to <em style="color:var(--cyan-300);font-style:normal;">the_ville</em> density using only assets you already have.</p>
+  </div>
+
+  <!-- ── Diagnosis band ─────────────────────────────────── -->
+  <div style="display:flex;gap:14px;margin:30px 0 8px;flex-wrap:wrap;max-width:1180px;">
+    <div style="flex:1;min-width:210px;background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-400);margin-bottom:10px;">Decorative foliage</div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:30px;color:#fff;line-height:1;"><span style="color:var(--p1-500);">16</span> <span style="color:var(--ink-500);font-size:20px;">→</span> ~520</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-top:8px;">cap of 16 trees over 6,144 tiles, placed one-per-cell</div>
+    </div>
+    <div style="flex:1;min-width:210px;background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-400);margin-bottom:10px;">Building coverage</div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:30px;color:#fff;line-height:1;"><span style="color:var(--p1-500);">~6%</span> <span style="color:var(--ink-500);font-size:20px;">→</span> ~22%</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-top:8px;">tiny boxes adrift in grass vs packed blocks</div>
+    </div>
+    <div style="flex:1;min-width:210px;background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-400);margin-bottom:10px;">Interior furniture</div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:30px;color:#fff;line-height:1;"><span style="color:var(--p1-500);">~150</span> <span style="color:var(--ink-500);font-size:20px;">→</span> ~1,300</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-top:8px;">your own quantified gap vs the_ville</div>
+    </div>
+    <div style="flex:1;min-width:210px;background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-400);margin-bottom:10px;">Assets needed</div>
+      <div style="font-family:var(--font-display);font-weight:700;font-size:30px;color:var(--positive-500);line-height:1;">Zero</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-top:8px;">CREDITS already lists buildings, decor, furniture, paths</div>
+    </div>
+  </div>
+
+  <!-- ── Options row ────────────────────────────────────── -->
+  <div style="display:flex;gap:28px;align-items:flex-start;margin-top:34px;padding-bottom:8px;">
+
+    <!-- CURRENT -->
+    <div style="flex:none;width:430px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--p1-500);margin-bottom:8px;">Current build</div>
+      <div style="font-family:var(--font-display);font-weight:600;font-size:19px;color:#fff;margin-bottom:2px;">Road grid + sparse lots</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-bottom:12px;">96×64 · 12 agents · what you have now</div>
+      <div style="background:#0d1626;border:1px solid #283751;border-radius:14px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,.35);">
+        <canvas id="cnv-current" style="display:block;width:100%;border-radius:7px;"></canvas>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;">
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-300);border:1px solid #33415C;border-radius:20px;padding:4px 10px;white-space:nowrap;">Coverage ~6%</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-300);border:1px solid #33415C;border-radius:20px;padding:4px 10px;white-space:nowrap;">Decor 16</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-300);border:1px solid #33415C;border-radius:20px;padding:4px 10px;white-space:nowrap;">Empty lots</span>
+      </div>
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px;">
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-300);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--p1-500);margin-top:5px;"></span>Roads laid first → big leftover grass squares</div>
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-300);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--p1-500);margin-top:5px;"></span>One lonely tree per lot reads as a parking lot</div>
+      </div>
+    </div>
+
+    <!-- OPTION A -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-300);margin-bottom:8px;">Option A · closest to Smallville</div>
+      <div style="font-family:var(--font-display);font-weight:600;font-size:19px;color:#fff;margin-bottom:2px;">Organic village core</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-bottom:12px;">140×100 · ~25 agents · no grid, curving lanes</div>
+      <div style="background:#0d1626;border:1px solid #2f4a6b;border-radius:14px;padding:10px;box-shadow:0 14px 40px rgba(0,0,0,.45);">
+        <canvas id="cnv-a" style="display:block;width:100%;border-radius:7px;"></canvas>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;">
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--cyan-300);border:1px solid #2f4a6b;border-radius:20px;padding:4px 10px;white-space:nowrap;">Coverage ~22%</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--cyan-300);border:1px solid #2f4a6b;border-radius:20px;padding:4px 10px;white-space:nowrap;">Decor ~540</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--cyan-300);border:1px solid #2f4a6b;border-radius:20px;padding:4px 10px;white-space:nowrap;">Forest belt</span>
+      </div>
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px;">
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-200);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--positive-500);margin-top:5px;"></span>Dense downtown of large multi-room buildings around a plaza</div>
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-200);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--positive-500);margin-top:5px;"></span>Homes packed into 4 pods; rim woodland makes "empty" read as forest</div>
+      </div>
+    </div>
+
+    <!-- OPTION B -->
+    <div style="flex:none;width:430px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--brand-400);margin-bottom:8px;">Option B · no bigger map needed</div>
+      <div style="font-family:var(--font-display);font-weight:600;font-size:19px;color:#fff;margin-bottom:2px;">Dense districts at 96×64</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-bottom:12px;">96×64 · ~25 agents · same canvas, tight packing</div>
+      <div style="background:#0d1626;border:1px solid #283751;border-radius:14px;padding:10px;box-shadow:0 14px 40px rgba(0,0,0,.45);">
+        <canvas id="cnv-b" style="display:block;width:100%;border-radius:7px;"></canvas>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;">
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--brand-400);border:1px solid #2f4a6b;border-radius:20px;padding:4px 10px;white-space:nowrap;">Same size</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--brand-400);border:1px solid #2f4a6b;border-radius:20px;padding:4px 10px;white-space:nowrap;">Decor ~360</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--brand-400);border:1px solid #2f4a6b;border-radius:20px;padding:4px 10px;white-space:nowrap;">Terraces</span>
+      </div>
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px;">
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-200);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--brand-400);margin-top:5px;"></span>Proves the fix is density, not size — your current canvas, packed</div>
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-200);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--brand-400);margin-top:5px;"></span>Terraced rows share walls; ≤40 tavern budget stays comfortable</div>
+      </div>
+    </div>
+
+    <!-- OPTION C -->
+    <div style="flex:none;width:560px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--status-decision);margin-bottom:8px;">Option C · best for social emergence</div>
+      <div style="font-family:var(--font-display);font-weight:600;font-size:19px;color:#fff;margin-bottom:2px;">Civic hub + hamlets</div>
+      <div style="font-size:13px;color:var(--ink-400);margin-bottom:12px;">140×100 · ~25 agents · hub + 4 named neighborhoods</div>
+      <div style="background:#0d1626;border:1px solid #3a3157;border-radius:14px;padding:10px;box-shadow:0 14px 40px rgba(0,0,0,.45);">
+        <canvas id="cnv-c" style="display:block;width:100%;border-radius:7px;"></canvas>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;">
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#b9a9e6;border:1px solid #3a3157;border-radius:20px;padding:4px 10px;white-space:nowrap;">Coverage ~20%</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#b9a9e6;border:1px solid #3a3157;border-radius:20px;padding:4px 10px;white-space:nowrap;">Decor ~500</span>
+        <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:#b9a9e6;border:1px solid #3a3157;border-radius:20px;padding:4px 10px;white-space:nowrap;">4 hamlets</span>
+      </div>
+      <div style="margin-top:14px;display:flex;flex-direction:column;gap:9px;">
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-200);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--status-decision);margin-top:5px;"></span>Each hamlet a tight pod around its own well — legible neighborhoods</div>
+        <div style="display:flex;gap:9px;font-size:13px;color:var(--ink-200);line-height:1.4;"><span style="flex:none;width:7px;height:7px;border-radius:50%;background:var(--status-decision);margin-top:5px;"></span>Tree-lined lanes; dense countryside between, never empty squares</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Legend ─────────────────────────────────────────── -->
+  <div style="display:flex;flex-wrap:wrap;gap:18px;margin-top:30px;padding:14px 20px;background:rgba(31,42,65,.4);border:1px solid #283751;border-radius:12px;width:max-content;max-width:100%;">
+    <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);">Legend</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#b5895a;border:1.5px solid #5e4327;"></span>Building (open-roof, furnished)</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#cb9a63;"></span>Path / plaza</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#3c7a32;"></span>Tree cluster</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#4ba3c7;"></span>Water</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#5aa64a;"></span>Grass + flowers</span>
+  </div>
+
+  <!-- ── Rules / hand-off ───────────────────────────────── -->
+  <div style="margin-top:34px;max-width:1180px;">
+    <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-300);margin-bottom:14px;">What the generator must change — any option</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px;">
+
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+        <div style="font-family:var(--font-display);font-weight:600;font-size:16px;color:#fff;margin-bottom:7px;">1 · Kill the uniform road grid</div>
+        <div style="font-size:13.5px;line-height:1.5;color:var(--ink-300);text-wrap:pretty;">Stop laying full-width verticals + horizontals first. Place buildings into packed districts, then thread <em style="font-style:normal;color:var(--cyan-300);">tight</em> paths only where agents actually walk. The grid is what creates the empty lots.</div>
+      </div>
+
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+        <div style="font-family:var(--font-display);font-weight:600;font-size:16px;color:#fff;margin-bottom:7px;">2 · Raise decor density ~30×, in clusters</div>
+        <div style="font-size:13.5px;line-height:1.5;color:var(--ink-300);text-wrap:pretty;">Drop the <code style="font-family:var(--font-mono);font-size:12px;color:#fff;background:#1f2a41;padding:1px 5px;border-radius:4px;">decor.length &lt; 16</code> cap. Target ~400–540 trees/bushes/flowers as <strong style="color:#fff;font-weight:600;">clumps and rim woodland</strong>, never one-per-cell. Clusters read as forest; singles read as polka dots.</div>
+      </div>
+
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+        <div style="font-family:var(--font-display);font-weight:600;font-size:16px;color:#fff;margin-bottom:7px;">3 · Bigger, multi-room buildings</div>
+        <div style="font-size:13.5px;line-height:1.5;color:var(--ink-300);text-wrap:pretty;">Use the modular/Victorian sets you already credited for an aisled store, a school, an apartment block. Footprint coverage ~22%, abutting where it makes sense — not 5×5 boxes floating in green.</div>
+      </div>
+
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+        <div style="font-family:var(--font-display);font-weight:600;font-size:16px;color:#fff;margin-bottom:7px;">4 · Fill interiors (~1,300 pieces)</div>
+        <div style="font-size:13.5px;line-height:1.5;color:var(--ink-300);text-wrap:pretty;">Your wooden-furniture + interiors packs are sitting unused. Bed, table, chairs, shelves, rugs, plants per room — the single biggest "alive" lever, and it's pure placement.</div>
+      </div>
+
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+        <div style="font-family:var(--font-display);font-weight:600;font-size:16px;color:#fff;margin-bottom:7px;">5 · Vary the ground</div>
+        <div style="font-size:13.5px;line-height:1.5;color:var(--ink-300);text-wrap:pretty;">Two grass shades + transition tiles + flower tufts (all credited) break the flat-green field. This is your deferred "Phase 2–7 dressing" — it's the cheapest, highest-impact phase, do it first.</div>
+      </div>
+
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:18px 20px;">
+        <div style="font-family:var(--font-display);font-weight:600;font-size:16px;color:#fff;margin-bottom:7px;">6 · Size, only if needed</div>
+        <div style="font-size:13.5px;line-height:1.5;color:var(--ink-300);text-wrap:pretty;">Option B shows 96×64 works packed. Go 140×100 (the_ville) for breathing room and ~25 agents — but density first, or a bigger map is just more empty grass.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+
+  componentDidMount() {
+    // redraw shortly after mount so layout width is settled and fonts loaded
+    this._draw();
+    setTimeout(() => this._draw(), 60);
+    setTimeout(() => this._draw(), 400);
+    window.addEventListener("resize", () => this._draw());
+  }
+
+  // ── deterministic RNG ────────────────────────────────
+  _rng(seed) {
+    let a = seed >>> 0;
+    return () => {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  _draw() {
+    this._drawOne("cnv-current", this._specCurrent());
+    this._drawOne("cnv-a", this._specOrganic());
+    this._drawOne("cnv-b", this._specDense());
+    this._drawOne("cnv-c", this._specHamlets());
+  }
+
+  // ── geometry helpers ─────────────────────────────────
+  _home(x, y, w, h, kind, dens) { return { x, y, w, h, kind: kind || "home", dens: dens == null ? 1 : dens }; }
+
+  _pod(cx, cy, cols, rows, sx, sy, hw, hh, kind, dens) {
+    const out = [];
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < cols; c++)
+        out.push(this._home(cx + c * (hw + sx), cy + r * (hh + sy), hw, hh, kind, dens));
+    return out;
+  }
+
+  // ── SPECS ────────────────────────────────────────────
+  _specCurrent() {
+    const cols = 96, rows = 64;
+    const buildings = [];
+    // north + south home bands, small boxes
+    const nx = [6, 18, 30, 60, 70, 84];
+    for (const x of nx) buildings.push(this._home(x, 9, 5, 5, "home", 0.25));
+    const sx = [6, 18, 42, 60, 70, 82];
+    for (const x of sx) buildings.push(this._home(x, 55, 5, 5, "home", 0.25));
+    // tiny downtown boxes
+    buildings.push(this._home(34, 30, 5, 5, "store", 0.3));
+    buildings.push(this._home(44, 30, 5, 5, "tavern", 0.3));
+    buildings.push(this._home(54, 31, 5, 4, "cafe", 0.3));
+    buildings.push(this._home(40, 37, 5, 5, "office", 0.3));
+    buildings.push(this._home(50, 37, 6, 5, "school", 0.3));
+    // the grid roads
+    const pathRects = [
+      { x: 1, y: 14, w: 94, h: 2 }, { x: 1, y: 36, w: 94, h: 2 }, { x: 1, y: 54, w: 94, h: 2 },
+    ];
+    for (const rx of [8, 24, 48, 72, 88]) pathRects.push({ x: rx, y: 1, w: 2, h: 62 });
+    const water = [{ x: 77, y: 27, w: 5, h: 4 }];
+    return { cols, rows, buildings, pathRects, pathLines: [], water, plazas: [], foliage: "sparse", treeCount: 16, seed: 11 };
+  }
+
+  _specOrganic() {
+    const cols = 140, rows = 100;
+    const buildings = [];
+    // ── dense downtown core around a central plaza ──
+    buildings.push(this._home(57, 41, 14, 10, "tavern", 1));
+    buildings.push(this._home(73, 40, 18, 12, "store", 1));
+    buildings.push(this._home(57, 53, 11, 9, "cafe", 1));
+    buildings.push(this._home(70, 54, 12, 9, "office", 1));
+    buildings.push(this._home(84, 54, 17, 14, "apartments", 1));
+    buildings.push(this._home(93, 39, 14, 12, "school", 1));
+    const plazas = [{ x: 67, y: 51, w: 6, h: 4 }];
+    // ── four residential pods ──
+    let homes = [];
+    homes = homes.concat(this._pod(12, 14, 3, 2, 1, 1, 6, 5, "home", 1));   // NW
+    homes = homes.concat(this._pod(110, 16, 2, 3, 1, 1, 7, 5, "home", 1));  // NE
+    homes = homes.concat(this._pod(14, 74, 3, 2, 1, 1, 6, 5, "home", 1));   // SW
+    homes = homes.concat(this._pod(108, 76, 3, 2, 1, 1, 6, 5, "home", 1));  // SE
+    for (const h of homes) buildings.push(h);
+    // ── organic lanes (polylines, tile coords) ──
+    const pathLines = [
+      { w: 2.4, pts: [[24, 22], [40, 34], [56, 48], [66, 53]] },           // NW pod → plaza
+      { w: 2.4, pts: [[118, 28], [104, 40], [86, 50], [73, 53]] },         // NE pod → plaza
+      { w: 2.4, pts: [[26, 80], [42, 70], [58, 60], [67, 56]] },           // SW pod → plaza
+      { w: 2.4, pts: [[116, 82], [100, 72], [82, 62], [73, 57]] },         // SE pod → plaza
+      { w: 2.0, pts: [[70, 53], [70, 30], [78, 14]] },                     // spur to pond/north
+    ];
+    const water = [{ x: 116, y: 26, w: 12, h: 9 }];
+    return { cols, rows, buildings, pathRects: [], pathLines, water, plazas, foliage: "lush", treeCount: 540, seed: 7, rim: true };
+  }
+
+  _specDense() {
+    const cols = 96, rows = 64;
+    const buildings = [];
+    // ── compact downtown strip, abutting ──
+    buildings.push(this._home(34, 27, 14, 11, "store", 1));
+    buildings.push(this._home(49, 27, 12, 9, "tavern", 1));
+    buildings.push(this._home(34, 39, 9, 7, "cafe", 1));
+    buildings.push(this._home(44, 38, 9, 8, "office", 1));
+    buildings.push(this._home(54, 37, 11, 9, "school", 1));
+    const plazas = [{ x: 62, y: 28, w: 5, h: 7 }];
+    // ── terraced rows sharing walls ──
+    let homes = [];
+    homes = homes.concat(this._pod(6, 6, 8, 1, 0, 0, 5, 6, "home", 1));    // north terrace
+    homes = homes.concat(this._pod(6, 54, 8, 1, 0, 0, 5, 6, "home", 1));   // south terrace
+    homes = homes.concat(this._pod(6, 27, 1, 3, 0, 1, 6, 4, "home", 1));   // west stack
+    homes = homes.concat(this._pod(72, 24, 1, 4, 0, 1, 6, 4, "home", 1));  // east stack
+    for (const h of homes) buildings.push(h);
+    const pathLines = [
+      { w: 2.2, pts: [[10, 13], [10, 26], [33, 33]] },
+      { w: 2.2, pts: [[40, 46], [40, 53]] },
+      { w: 2.2, pts: [[66, 32], [78, 28]] },
+      { w: 2.2, pts: [[20, 33], [33, 33]] },
+    ];
+    const water = [{ x: 80, y: 50, w: 8, h: 6 }];
+    return { cols, rows, buildings, pathRects: [], pathLines, water, plazas, foliage: "dense", treeCount: 360, seed: 5, rim: true };
+  }
+
+  _specHamlets() {
+    const cols = 140, rows = 100;
+    const buildings = [];
+    // ── central civic hub ──
+    buildings.push(this._home(60, 42, 15, 11, "tavern", 1));
+    buildings.push(this._home(76, 41, 17, 12, "store", 1));
+    buildings.push(this._home(60, 54, 12, 9, "school", 1));
+    buildings.push(this._home(74, 54, 10, 9, "office", 1));
+    buildings.push(this._home(85, 54, 9, 8, "cafe", 1));
+    const plazas = [{ x: 70, y: 53, w: 5, h: 4 }];
+    // ── four hamlets, each a pod around a green/well ──
+    let homes = [];
+    homes = homes.concat(this._pod(14, 16, 3, 2, 2, 2, 6, 5, "home", 1));   // NW hamlet
+    homes = homes.concat(this._pod(108, 16, 3, 2, 2, 2, 6, 5, "home", 1));  // NE hamlet
+    homes = homes.concat(this._pod(16, 74, 3, 2, 2, 2, 6, 5, "home", 1));   // SW hamlet
+    homes = homes.concat(this._pod(106, 74, 3, 2, 2, 2, 6, 5, "home", 1));  // SE hamlet
+    for (const h of homes) buildings.push(h);
+    const wells = [{ x: 26, y: 24, w: 3, h: 3 }, { x: 120, y: 24, w: 3, h: 3 }, { x: 28, y: 82, w: 3, h: 3 }, { x: 118, y: 82, w: 3, h: 3 }];
+    for (const wv of wells) plazas.push(wv);
+    // ── tree-lined lanes (straight avenues hub ↔ hamlets) ──
+    const pathLines = [
+      { w: 2.6, pts: [[27, 26], [50, 44], [60, 47]] },
+      { w: 2.6, pts: [[119, 26], [96, 44], [93, 47]] },
+      { w: 2.6, pts: [[29, 80], [52, 60], [62, 56]] },
+      { w: 2.6, pts: [[117, 80], [94, 60], [85, 56]] },
+    ];
+    const water = [{ x: 120, y: 60, w: 11, h: 8 }];
+    return { cols, rows, buildings, pathRects: [], pathLines, water, plazas, foliage: "lush", treeCount: 500, seed: 9, rim: true, avenues: pathLines };
+  }
+
+  // ── renderer ─────────────────────────────────────────
+  _drawOne(id, spec) {
+    const cv = document.getElementById(id);
+    if (!cv) return;
+    const dispW = Math.max(360, Math.round(cv.clientWidth || cv.parentElement.clientWidth - 20));
+    const dispH = Math.round((dispW * spec.rows) / spec.cols);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = dispW * dpr; cv.height = dispH * dpr;
+    cv.style.height = dispH + "px";
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const s = dispW / spec.cols; // px per tile
+
+    const C = {
+      grass: "#5aa64a", grassHi: "#64b052", grassLo: "#4d9540",
+      path: "#cb9a63", pathLo: "#bd8d56", plaza: "#dac9a4",
+      water: "#4ba3c7", waterLo: "#3b8aac", waterHi: "#67b8d6",
+      floor: "#bb9163", floorAlt: "#b1875a", wall: "#5e4327", divider: "#7a5733",
+      bed: "#e9e4d8", table: "#9a652f", chair: "#7c4f28", shelf: "#5f4124",
+      rug: "#b0564a", plant: "#4f9a40", counter: "#86592f",
+      trunk: "#6b4a2c", canopy: "#3c7a32", canopyHi: "#4f9a40", canopyLo: "#2f6328",
+      bush: "#42883a", shadow: "rgba(0,0,0,0.16)",
+    };
+    const rnd = this._rng(spec.seed);
+
+    // ── grass base + texture patches ──
+    ctx.fillStyle = C.grass;
+    ctx.fillRect(0, 0, dispW, dispH);
+    for (let i = 0; i < spec.cols * spec.rows * 0.16; i++) {
+      const x = Math.floor(rnd() * spec.cols), y = Math.floor(rnd() * spec.rows);
+      ctx.fillStyle = rnd() > 0.5 ? C.grassHi : C.grassLo;
+      ctx.fillRect(x * s, y * s, s * (1 + (rnd() > .7 ? 1 : 0)), s);
+    }
+
+    // occupancy grid (for foliage scatter)
+    const occ = [];
+    for (let y = 0; y < spec.rows; y++) occ.push(new Uint8Array(spec.cols));
+    const mark = (x0, y0, w, h, pad) => {
+      for (let y = y0 - pad; y < y0 + h + pad; y++)
+        for (let x = x0 - pad; x < x0 + w + pad; x++)
+          if (x >= 0 && y >= 0 && x < spec.cols && y < spec.rows) occ[y][x] = 1;
+    };
+
+    // ── water ──
+    for (const w of spec.water) {
+      this._roundRect(ctx, w.x * s, w.y * s, w.w * s, w.h * s, s * 1.2);
+      ctx.fillStyle = C.water; ctx.fill();
+      ctx.strokeStyle = C.waterLo; ctx.lineWidth = Math.max(1, s * 0.5); ctx.stroke();
+      ctx.fillStyle = C.waterHi;
+      ctx.fillRect((w.x + 1) * s, (w.y + 1) * s, w.w * s * 0.35, Math.max(1, s * 0.6));
+      mark(w.x, w.y, w.w, w.h, 1);
+    }
+
+    // ── plazas / wells ──
+    for (const p of spec.plazas) {
+      ctx.fillStyle = C.plaza;
+      ctx.fillRect(p.x * s, p.y * s, p.w * s, p.h * s);
+      mark(p.x, p.y, p.w, p.h, 0);
+      if (p.w <= 3 && p.h <= 3) { // a well
+        ctx.fillStyle = C.waterLo;
+        ctx.beginPath(); ctx.arc((p.x + p.w / 2) * s, (p.y + p.h / 2) * s, s * 0.9, 0, 7); ctx.fill();
+      }
+    }
+
+    // ── paths: rects ──
+    for (const r of (spec.pathRects || [])) {
+      ctx.fillStyle = C.path; ctx.fillRect(r.x * s, r.y * s, r.w * s, r.h * s);
+      for (let i = 0; i < r.w * r.h * 0.4; i++) {
+        ctx.fillStyle = C.pathLo;
+        ctx.fillRect((r.x + rnd() * r.w) * s, (r.y + rnd() * r.h) * s, s * 0.6, s * 0.6);
+      }
+      mark(r.x, r.y, r.w, r.h, 0);
+    }
+    // ── paths: organic polylines ──
+    for (const ln of (spec.pathLines || [])) {
+      ctx.strokeStyle = C.path;
+      ctx.lineWidth = ln.w * s; ctx.lineCap = "round"; ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(ln.pts[0][0] * s, ln.pts[0][1] * s);
+      for (let i = 1; i < ln.pts.length; i++) {
+        const a = ln.pts[i - 1], b = ln.pts[i];
+        const mx = ((a[0] + b[0]) / 2) * s, my = ((a[1] + b[1]) / 2) * s;
+        ctx.quadraticCurveTo(a[0] * s, a[1] * s, mx, my);
+      }
+      ctx.lineTo(ln.pts[ln.pts.length - 1][0] * s, ln.pts[ln.pts.length - 1][1] * s);
+      ctx.stroke();
+      // mark occupancy roughly along the line
+      for (let i = 1; i < ln.pts.length; i++) {
+        const a = ln.pts[i - 1], b = ln.pts[i];
+        const steps = Math.max(2, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1])));
+        for (let t = 0; t <= steps; t++) {
+          const x = Math.round(a[0] + (b[0] - a[0]) * t / steps);
+          const y = Math.round(a[1] + (b[1] - a[1]) * t / steps);
+          mark(x - 1, y - 1, Math.ceil(ln.w), Math.ceil(ln.w), 0);
+        }
+      }
+    }
+
+    // ── buildings ──
+    for (const b of spec.buildings) this._building(ctx, s, b, C, rnd);
+    for (const b of spec.buildings) mark(b.x, b.y, b.w, b.h, 1);
+
+    // ── foliage scatter (on free grass) ──
+    this._foliage(ctx, s, spec, occ, C, rnd);
+  }
+
+  _building(ctx, s, b, C, rnd) {
+    const x = b.x * s, y = b.y * s, w = b.w * s, h = b.h * s;
+    // shadow
+    ctx.fillStyle = C.shadow;
+    ctx.fillRect(x + s * 0.5, y + s * 0.6, w, h);
+    // floor
+    ctx.fillStyle = C.floor; ctx.fillRect(x, y, w, h);
+    // floorboards
+    ctx.fillStyle = C.floorAlt;
+    for (let i = 1; i < b.h; i += 2) ctx.fillRect(x, y + i * s, w, Math.max(1, s * 0.5));
+    // interior furniture
+    this._interior(ctx, s, b, C, rnd);
+    // walls
+    ctx.strokeStyle = C.wall;
+    ctx.lineWidth = Math.max(1.4, s * 0.55);
+    ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+    // room dividers for larger homes/civic
+    if (b.kind === "home" && b.w >= 5) {
+      const dx = x + Math.floor(b.w / 2) * s;
+      ctx.beginPath(); ctx.moveTo(dx, y); ctx.lineTo(dx, y + h - s * 1.4); ctx.stroke(); // door gap at bottom
+    }
+    if (b.kind === "apartments") {
+      for (let i = 1; i < 3; i++) { const dx = x + Math.floor(b.w * i / 3) * s; ctx.beginPath(); ctx.moveTo(dx, y); ctx.lineTo(dx, y + h); ctx.stroke(); }
+      const dy = y + Math.floor(b.h / 2) * s; ctx.beginPath(); ctx.moveTo(x, dy); ctx.lineTo(x + w, dy); ctx.stroke();
+    }
+  }
+
+  _interior(ctx, s, b, C, rnd) {
+    const x = b.x * s, y = b.y * s, w = b.w * s, h = b.h * s;
+    const pad = s * 0.9;
+    const put = (cx, cy, cw, ch, col) => { ctx.fillStyle = col; ctx.fillRect(cx, cy, cw, ch); };
+    const dens = b.dens;
+    if (dens < 0.4) { // near-empty (current build)
+      put(x + pad, y + pad, s * 1.8, s * 1.1, C.bed);
+      if (rnd() > 0.5) put(x + w - pad - s, y + h - pad - s, s, s, C.table);
+      return;
+    }
+    if (b.kind === "store") {
+      const aisles = Math.max(2, Math.floor(b.w / 4));
+      for (let i = 0; i < aisles; i++) {
+        const ax = x + pad + i * ((w - pad * 2) / aisles) + s * 0.4;
+        put(ax, y + pad + s, Math.max(2, s * 1.1), h - pad * 2 - s * 1.6, C.shelf);
+      }
+      put(x + pad, y + h - pad - s * 1.1, w - pad * 2, s * 1.0, C.counter); // checkout
+      return;
+    }
+    if (b.kind === "school") {
+      for (let r = 0; r < b.h - 3; r += 2) for (let c = 0; c < b.w - 2; c += 2)
+        put(x + pad + c * s, y + pad + r * s, s * 1.1, s * 0.9, C.chair);
+      put(x + pad, y + pad - s * 0.2, w - pad * 2, s * 0.8, C.shelf); // board
+      return;
+    }
+    if (b.kind === "tavern" || b.kind === "cafe") {
+      const gx = Math.max(2, Math.floor(b.w / 3)), gy = Math.max(2, Math.floor(b.h / 3));
+      for (let r = 0; r < gy; r++) for (let c = 0; c < gx; c++) {
+        const tx = x + pad + (c + 0.5) * ((w - pad * 2) / gx), ty = y + pad + (c % 2 ? 0.7 : 0.4) * s + (r + 0.4) * ((h - pad * 2) / gy);
+        ctx.fillStyle = C.table; ctx.beginPath(); ctx.arc(tx, ty, s * 0.9, 0, 7); ctx.fill();
+        ctx.fillStyle = C.chair;
+        ctx.fillRect(tx - s * 1.5, ty - s * 0.3, s * 0.6, s * 0.6);
+        ctx.fillRect(tx + s * 0.9, ty - s * 0.3, s * 0.6, s * 0.6);
+      }
+      put(x + pad, y + pad - s * 0.1, w - pad * 2, s * 0.8, C.counter); // bar
+      return;
+    }
+    if (b.kind === "office") {
+      for (let r = 0; r < b.h - 3; r += 2) { put(x + pad, y + pad + r * s, s * 2.2, s * 1.0, C.table); put(x + w - pad - s * 2.2, y + pad + r * s, s * 2.2, s * 1.0, C.table); }
+      return;
+    }
+    if (b.kind === "apartments") {
+      // many small rooms each with a bed
+      for (let ry = 0; ry < 2; ry++) for (let rx = 0; rx < 3; rx++) {
+        const cx = x + pad * 0.6 + rx * (w / 3), cy = y + pad * 0.6 + ry * (h / 2);
+        put(cx, cy, s * 1.6, s * 1.0, C.bed);
+        put(cx + s * 0.2, cy + s * 1.4, s * 0.9, s * 0.9, C.table);
+      }
+      return;
+    }
+    // home — bed, table+chairs, shelf, rug, plant
+    put(x + pad, y + pad, s * 1.9, s * 1.2, C.bed);
+    put(x + w - pad - s * 1.3, y + pad, s * 1.3, s * 1.0, C.shelf);
+    put(x + w * 0.5 - s * 0.7, y + h * 0.5 - s * 0.4, s * 1.4, s * 0.9, C.table);
+    ctx.fillStyle = C.chair;
+    ctx.fillRect(x + w * 0.5 - s * 1.3, y + h * 0.5 - s * 0.2, s * 0.55, s * 0.55);
+    ctx.fillRect(x + w * 0.5 + s * 0.9, y + h * 0.5 - s * 0.2, s * 0.55, s * 0.55);
+    if (b.w >= 6) { ctx.fillStyle = C.rug; ctx.fillRect(x + pad, y + h - pad - s * 1.3, s * 2.2, s * 1.1); }
+    ctx.fillStyle = C.plant;
+    ctx.beginPath(); ctx.arc(x + w - pad - s * 0.5, y + h - pad - s * 0.5, s * 0.5, 0, 7); ctx.fill();
+  }
+
+  _foliage(ctx, s, spec, occ, C, rnd) {
+    const free = (x, y) => x >= 0 && y >= 0 && x < spec.cols && y < spec.rows && !occ[y][x];
+    const trees = [];
+    const pushTree = (x, y) => { if (free(Math.round(x), Math.round(y))) trees.push({ x, y, r: 1.5 + rnd() * 1.1 }); };
+
+    if (spec.foliage === "sparse") {
+      let placed = 0, tries = 0;
+      while (placed < spec.treeCount && tries < 4000) {
+        tries++;
+        const x = Math.floor(rnd() * spec.cols), y = Math.floor(rnd() * spec.rows);
+        if (free(x, y)) { trees.push({ x: x + 0.5, y: y + 0.5, r: 1.7 + rnd() * 0.6 }); placed++; occ[y][x] = 1; }
+      }
+    } else {
+      // rim woodland
+      if (spec.rim) {
+        const band = spec.foliage === "lush" ? 7 : 5;
+        const dens = spec.foliage === "lush" ? 0.5 : 0.42;
+        for (let y = 1; y < spec.rows - 1; y++)
+          for (let x = 1; x < spec.cols - 1; x++) {
+            const edge = Math.min(x, y, spec.cols - 1 - x, spec.rows - 1 - y);
+            if (edge < band && free(x, y) && rnd() < dens * (1 - edge / band)) pushTree(x + rnd(), y + rnd());
+          }
+      }
+      // interior clusters
+      const nClusters = Math.round(spec.treeCount / 7);
+      for (let i = 0; i < nClusters; i++) {
+        const cx = 4 + rnd() * (spec.cols - 8), cy = 4 + rnd() * (spec.rows - 8);
+        if (!free(Math.round(cx), Math.round(cy))) continue;
+        const n = 3 + Math.floor(rnd() * 6);
+        for (let j = 0; j < n; j++) pushTree(cx + (rnd() - 0.5) * 6, cy + (rnd() - 0.5) * 6);
+      }
+      // avenue trees (hamlets)
+      if (spec.avenues) for (const ln of spec.avenues) {
+        for (let i = 1; i < ln.pts.length; i++) {
+          const a = ln.pts[i - 1], b = ln.pts[i];
+          const steps = Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 3);
+          for (let t = 0; t <= steps; t++) {
+            const x = a[0] + (b[0] - a[0]) * t / steps, y = a[1] + (b[1] - a[1]) * t / steps;
+            const nx = -(b[1] - a[1]), ny = (b[0] - a[0]); const len = Math.hypot(nx, ny) || 1;
+            pushTree(x + nx / len * 2.4, y + ny / len * 2.4);
+            pushTree(x - nx / len * 2.4, y - ny / len * 2.4);
+          }
+        }
+      }
+      // flowers + bushes on remaining grass
+      const flowerCols = ["#e85b5b", "#f2c94c", "#9b6ad6", "#ffffff"];
+      const fN = Math.round(spec.treeCount * 1.1);
+      for (let i = 0; i < fN; i++) {
+        const x = Math.floor(rnd() * spec.cols), y = Math.floor(rnd() * spec.rows);
+        if (!free(x, y)) continue;
+        if (rnd() < 0.35) { ctx.fillStyle = C.bush; ctx.beginPath(); ctx.arc((x + .5) * s, (y + .5) * s, s * 0.75, 0, 7); ctx.fill(); }
+        else { ctx.fillStyle = flowerCols[i % 4]; ctx.fillRect((x + .4) * s, (y + .4) * s, Math.max(1, s * 0.4), Math.max(1, s * 0.4)); }
+      }
+    }
+
+    // draw trees back-to-front
+    trees.sort((a, b) => a.y - b.y);
+    for (const t of trees) {
+      const cx = t.x * s, cy = t.y * s, r = t.r * s;
+      ctx.fillStyle = C.shadow;
+      ctx.beginPath(); ctx.ellipse(cx + r * 0.3, cy + r * 0.55, r * 0.95, r * 0.5, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = C.trunk; ctx.fillRect(cx - s * 0.35, cy, s * 0.7, r * 0.8);
+      ctx.fillStyle = C.canopyLo; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill();
+      ctx.fillStyle = C.canopy; ctx.beginPath(); ctx.arc(cx - r * 0.12, cy - r * 0.12, r * 0.82, 0, 7); ctx.fill();
+      ctx.fillStyle = C.canopyHi; ctx.beginPath(); ctx.arc(cx - r * 0.3, cy - r * 0.3, r * 0.4, 0, 7); ctx.fill();
+    }
+  }
+
+  _roundRect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+}
+</script>
+</body>
+</html>

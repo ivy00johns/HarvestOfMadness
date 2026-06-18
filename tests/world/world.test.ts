@@ -14,7 +14,7 @@ import {
 // (impassable); the pond corner (water); a walkable floor door-gap.
 const SOIL = { x: FIELD_RECT.x0, y: FIELD_RECT.y0 }; // inside the first plot
 const SOIL_B = { x: FIELD_RECT.x0 + 1, y: FIELD_RECT.y0 }; // a second plot soil
-const GRASS = { x: 3, y: 18 }; // open grass, clear of rooms/roads
+const GRASS = { x: 35, y: 35 }; // open grass, clear of rooms/roads
 const WATER = { ...WATER_POS }; // the pond corner
 const WALL = { x: 0, y: 0 }; // the map-border wall ring
 // A house wall corner — the room's impassable wall ring (replaces the old
@@ -150,7 +150,9 @@ describe("Farm mutations — tile-level preconditions", () => {
     const occupied = w.plant(SOIL, "potato");
     expect(occupied.ok).toBe(false);
     expect(occupied.reason).toContain("already has a parsnip");
-    expect(w.plant({ x: 99, y: 0 }, "parsnip").reason).toContain("outside the map");
+    expect(
+      w.plant({ x: MAP_WIDTH, y: 0 }, "parsnip").reason,
+    ).toContain("outside the map");
   });
 
   it("water: crop + unwatered -> watered; rejects no-crop and double-water", () => {
@@ -195,7 +197,9 @@ describe("Farm mutations — tile-level preconditions", () => {
     const notReady = w.harvest(SOIL);
     expect(notReady.ok).toBe(false);
     expect(notReady.reason).toContain("not ready");
-    expect(w.harvest({ x: 50, y: 50 }).reason).toContain("outside the map");
+    expect(
+      w.harvest({ x: MAP_WIDTH, y: MAP_HEIGHT }).reason,
+    ).toContain("outside the map");
   });
 });
 

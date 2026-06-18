@@ -6,7 +6,7 @@
  * TimeSystem directly. SimControls is the narrow structural surface the HUD
  * needs; AgentManager satisfies it as-is, and tests can stub it cheaply.
  */
-import type { EventBus, ProposalTally } from "@contracts/types";
+import type { DiaryEntry, EventBus, ProposalTally } from "@contracts/types";
 import { getAgentManager } from "../agents/AgentManager";
 import { getEventBus } from "../agents/events";
 import { getTimeSystem } from "../world/instance";
@@ -35,6 +35,10 @@ export interface SimControls {
   showcaseEventId?(): string | null;
   /** Wave 4c — tally of the current town proposal, or undefined when none. */
   governanceTally?(): ProposalTally | undefined;
+  /** Diary — an agent's journal entries (oldest-first), or [] when absent. */
+  diaryEntries?(agentName: string): DiaryEntry[];
+  /** Diary — an agent's newest journal entry, or null when absent. */
+  latestDiary?(agentName: string): DiaryEntry | null;
 }
 
 export interface ObsConnection {
@@ -81,6 +85,12 @@ export function connectObservability(): ObsConnection {
       const open = cog.governance.current();
       if (!open) return undefined;
       return cog.governance.tallySnapshot(open.id);
+    },
+    diaryEntries(agentName: string): DiaryEntry[] {
+      return manager.cognition()?.diary.entries(agentName) ?? [];
+    },
+    latestDiary(agentName: string): DiaryEntry | null {
+      return manager.cognition()?.diary.latest(agentName) ?? null;
     },
   });
 

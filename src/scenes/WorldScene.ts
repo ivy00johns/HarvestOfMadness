@@ -40,8 +40,6 @@ import {
   REG_ASSETS_ON,
   REG_ASSET_MANIFEST,
   SPEECH_DURATION_MS,
-  SPEECH_FONT_SIZE,
-  SPEECH_MAX_CHARS,
   TILE_COLORS,
   WALK_MS_PER_TILE,
   WATERED_SOIL_TINT,
@@ -49,29 +47,32 @@ import {
   WATER_ANIM_MS,
   zoomFactorForWheelDelta,
 } from "../config";
-import { computeHud, FONT_SIZE_SMALL, HUD_TOP_H, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
+import { computeHud, FONT_SIZE_SMALL, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
 import type { Rect } from "../obs/layout";
 import { getTimeSystem, getWorld } from "../world/instance";
 import {
   BENCH_POS,
   BUILDINGS,
   NOTICE_BOARD_POS,
-  PARK,
   WELL_POS,
   WORLD_OBJECTS,
 } from "../world/map";
 import { activityEmoji } from "../obs/activityEmoji";
 import { buildingStyle } from "../obs/buildingStyle";
 import {
-  COBBLE_PATH_FRAMES,
   FURNITURE_FRAMES,
+  INTERIOR_FLOOR_FRAME,
+  INTERIOR_FLOOR_TEXTURE,
   INTERIOR_FRAMES,
+  INTERIOR_WALL_FRAME,
+  INTERIOR_WALL_TEXTURE,
   LANTERN_FRAMES,
   SIGN_FRAMES,
   SOIL_FRAMES,
   WATER_FRAMES,
   WELL_FRAMES,
   cropStripFrame,
+  decorSprite,
   fenceFrame,
   setRenderApi,
   soilFrame,
@@ -113,7 +114,8 @@ const TREE_FRAMES = [0, 10];
 const TREE_SPOTS: { x: number; y: number; frame: number }[] = [
   { x: 3, y: 17, frame: 0 },
   { x: 55, y: 6, frame: 10 },
-  { x: 55, y: 33, frame: 0 },
+  // (55,33) removed — it now falls inside the enlarged cafe. The deterministic
+  // decor scatter (map.ts, building-aware) supplies the town's trees.
 ];
 
 /**
@@ -205,6 +207,10 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   private dragging = false;
   private dragMoved = false;
   private readonly dragStart = { px: 0, py: 0, scrollX: 0, scrollY: 0 };
+  /** Lowest zoom that still fits the WHOLE map in the current map viewport.
+   *  Computed per-resize in frameCamera; the wheel-out clamp uses it so the
+   *  player can always reach a view of the entire town (no clipped corners). */
+  private fitMinZoom = CAMERA_ZOOM_MIN;
   /** agent the camera is currently tracking, or null for free-pan */
   private following: string | null = null;
 
@@ -228,7 +234,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.createCharacterAnims();
       this.dressBuildings();
       this.dressTrees();
-      this.dressPark();
+      this.dressDecor();
       this.time.addEvent({
         delay: WATER_ANIM_MS,
         loop: true,
@@ -313,23 +319,33 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
 
   /**
    * Inset the world camera below the opaque HUD top bar (controls + kill-switch
-   * badge) so the bar never covers the map. Default zoom = DEFAULT_ZOOM (1.5),
-   * which shows ~24 tiles across a typical viewport — agents and buildings are
+   * badge) so the bar never covers the map. Default zoom = DEFAULT_ZOOM (1.2),
+   * which shows ~30 tiles across a typical viewport — agents and buildings are
    * readable. On very small viewports we clamp down to CAMERA_ZOOM_MIN so the
    * whole map is still reachable. Re-runs on resize.
    */
   private frameCamera(): void {
     const cam = this.cameras.main;
-    const w = this.scale.width;
-    const viewH = Math.max(1, this.scale.height - HUD_TOP_H);
+    // v4 — the world camera frames the map within the (smaller) center-left
+    // map rect: inset below the top chrome, left of the right conversation/
+    // events panel, and above the bottom agent strip.
+    const hud = computeHud(this.scale.width, this.scale.height);
+    const view = hud.mapRect;
     const mapW = MAP_WIDTH * TILE_SIZE;
     const mapH = MAP_HEIGHT * TILE_SIZE;
-    cam.setViewport(0, HUD_TOP_H, w, viewH);
+    cam.setViewport(view.x, view.y, view.w, view.h);
     cam.setBounds(0, 0, mapW, mapH);
-    // Use the configured DEFAULT_ZOOM for a readable starting view, but clamp
-    // it so we never zoom in tighter than the map fills the viewport (no void),
-    // and never lower than CAMERA_ZOOM_MIN.
-    const zoom = Phaser.Math.Clamp(DEFAULT_ZOOM, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    // Fit-to-map: the zoom at which the WHOLE 140×100 town fits inside the map
+    // viewport (limited by whichever of width/height is tighter). The player must
+    // be able to zoom out at least this far, even if it's below the configured
+    // CAMERA_ZOOM_MIN — otherwise the corner hamlets get clipped (the bug on the
+    // taller 140×100 map). A 2% margin keeps a sliver of countryside on the edge.
+    const fitZoom = Math.min(view.w / mapW, view.h / mapH) * 0.98;
+    this.fitMinZoom = Math.min(CAMERA_ZOOM_MIN, fitZoom);
+    // Readable starting view (DEFAULT_ZOOM), but never tighter than MAX and never
+    // below the whole-town fit floor — so zooming all the way out always shows
+    // the entire town with no clipped corners.
+    const zoom = Phaser.Math.Clamp(DEFAULT_ZOOM, this.fitMinZoom, CAMERA_ZOOM_MAX);
     cam.setZoom(zoom);
     cam.centerOn(mapW / 2, mapH / 2);
   }
@@ -405,7 +421,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     // A single mouse notch (dy≈100) gives factor≈0.86 (zoom out ×0.86 or in ×1.16).
     const z = Phaser.Math.Clamp(
       cam.zoom * zoomFactorForWheelDelta(dy),
-      CAMERA_ZOOM_MIN,
+      this.fitMinZoom, // never tighter than the whole-town fit (no clipped corners)
       CAMERA_ZOOM_MAX,
     );
     cam.setZoom(z);
@@ -587,10 +603,9 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       case "grass":
         break; // base layer already shows grass
       case "path":
-        // Cobblestone road (PathAndObjects) when present; else the v1 dirt path.
-        if (this.textures.exists("paths"))
-          place("paths", this.pick(COBBLE_PATH_FRAMES, x, y));
-        else place("terrain", this.pick(PATH_FRAMES, x, y));
+        // Warm packed-dirt road for an organic farm-village feel (replaces the
+        // cold grey cobble). Deterministic per-tile variant for a lived-in look.
+        place("terrain", this.pick(PATH_FRAMES, x, y));
         break;
       case "water": {
         const isWater = (dx: number, dy: number): boolean =>
@@ -621,9 +636,16 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       case "bedTile":
       case "shopTile":
         // Walkable indoor floor (room interior, door-gap, bed/shop overlay
-        // cells): the tile layer owns the floor; furniture + sign are added by
-        // paintInterior at prop depth, agents y-sort above.
-        place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
+        // cells): a warm, seamless wood-plank tile (cozy cottage), NOT the
+        // interior.png checkerboard stone. The tile layer owns the floor;
+        // furniture + sign are added by paintInterior at prop depth, agents
+        // y-sort above. Falls back to the legacy stone frame only if the
+        // dedicated wood-floor sheet failed to load (degraded mode).
+        if (this.textures.exists(INTERIOR_FLOOR_TEXTURE)) {
+          place(INTERIOR_FLOOR_TEXTURE, INTERIOR_FLOOR_FRAME, DEPTH_OVERLAY);
+        } else {
+          place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
+        }
         break;
       case "building":
         break; // retained-but-unused TileType: no tile stamps it (dead-but-valid)
@@ -634,8 +656,16 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
           // The impassable map-border wall ring renders as the wooden farm fence.
           place("fence", fenceFrame(x, y, MAP_WIDTH, MAP_HEIGHT));
         } else {
-          // Interior house/tavern/shop wall ring — open-roof cutaway edge.
-          place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+          // Interior house/tavern/shop wall ring — a tidy warm timber-plank
+          // wall (NOT interior.png's black-voided open-roof beams, which read
+          // as dark "gold blocks" when ringed around a room). Falls back to the
+          // legacy interior wall frame only if the wood-wall sheet failed to
+          // load (degraded mode).
+          if (this.textures.exists(INTERIOR_WALL_TEXTURE)) {
+            place(INTERIOR_WALL_TEXTURE, INTERIOR_WALL_FRAME, DEPTH_FACADE);
+          } else {
+            place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+          }
         }
         break;
       }
@@ -780,67 +810,155 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         .setDepth(depth);
     };
 
-    // Kind-specific furnishing (props sit at prop depth above the floor; agents
-    // y-sort over them). Placed on interior floor cells only.
+    // DENSE kind-specific furnishing. Furniture is render-only (passability is
+    // tile-driven), so rooms can be PACKED like Smallville's without affecting
+    // pathfinding. Shared occupancy helpers keep pieces inside the interior and
+    // off each other; each kind fills its room with a believable, varied layout.
+    const occupied = new Set<string>();
+    const free = (cx: number, cy: number): boolean =>
+      cx >= ix0 && cx <= ix1 && cy >= iy0 && cy <= iy1 && !occupied.has(`${cx},${cy}`);
+    const mark = (cx: number, cy: number): void => void occupied.add(`${cx},${cy}`);
+    const prop = (cx: number, cy: number, texture: string, frame: number): void => {
+      if (free(cx, cy)) { put(cx, cy, texture, frame, DEPTH_PROP); mark(cx, cy); }
+    };
+    const furn = (cx: number, cy: number, frame: number): void => {
+      if (hasFurn) prop(cx, cy, "furniture_wood", frame);
+    };
+    const hasPlants = this.textures.exists("plants");
+    const plant = (cx: number, cy: number): void => {
+      if (hasPlants) prop(cx, cy, "plants", [28, 37, 46][(cx + cy) % 3]);
+    };
+    const placeBed = (cx: number, cy: number): void => {
+      if (!hasFurn) return;
+      if (free(cx, cy) && free(cx + 1, cy) && free(cx, cy + 1) && free(cx + 1, cy + 1)) {
+        put(cx, cy, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
+        put(cx + 1, cy, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
+        put(cx, cy + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
+        put(cx + 1, cy + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
+        mark(cx, cy); mark(cx + 1, cy); mark(cx, cy + 1); mark(cx + 1, cy + 1);
+      } else {
+        furn(cx, cy, FURNITURE_FRAMES.BED_HEAD_L);
+      }
+    };
+    /** Pair a table with chairs on whichever sides are still free. */
+    const diningSet = (cx: number, cy: number, round = false): void => {
+      furn(cx, cy, round ? FURNITURE_FRAMES.TABLE_ROUND : FURNITURE_FRAMES.TABLE_SMALL);
+      furn(cx - 1, cy, FURNITURE_FRAMES.CHAIR_L);
+      furn(cx + 1, cy, FURNITURE_FRAMES.CHAIR_R);
+    };
+
     if (kind === "house") {
-      // 2×2 bed in the NW interior corner over the bedTile region.
-      if (hasFurn) {
-        put(ix0, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_L, DEPTH_PROP);
-        put(ix0 + 1, iy0, "furniture_wood", FURNITURE_FRAMES.BED_HEAD_R, DEPTH_PROP);
-        put(ix0, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_L, DEPTH_PROP);
-        put(ix0 + 1, iy0 + 1, "furniture_wood", FURNITURE_FRAMES.BED_FOOT_R, DEPTH_PROP);
-        // A small table + chair in the SE interior corner.
-        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
-        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      // A big, lived-in TWO-ROOM home (8×8 / 9×8). stampHomestead splits it with a
+      // vertical divider wall (dcol) + a doorway gap (gapRow); furniture is
+      // render-only, so we flow it around that divider into a bedroom on one side
+      // and a living/kitchen room on the other. Every home is guaranteed: a 2×2
+      // bed, a STORAGE CHEST (the interior CABINET, frame 98 — the visible "place
+      // to put things"), a dining table + chairs, a bookshelf, and a houseplant,
+      // with the remaining wall cells dressed so the larger footprint never reads
+      // empty.
+      const w = x1 - x0 + 1;
+      const h = y1 - y0 + 1;
+      const dcol = x0 + Math.ceil(w / 2); // matches stampHomestead's divider column
+      const gapRow = y0 + Math.floor(h / 2);
+      // Treat the divider wall cells (all but the doorway gap) as occupied so no
+      // prop straddles the wall; the two interior rooms furnish independently.
+      for (let cy = iy0; cy <= iy1; cy++) {
+        if (cy !== gapRow) mark(dcol, cy);
       }
-      // A shelf on the back wall, NE interior corner.
-      put(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      const leftRoom = dcol - 1 >= ix0; // interior columns left of the divider
+      const v = (b.x0 * 7 + b.y0 * 13) % 4;
+
+      // Furnish one side as the BEDROOM (2×2 bed in the far corner) and the other
+      // as the living/kitchen side. The choice is footprint-seeded but the bed
+      // always lands clear of the divider; furniture is render-only so this needs
+      // no agreement with the bedTile coordinate.
+      const bedOnLeft = leftRoom && (v % 2 === 0);
+      if (bedOnLeft) {
+        placeBed(ix0, iy0);
+      } else {
+        placeBed(ix1 - 1, iy0);
+      }
+
+      // STORAGE CHEST — exactly one CABINET per home, on the back wall of the side
+      // opposite the bed (so it is always visible, never overlapped by the bed).
+      const chestX = bedOnLeft ? ix1 : ix0;
+      prop(chestX, iy0, "interior", INTERIOR_FRAMES.CABINET);
+
+      // Dining table + chairs along the front (door) wall of the living side.
+      const liveCol = bedOnLeft ? ix1 - 1 : ix0 + 1;
+      diningSet(liveCol, iy1, v % 2 === 0);
+
+      // A bookshelf on the back wall + a houseplant in a front corner.
+      const shelfX = bedOnLeft ? dcol + 1 : dcol - 1;
+      if (shelfX >= ix0 && shelfX <= ix1) prop(shelfX, iy0, "interior", INTERIOR_FRAMES.SHELF);
+      plant(bedOnLeft ? ix0 : ix1, iy1);
+      // A produce crate by the door wall for a lived-in look.
+      prop(bedOnLeft ? ix1 : ix0, iy1, "farming", CRATE_FRAMES[1]);
+
+      // Dress any remaining wall-adjacent cells (alternating) with shelves/barrels
+      // so the big two-room footprint reads furnished, not bare. The CHEST is
+      // already placed (CABINET excluded here so it stays the single storage piece).
+      for (let cy = iy0; cy <= iy1; cy++) {
+        for (let cx = ix0; cx <= ix1; cx++) {
+          const onWall = cx === ix0 || cx === ix1 || cy === iy0 || cy === iy1;
+          if (onWall && free(cx, cy) && (cx + cy) % 2 === 0) {
+            const opts = [INTERIOR_FRAMES.SHELF, INTERIOR_FRAMES.BARREL];
+            prop(cx, cy, "interior", opts[(cx + cy) % opts.length]);
+          }
+        }
+      }
     } else if (kind === "shop") {
-      // Shelves/cabinet along the back wall; counter crates at the doorway.
-      put(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
-      put(ix1, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
-      put(ix0, iy1, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP); // counter unit
-      // Produce crates flanking the storefront (kept from the old shop look),
-      // never over the centre shopTile (the BUY/SELL gate cell stays clear).
-      put(ix1, iy1, "farming", CRATE_FRAMES[1], DEPTH_PROP);
+      // SUPERMARKET: shelving AISLES — full-height shelf columns on alternating
+      // interior columns with a walkable gap between, a checkout BAR by the door,
+      // and produce crates. The centre shopTile (BUY/SELL gate) is left clear.
+      for (let cx = ix0; cx <= ix1; cx += 2) {
+        for (let cy = iy0; cy <= iy1; cy++) {
+          if (b.doorX === cx && cy === iy1) continue; // keep the doorway clear
+          prop(cx, cy, "interior", (cx + cy) % 2 ? INTERIOR_FRAMES.SHELF : INTERIOR_FRAMES.CABINET);
+        }
+      }
+      // checkout counter + produce by the entrance row
+      furn(ix0, iy1, FURNITURE_FRAMES.TABLE_SMALL);
+      prop(ix1, iy1, "farming", CRATE_FRAMES[1]);
+      prop(ix1 - 1, iy1, "farming", CRATE_FRAMES[0] ?? CRATE_FRAMES[1]);
     } else if (kind === "tavern") {
-      // Bar counter along the back wall, tables + chairs, corner barrels.
-      put(ix0, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
-      put(ix0 + 1, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
-      if (hasFurn) {
-        put(ix0 + 2, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_ROUND, DEPTH_PROP);
-        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
-        put(ix0 + 3, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
+      // BAR counter spanning the back wall, a floor full of round tables with
+      // chairs, and barrels stacked in the corners.
+      for (let cx = ix0; cx <= ix1; cx++) prop(cx, iy0, "interior", INTERIOR_FRAMES.BAR);
+      for (let cy = iy0 + 2; cy <= iy1; cy += 2) {
+        for (let cx = ix0 + 1; cx <= ix1 - 1; cx += 2) diningSet(cx, cy, true);
       }
-      put(ix1, iy0, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
-      put(ix1, iy1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+      prop(ix0, iy1, "interior", INTERIOR_FRAMES.BARREL);
+      prop(ix1, iy1, "interior", INTERIOR_FRAMES.BARREL);
     } else if (kind === "cafe") {
-      // Cafe: a BAR counter along the back wall + two small tables with chairs.
-      put(ix0, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
-      if (hasFurn) {
-        put(ix0, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
-        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
-        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
-        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      // Coffee counter along the back wall + a tidy grid of small café tables.
+      for (let cx = ix0; cx <= ix1; cx++) prop(cx, iy0, "interior", INTERIOR_FRAMES.BAR);
+      for (let cy = iy0 + 2; cy <= iy1; cy += 2) {
+        for (let cx = ix0; cx <= ix1; cx += 2) diningSet(cx, cy, false);
       }
+      plant(ix1, iy1);
     } else if (kind === "office") {
-      // Office: two cabinets (desks) along the back wall + a table, chair, shelf.
-      put(ix0, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
-      put(ix1, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
-      put(ix0, iy1, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
-      if (hasFurn) {
-        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
-        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      // Records office / bank: cabinets line the back wall, desks with chairs
+      // fill the floor, shelves and a plant round it out.
+      for (let cx = ix0; cx <= ix1; cx++) {
+        prop(cx, iy0, "interior", cx % 2 ? INTERIOR_FRAMES.CABINET : INTERIOR_FRAMES.SHELF);
       }
+      for (let cy = iy0 + 2; cy <= iy1; cy += 2) {
+        for (let cx = ix0; cx <= ix1; cx += 2) {
+          furn(cx, cy, FURNITURE_FRAMES.TABLE_SMALL);
+          furn(cx + 1, cy, FURNITURE_FRAMES.CHAIR_R);
+        }
+      }
+      plant(ix0, iy1);
     } else if (kind === "school") {
-      // School: two bookshelves along the back wall + two desk tables with chairs.
-      put(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
-      put(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
-      if (hasFurn) {
-        put(ix0, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
-        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
-        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
-        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      // Classroom: a wall of bookshelves at the back, then ROWS OF DESKS (table
+      // + chair) facing it, like a Smallville schoolroom.
+      for (let cx = ix0; cx <= ix1; cx++) prop(cx, iy0, "interior", INTERIOR_FRAMES.SHELF);
+      for (let cy = iy0 + 2; cy <= iy1; cy++) {
+        if ((cy - iy0) % 2 === 0) continue; // aisle rows between desk rows
+        for (let cx = ix0; cx <= ix1; cx++) {
+          furn(cx, cy, (cx - ix0) % 2 === 0 ? FURNITURE_FRAMES.TABLE_SMALL : FURNITURE_FRAMES.CHAIR_R);
+        }
       }
     }
 
@@ -954,27 +1072,28 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * Wave 5a — the green PARK region. The inner pond renders through the normal
-   * water tile path and the benches through dressWorldObjects; here we add the
-   * scattered decor trees that fall INSIDE the park region (the existing tree
-   * sprite path), giving the park its leafy feel. Asset-guarded: a no-op when
-   * the tree sheet is missing (placeholder mode keeps the open grass).
+   * Render the deterministic decor scatter (clustered trees + bushes + flowers +
+   * grass tufts) generated in map.ts. Each kind maps to a concrete sprite via the
+   * pure decorSprite() helper; depth follows the layer: trees overhead (canopy
+   * over agents), bushes y-sorted, flowers/tufts flat under agents. Asset-guarded
+   * per kind, so a missing sheet is simply skipped (placeholder mode stays bare).
    */
-  private dressPark(): void {
-    if (!this.textures.exists("fruit_trees")) return;
-    const inPark = (p: Vec2): boolean =>
-      p.x >= PARK.x0 && p.x <= PARK.x1 && p.y >= PARK.y0 && p.y <= PARK.y1;
+  private dressDecor(): void {
     for (const d of getWorld().decor()) {
-      if (d.kind !== "tree" || !inPark(d.pos)) continue;
+      const sprite = decorSprite(d.kind, d.variant ?? 0);
+      if (!this.textures.exists(sprite.texture)) continue;
+      const cx = d.pos.x * TILE_SIZE + TILE_SIZE / 2;
+      const bottom = (d.pos.y + 1) * TILE_SIZE;
+      const depth =
+        sprite.layer === "overhead"
+          ? DEPTH_OVERHEAD
+          : sprite.layer === "ysort"
+            ? bottom - 1
+            : DEPTH_PROP;
       this.add
-        .image(
-          d.pos.x * TILE_SIZE + TILE_SIZE / 2,
-          (d.pos.y + 1) * TILE_SIZE - 2,
-          "fruit_trees",
-          TREE_FRAMES[0],
-        )
+        .image(cx, bottom - 2, sprite.texture, sprite.frame)
         .setOrigin(0.5, 1)
-        .setDepth(DEPTH_OVERHEAD);
+        .setDepth(depth);
     }
   }
 
@@ -1274,8 +1393,17 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.paintAgentCircle(circle, color);
     }
 
+    // Smallville shows compact INITIALS over each sprite (e.g. "GG"), not the
+    // full name — full names piled up into an unreadable blur when agents
+    // cluster. The full name is one click away in the agent card / trace panel.
+    const words = name.trim().split(/\s+/);
+    const initials = (
+      words.length >= 2
+        ? `${words[0][0]}${words[words.length - 1][0]}`
+        : name.slice(0, 2)
+    ).toUpperCase();
     const label = this.add
-      .text(0, Math.round(this.labelLift()), name, {
+      .text(0, Math.round(this.labelLift()), initials, {
         fontFamily: "ui-monospace, Menlo, monospace",
         fontSize: `${LABEL_FONT_SIZE}px`,
         color: "#ffffff",
@@ -1386,25 +1514,28 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * Transient speech bubble (~4s), truncated to ~60 chars; the border is
-   * tinted by the speaker's emotion (v2).
+   * Transient "is speaking" indicator (~4s). HISTORICALLY this drew the full
+   * utterance (up to 160 chars, word-wrapped) as a bubble over the speaker —
+   * which, with agents clustered at the tavern, stacked into the unreadable text
+   * soup of Image #8. Smallville shows only a small balloon glyph over the
+   * speaker and keeps the words in a side panel. So the in-world bubble is now a
+   * compact 💬 glyph (border tinted by emotion); the FULL conversation text is
+   * carried by the CONVERSATION transcript panel (bus → renderTranscript). The
+   * `text` arg is retained for signature stability + future "focused agent"
+   * reveal, but is no longer rendered in the world.
    */
   showSpeech(name: string, text: string, emotion: Emotion = "neutral"): void {
     const agent = this.agents.get(name);
     if (!agent) return;
     agent.speechTimer?.remove();
     agent.speech?.destroy();
+    void text; // intentionally not rendered in-world (see doc comment)
 
-    const shown =
-      text.length > SPEECH_MAX_CHARS
-        ? `${text.slice(0, SPEECH_MAX_CHARS - 1)}…`
-        : text;
     const label = this.add
-      .text(0, 0, shown, {
+      .text(0, 0, "💬", {
         fontFamily: "ui-monospace, Menlo, monospace",
-        fontSize: `${SPEECH_FONT_SIZE}px`,
+        fontSize: "15px",
         color: "#101014",
-        wordWrap: { width: 260 },
       })
       .setOrigin(0.5, 0.5);
     const bounds = label.getBounds();
@@ -1458,21 +1589,19 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * v3 (Wave 2) — readable activity label: set the persistent plan-step text
-   * below an agent's name (Smallville "what they're doing"). Called by
-   * AgentRuntime after each decision with the agent's current planStep. Null or
-   * empty renders nothing; longer text is truncated to ~40 chars.
+   * v3 (Wave 2) — activity label. HISTORICALLY this drew the full plan-step text
+   * ("socialize at the tavern and catch up") UNDER every agent. With 26 agents
+   * clustered, those lines overlapped into unreadable soup (the Image #8
+   * problem). Smallville never renders sentence text in the world — only a small
+   * per-agent emoji (pronunciatio); the words live in the side panels. So this is
+   * now a deliberate world-side no-op: the plan step still surfaces in each
+   * agent's card + the conversation/events panels, the world stays calm and
+   * readable. Signature kept so AgentRuntime callers are unchanged.
    */
-  setActivityLabel(name: string, text: string | null): void {
+  setActivityLabel(name: string, _text: string | null): void {
     const agent = this.agents.get(name);
     if (!agent) return;
-    if (!text) {
-      agent.activityText.setText("");
-      return;
-    }
-    const flat = text.replace(/\s+/g, " ");
-    const shown = flat.length > 40 ? `${flat.slice(0, 39)}…` : flat;
-    agent.activityText.setText(shown);
+    agent.activityText.setText("");
   }
 
   /** v2 — transient ~2s emote symbol floating up above the sprite. */

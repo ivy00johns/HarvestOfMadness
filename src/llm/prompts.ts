@@ -224,6 +224,27 @@ Respond with ONLY a JSON array of at most 5 objects shaped {"insight": string, "
 }
 
 /**
+ * End-of-day diary entry (fast or smart tier). Turns the agent's memories from
+ * the day that just ended into a short (1-2 sentence) FIRST-PERSON journal line.
+ * Output is PLAIN TEXT — no JSON, no quotes, no fences (consumed by DiarySystem,
+ * which sanitizes to a short entry and falls back to mockDiary on error/empty).
+ */
+export function buildDiaryPrompt(agentName: string, recentMemoryTexts: string[]): string {
+  const memories =
+    recentMemoryTexts.length > 0
+      ? recentMemoryTexts.map((t) => `- ${t}`).join("\n")
+      : "(nothing of note happened today)";
+  return `You are ${agentName}, a farmer NPC writing in your private journal at the end of the day.
+
+WHAT HAPPENED TODAY:
+${memories}
+
+Write a short FIRST-PERSON journal entry (1-2 sentences) summarising what you did and how you felt today. Speak as "I". Be concrete and personal.
+
+Respond with ONLY the journal entry as plain text — no quotes, no JSON, no fences.`;
+}
+
+/**
  * v3 (Wave 2) — multi-turn conversation reply (fast tier).
  *
  * Builds the prompt for ONE in-character reply continuing an ongoing exchange.

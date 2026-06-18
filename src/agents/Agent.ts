@@ -51,6 +51,15 @@ export class Agent {
   decisionsToday = 0;
   decisionsTotal = 0;
   /**
+   * Mortality (deterministic sim mechanic). A living agent acts normally; once
+   * dead it stops being scheduled and is surfaced to the player. Set by
+   * CognitionSystem.onDayAdvanced via MortalitySystem. Additive — the existing
+   * constructor / tests are unaffected (every agent starts alive).
+   */
+  alive = true;
+  causeOfDeath: string | null = null;
+  deathDay: number | null = null;
+  /**
    * Permanent per-agent mock fallback after a server `budget_exceeded`
    * error (domain rule 5). The manager-level daily ceiling is separate.
    */

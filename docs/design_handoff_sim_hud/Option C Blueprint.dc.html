@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/fonts.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/colors.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/tokens/typography.css">
+<link rel="stylesheet" href="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/styles.css">
+<script src="_ds/spacecon-feedback-design-system-4f4d354a-7071-4c7c-9984-e8680edb8cd1/_ds_bundle.js"></script>
+<style>
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:#0B1220;}
+  ::-webkit-scrollbar{height:11px;width:11px;}
+  ::-webkit-scrollbar-thumb{background:#33415C;border-radius:8px;border:3px solid #0B1220;}
+  ::-webkit-scrollbar-track{background:#0B1220;}
+</style>
+</helmet>
+<div style="width:100%;min-height:100vh;background:radial-gradient(1100px 520px at 16% -10%, #18233c 0%, rgba(11,18,32,0) 60%), #0B1220;font-family:var(--font-sans);color:var(--ink-100);padding:36px 40px 64px;">
+
+  <div style="max-width:1180px;">
+    <div style="font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--cyan-300);margin-bottom:12px;display:flex;align-items:center;gap:10px;">
+      <span style="width:7px;height:7px;border-radius:50%;background:var(--cyan-500);box-shadow:0 0 8px var(--cyan-500);"></span>
+      Option C · civic hub + hamlets · tile-exact blueprint
+    </div>
+    <h1 style="font-family:var(--font-display);font-weight:700;font-size:38px;line-height:1.1;letter-spacing:-.02em;margin:0 0 12px;color:#fff;">Madow Valley — 140×100, built to grow</h1>
+    <p style="font-size:15.5px;line-height:1.55;color:var(--ink-300);margin:0;max-width:780px;text-wrap:pretty;">A central civic hub on the spine, four named hamlets (your 12 personas, 3 each), and pre-zoned reserve lots down the middle of both residential roads — the empty stretches fill in as you add agents, and whole new hamlets drop into the countryside ring later.</p>
+  </div>
+
+  <!-- Blueprint canvas + overlay -->
+  <div style="position:relative;margin-top:26px;max-width:1180px;background:#0d1626;border:1px solid #243352;border-radius:16px;padding:14px;box-shadow:0 20px 60px rgba(0,0,0,.5);">
+    <div style="position:relative;width:100%;">
+      <canvas id="bp" style="display:block;width:100%;border-radius:9px;"></canvas>
+      <div id="bp-overlay" style="position:absolute;inset:0;pointer-events:none;">
+        <sc-for list="{{ labels }}" as="L" hint-placeholder-count="9">
+          <div style="{{ L.style }}">{{ L.text }}</div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <!-- Legend -->
+  <div style="display:flex;flex-wrap:wrap;gap:16px;margin-top:18px;padding:13px 18px;background:rgba(31,42,65,.4);border:1px solid #283751;border-radius:12px;max-width:1180px;">
+    <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-400);">Legend</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#b5895a;border:1.5px solid #5e4327;"></span>Built building</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:transparent;border:1.5px dashed #7f93b5;"></span>Reserve lot (future)</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:rgba(42,169,214,.18);border:1px solid var(--cyan-500);"></span>Expansion zone</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#cb9a63;"></span>Road / spine</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#4ba3c7;"></span>Pond</span>
+    <span style="display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--ink-300);"><span style="width:13px;height:13px;border-radius:3px;background:#3c7a32;"></span>Woodland</span>
+  </div>
+
+  <!-- Key numbers + the gate callout -->
+  <div style="display:flex;gap:16px;margin-top:26px;flex-wrap:wrap;max-width:1180px;align-items:stretch;">
+    <div style="flex:2;min-width:340px;background:rgba(19,126,92,.10);border:1px solid #1f5743;border-radius:14px;padding:18px 20px;">
+      <div style="font-family:var(--font-mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--positive-500);margin-bottom:9px;display:flex;align-items:center;gap:8px;"><span style="width:7px;height:7px;border-radius:50%;background:var(--positive-500);"></span>Decided · reach budget</div>
+      <div style="font-family:var(--font-display);font-weight:600;font-size:17px;color:#fff;margin-bottom:8px;">Reachability floor 40 → 100, plus distance-weighted attendance</div>
+      <div style="font-size:13.5px;line-height:1.55;color:var(--ink-300);text-wrap:pretty;">The <code style="font-family:var(--font-mono);font-size:12px;background:#1f2a41;padding:1px 5px;border-radius:4px;color:#fff;">party-emergence</code> ≤40 A* bound was tuned for 96×64; a corner hamlet sits ~95 tiles from the central tavern, so the floor rises to <strong style="color:#fff;font-weight:600;">100</strong> (every door <em style="font-style:normal;color:var(--cyan-300);">can</em> reach the tavern). It is not the attendance threshold: invite/attend is weighted by travel cost — <code style="font-family:var(--font-mono);font-size:12px;background:#1f2a41;padding:1px 5px;border-radius:4px;color:#fff;">attendProb = 1 − pathTiles/70</code> — so nearby hamlets pack the tavern and far ones show up for the big events. That's what makes the world feel real, and it makes the hub genuinely central without forcing anyone.</div>
+    </div>
+    <div style="flex:1;min-width:200px;display:flex;flex-direction:column;gap:12px;">
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:14px 16px;">
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px;">Starter agents</div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:26px;color:#fff;line-height:1;">12 <span style="font-size:14px;color:var(--ink-400);">· 3 per hamlet</span></div>
+      </div>
+      <div style="background:rgba(31,42,65,.55);border:1px solid #283751;border-radius:14px;padding:14px 16px;">
+        <div style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-400);margin-bottom:6px;">Reserve capacity</div>
+        <div style="font-family:var(--font-display);font-weight:700;font-size:26px;color:var(--cyan-300);line-height:1;">+14 <span style="font-size:14px;color:var(--ink-400);">→ 26 total</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p style="font-size:13px;color:var(--ink-500);margin:22px 0 0;max-width:1180px;line-height:1.5;">Coordinates are the designed starting point — TDD-converge any that miss a gate, exactly as your existing plans do. The full coordinate tables, road segments, decor + interior rules, and the task-by-task plan are in <code style="font-family:var(--font-mono);font-size:12px;background:#1f2a41;padding:1px 5px;border-radius:4px;color:#cfd8e6;">uploads/2026-06-18-option-c-civic-hub-hamlets.md</code>.</p>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  COLS = 140; ROWS = 100;
+
+  componentDidMount() {
+    this._draw();
+    setTimeout(() => this._draw(), 70);
+    setTimeout(() => this._draw(), 420);
+    window.addEventListener("resize", () => this._draw());
+  }
+
+  // ── exact Option C data (tile coords) ──────────────────
+  _data() {
+    const hub = [
+      { x0: 50, y0: 43, x1: 57, y1: 49, kind: "shop", door: [53, 49] },
+      { x0: 62, y0: 42, x1: 70, y1: 49, kind: "tavern", door: [66, 49] },
+      { x0: 73, y0: 44, x1: 79, y1: 49, kind: "cafe", door: [76, 49] },
+      { x0: 60, y0: 51, x1: 68, y1: 58, kind: "school", door: [64, 51] },
+      { x0: 72, y0: 51, x1: 79, y1: 57, kind: "office", door: [75, 51] },
+    ];
+    const homes = [
+      // NW hamlet
+      { x0: 7, y0: 14, x1: 11, y1: 19, id: "brix" }, { x0: 16, y0: 14, x1: 20, y1: 19, id: "ford" }, { x0: 9, y0: 21, x1: 13, y1: 26, id: "wren" },
+      // NE hamlet
+      { x0: 118, y0: 14, x1: 122, y1: 19, id: "dora" }, { x0: 127, y0: 14, x1: 131, y1: 19, id: "gus" }, { x0: 121, y0: 21, x1: 125, y1: 26, id: "clem" },
+      // SW hamlet
+      { x0: 7, y0: 74, x1: 11, y1: 79, id: "fern" }, { x0: 16, y0: 74, x1: 20, y1: 79, id: "nell" }, { x0: 9, y0: 81, x1: 13, y1: 86, id: "sage" },
+      // SE hamlet
+      { x0: 118, y0: 74, x1: 122, y1: 79, id: "rusty" }, { x0: 127, y0: 74, x1: 131, y1: 79, id: "moss" }, { x0: 121, y0: 81, x1: 125, y1: 86, id: "zola" },
+    ];
+    const reserve = [
+      { x0: 26, y0: 15, x1: 30, y1: 19 }, { x0: 34, y0: 15, x1: 38, y1: 19 }, { x0: 42, y0: 15, x1: 46, y1: 19 },
+      { x0: 76, y0: 15, x1: 80, y1: 19 }, { x0: 84, y0: 15, x1: 88, y1: 19 }, { x0: 92, y0: 15, x1: 96, y1: 19 }, { x0: 100, y0: 15, x1: 104, y1: 19 },
+      { x0: 30, y0: 21, x1: 34, y1: 25 }, { x0: 88, y0: 21, x1: 92, y1: 25 },
+      { x0: 26, y0: 74, x1: 30, y1: 78 }, { x0: 34, y0: 74, x1: 38, y1: 78 },
+      { x0: 76, y0: 74, x1: 80, y1: 78 }, { x0: 84, y0: 74, x1: 88, y1: 78 }, { x0: 92, y0: 74, x1: 96, y1: 78 },
+    ];
+    const roads = [ // {x0,y0,x1,y1} centerlines
+      { x0: 6, y0: 50, x1: 134, y1: 50 }, // spine
+      { x0: 10, y0: 20, x1: 130, y1: 20 }, // north road
+      { x0: 10, y0: 80, x1: 130, y1: 80 }, // south road
+      { x0: 24, y0: 20, x1: 24, y1: 80 }, { x0: 70, y0: 20, x1: 70, y1: 80 }, { x0: 116, y0: 20, x1: 116, y1: 80 }, // trunks
+    ];
+    const pond = { x0: 99, y0: 42, x1: 105, y1: 47 };
+    const park = { x0: 96, y0: 40, x1: 109, y1: 50 };
+    const expansion = [ // central empty road stretches reserved for future hamlets
+      { x0: 25, y0: 9, x1: 69, y1: 31 }, { x0: 71, y0: 9, x1: 115, y1: 31 },
+      { x0: 25, y0: 69, x1: 69, y1: 91 }, { x0: 71, y0: 69, x1: 115, y1: 91 },
+    ];
+    return { hub, homes, reserve, roads, pond, park, expansion };
+  }
+
+  // ── overlay labels (positioned by tile %) ──────────────
+  renderVals() {
+    const W = this.COLS, H = this.ROWS;
+    const chip = (x, y, text, color, anchor) => {
+      const left = (x / W) * 100, top = (y / H) * 100;
+      const tx = anchor === "c" ? "translate(-50%,-50%)" : "translate(0,0)";
+      return {
+        text,
+        style: `position:absolute;left:${left}%;top:${top}%;transform:${tx};font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;font-weight:600;color:${color};background:rgba(11,18,32,.74);border:1px solid ${color}55;border-radius:6px;padding:3px 7px;white-space:nowrap;backdrop-filter:blur(3px);`,
+      };
+    };
+    const labels = [
+      chip(64, 36, "Civic hub · tavern · shop · café · school · office", "#7FD3EC", "c"),
+      chip(14, 7, "NW hamlet · brix · ford · wren", "#5187F2", "c"),
+      chip(124, 7, "NE hamlet · dora · gus · clem", "#5187F2", "c"),
+      chip(14, 92, "SW hamlet · fern · nell · sage", "#18996F", "c"),
+      chip(124, 92, "SE hamlet · rusty · moss · zola", "#18996F", "c"),
+      chip(47, 30, "Expansion zone", "#7FD3EC", "c"),
+      chip(93, 30, "Expansion zone", "#7FD3EC", "c"),
+      chip(47, 70, "Expansion zone", "#7FD3EC", "c"),
+      chip(102, 44, "Park + pond", "#67b8d6", "c"),
+    ];
+    return { labels };
+  }
+
+  // ── renderer ───────────────────────────────────────────
+  _draw() {
+    const cv = document.getElementById("bp");
+    if (!cv) return;
+    const dispW = Math.max(640, Math.round(cv.clientWidth || cv.parentElement.clientWidth));
+    const dispH = Math.round((dispW * this.ROWS) / this.COLS);
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = dispW * dpr; cv.height = dispH * dpr; cv.style.height = dispH + "px";
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const s = dispW / this.COLS;
+    const d = this._data();
+    const C = {
+      grass: "#5aa64a", grassHi: "#64b052", grassLo: "#4d9540",
+      path: "#cb9a63", pathLo: "#bd8d56", plaza: "#dac9a4",
+      water: "#4ba3c7", waterLo: "#3b8aac", waterHi: "#67b8d6",
+      floor: "#bb9163", floorAlt: "#b1875a", wall: "#5e4327",
+      bed: "#e9e4d8", table: "#9a652f", chair: "#7c4f28", shelf: "#5f4124", counter: "#86592f",
+      trunk: "#6b4a2c", canopy: "#3c7a32", canopyHi: "#4f9a40", canopyLo: "#2f6328",
+      bush: "#42883a", shadow: "rgba(0,0,0,0.16)",
+    };
+    const rnd = this._rng(9);
+
+    // grass + texture
+    ctx.fillStyle = C.grass; ctx.fillRect(0, 0, dispW, dispH);
+    for (let i = 0; i < this.COLS * this.ROWS * 0.14; i++) {
+      ctx.fillStyle = rnd() > .5 ? C.grassHi : C.grassLo;
+      ctx.fillRect(Math.floor(rnd() * this.COLS) * s, Math.floor(rnd() * this.ROWS) * s, s, s);
+    }
+
+    const occ = []; for (let y = 0; y < this.ROWS; y++) occ.push(new Uint8Array(this.COLS));
+    const mark = (x0, y0, x1, y1, pad) => { for (let y = y0 - pad; y <= y1 + pad; y++) for (let x = x0 - pad; x <= x1 + pad; x++) if (x >= 0 && y >= 0 && x < this.COLS && y < this.ROWS) occ[y][x] = 1; };
+
+    // expansion-zone wash (under everything but grass)
+    for (const z of d.expansion) {
+      ctx.fillStyle = "rgba(42,169,214,0.10)";
+      ctx.fillRect(z.x0 * s, z.y0 * s, (z.x1 - z.x0 + 1) * s, (z.y1 - z.y0 + 1) * s);
+    }
+
+    // park + pond
+    ctx.fillStyle = "rgba(31,138,108,0.18)"; ctx.fillRect(d.park.x0 * s, d.park.y0 * s, (d.park.x1 - d.park.x0 + 1) * s, (d.park.y1 - d.park.y0 + 1) * s);
+    this._rr(ctx, d.pond.x0 * s, d.pond.y0 * s, (d.pond.x1 - d.pond.x0 + 1) * s, (d.pond.y1 - d.pond.y0 + 1) * s, s * 1.2);
+    ctx.fillStyle = C.water; ctx.fill(); ctx.strokeStyle = C.waterLo; ctx.lineWidth = Math.max(1, s * .5); ctx.stroke();
+    mark(d.pond.x0, d.pond.y0, d.pond.x1, d.pond.y1, 0);
+
+    // roads (3 tiles wide visual)
+    for (const r of d.roads) {
+      ctx.strokeStyle = C.path; ctx.lineCap = "round"; ctx.lineWidth = 2.6 * s;
+      ctx.beginPath(); ctx.moveTo((r.x0 + .5) * s, (r.y0 + .5) * s); ctx.lineTo((r.x1 + .5) * s, (r.y1 + .5) * s); ctx.stroke();
+      const horiz = r.y0 === r.y1;
+      if (horiz) mark(r.x0, r.y0 - 1, r.x1, r.y1 + 1, 0); else mark(r.x0 - 1, r.y0, r.x1 + 1, r.y1, 0);
+    }
+    // central plaza + well at hub
+    ctx.fillStyle = C.plaza; ctx.fillRect(57 * s, 49 * s, 5 * s, 3 * s);
+    ctx.fillStyle = C.waterLo; ctx.beginPath(); ctx.arc(59 * s, 50 * s, s * .9, 0, 7); ctx.fill();
+
+    // hub + homes
+    for (const b of d.hub) this._bld(ctx, s, b, b.kind, C, rnd, null);
+    for (const b of d.hub) mark(b.x0, b.y0, b.x1, b.y1, 1);
+    for (const b of d.homes) this._bld(ctx, s, b, "home", C, rnd, b.id);
+    for (const b of d.homes) mark(b.x0, b.y0, b.x1, b.y1, 1);
+    // plots (soil) beside homes — small hatched rects
+    for (const b of d.homes) {
+      const px = (b.x1 + 1.5) * s, py = (b.y0) * s;
+    }
+
+    // reserve ghosts (dashed outline)
+    ctx.setLineDash([s * 0.8, s * 0.6]); ctx.lineWidth = Math.max(1.2, s * .35); ctx.strokeStyle = "#9fb1d2";
+    for (const r of d.reserve) { ctx.strokeRect(r.x0 * s, r.y0 * s, (r.x1 - r.x0 + 1) * s, (r.y1 - r.y0 + 1) * s); mark(r.x0, r.y0, r.x1, r.y1, 0); }
+    ctx.setLineDash([]);
+
+    // foliage: rim woodland + clusters in expansion/countryside
+    this._foliage(ctx, s, occ, C, rnd);
+
+    // 10-tile grid + ticks
+    ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1;
+    ctx.font = "9px 'IBM Plex Mono', monospace"; ctx.fillStyle = "rgba(167,176,192,0.5)";
+    for (let x = 0; x <= this.COLS; x += 10) { ctx.beginPath(); ctx.moveTo(x * s, 0); ctx.lineTo(x * s, dispH); ctx.stroke(); if (x % 20 === 0 && x < this.COLS) ctx.fillText(x, x * s + 2, 10); }
+    for (let y = 0; y <= this.ROWS; y += 10) { ctx.beginPath(); ctx.moveTo(0, y * s); ctx.lineTo(dispW, y * s); ctx.stroke(); if (y % 20 === 0 && y > 0) ctx.fillText(y, 2, y * s - 2); }
+  }
+
+  _rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  _rr(ctx, x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+
+  _bld(ctx, s, b, kind, C, rnd, id) {
+    const x = b.x0 * s, y = b.y0 * s, w = (b.x1 - b.x0 + 1) * s, h = (b.y1 - b.y0 + 1) * s, bw = b.x1 - b.x0 + 1, bh = b.y1 - b.y0 + 1;
+    ctx.fillStyle = C.shadow; ctx.fillRect(x + s * .5, y + s * .6, w, h);
+    ctx.fillStyle = C.floor; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = C.floorAlt; for (let i = 1; i < bh; i += 2) ctx.fillRect(x, y + i * s, w, Math.max(1, s * .5));
+    const pad = s * .85;
+    if (kind === "store") { const n = 3; for (let i = 0; i < n; i++) { ctx.fillStyle = C.shelf; ctx.fillRect(x + pad + i * ((w - pad * 2) / n) + s * .3, y + pad + s, Math.max(2, s * 1), h - pad * 2 - s * 1.6); } ctx.fillStyle = C.counter; ctx.fillRect(x + pad, y + h - pad - s, w - pad * 2, s); }
+    else if (kind === "school") { for (let r = 0; r < bh - 3; r += 2) for (let c = 0; c < bw - 2; c += 2) { ctx.fillStyle = C.chair; ctx.fillRect(x + pad + c * s, y + pad + r * s, s, s * .8); } }
+    else if (kind === "tavern" || kind === "cafe") { const gx = 3, gy = Math.max(2, Math.floor(bh / 3)); for (let r = 0; r < gy; r++) for (let c = 0; c < gx; c++) { const cxp = x + pad + (c + .5) * ((w - pad * 2) / gx), cyp = y + pad + (r + .6) * ((h - pad * 2) / gy); ctx.fillStyle = C.table; ctx.beginPath(); ctx.arc(cxp, cyp, s * .8, 0, 7); ctx.fill(); } ctx.fillStyle = C.counter; ctx.fillRect(x + pad, y + pad - s * .1, w - pad * 2, s * .7); }
+    else if (kind === "office") { for (let r = 0; r < bh - 3; r += 2) { ctx.fillStyle = C.table; ctx.fillRect(x + pad, y + pad + r * s, s * 2, s); ctx.fillRect(x + w - pad - s * 2, y + pad + r * s, s * 2, s); } }
+    else { // home: bed + table + shelf + divider
+      ctx.fillStyle = C.bed; ctx.fillRect(x + pad, y + pad, s * 1.8, s * 1.1);
+      ctx.fillStyle = C.shelf; ctx.fillRect(x + w - pad - s * 1.1, y + pad, s * 1.1, s * .9);
+      ctx.fillStyle = C.table; ctx.fillRect(x + w * .5 - s * .6, y + h * .5, s * 1.2, s * .8);
+      ctx.strokeStyle = C.wall; ctx.lineWidth = Math.max(1, s * .4);
+      const dx = x + Math.floor(bw / 2) * s; ctx.beginPath(); ctx.moveTo(dx, y); ctx.lineTo(dx, y + h - s * 1.3); ctx.stroke();
+    }
+    ctx.strokeStyle = C.wall; ctx.lineWidth = Math.max(1.3, s * .5); ctx.strokeRect(x + ctx.lineWidth / 2, y + ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+    if (id) { ctx.fillStyle = "rgba(11,18,32,0.85)"; ctx.font = "700 " + Math.max(7, s * 1.3) + "px 'IBM Plex Mono', monospace"; ctx.textBaseline = "middle"; ctx.textAlign = "center"; ctx.fillText(id.slice(0, 4).toUpperCase(), x + w / 2, y + h / 2); ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; }
+  }
+
+  _foliage(ctx, s, occ, C, rnd) {
+    const free = (x, y) => x >= 0 && y >= 0 && x < this.COLS && y < this.ROWS && !occ[y][x];
+    const trees = [];
+    const push = (x, y) => { if (free(Math.round(x), Math.round(y))) trees.push({ x, y, r: 1.5 + rnd() * 1 }); };
+    // rim
+    const band = 8;
+    for (let y = 1; y < this.ROWS - 1; y++) for (let x = 1; x < this.COLS - 1; x++) { const e = Math.min(x, y, this.COLS - 1 - x, this.ROWS - 1 - y); if (e < band && free(x, y) && rnd() < 0.5 * (1 - e / band)) push(x + rnd(), y + rnd()); }
+    // interior clusters (denser in the empty middle/expansion → reads as countryside)
+    for (let i = 0; i < 80; i++) { const cx = 4 + rnd() * (this.COLS - 8), cy = 4 + rnd() * (this.ROWS - 8); if (!free(Math.round(cx), Math.round(cy))) continue; const n = 3 + Math.floor(rnd() * 5); for (let j = 0; j < n; j++) push(cx + (rnd() - .5) * 6, cy + (rnd() - .5) * 6); }
+    // flowers + bushes
+    const fc = ["#e85b5b", "#f2c94c", "#9b6ad6", "#fff"];
+    for (let i = 0; i < 520; i++) { const x = Math.floor(rnd() * this.COLS), y = Math.floor(rnd() * this.ROWS); if (!free(x, y)) continue; if (rnd() < .35) { ctx.fillStyle = C.bush; ctx.beginPath(); ctx.arc((x + .5) * s, (y + .5) * s, s * .7, 0, 7); ctx.fill(); } else { ctx.fillStyle = fc[i % 4]; ctx.fillRect((x + .4) * s, (y + .4) * s, Math.max(1, s * .4), Math.max(1, s * .4)); } }
+    trees.sort((a, b) => a.y - b.y);
+    for (const t of trees) { const cx = t.x * s, cy = t.y * s, r = t.r * s; ctx.fillStyle = C.shadow; ctx.beginPath(); ctx.ellipse(cx + r * .3, cy + r * .55, r * .95, r * .5, 0, 0, 7); ctx.fill(); ctx.fillStyle = C.trunk; ctx.fillRect(cx - s * .35, cy, s * .7, r * .8); ctx.fillStyle = C.canopyLo; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 7); ctx.fill(); ctx.fillStyle = C.canopy; ctx.beginPath(); ctx.arc(cx - r * .12, cy - r * .12, r * .82, 0, 7); ctx.fill(); ctx.fillStyle = C.canopyHi; ctx.beginPath(); ctx.arc(cx - r * .3, cy - r * .3, r * .4, 0, 7); ctx.fill(); }
+  }
+}
+</script>
+</body>
+</html>

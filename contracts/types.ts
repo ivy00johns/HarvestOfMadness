@@ -125,8 +125,8 @@ export const STARTING_SEEDS = 5;
  */
 export const PHASE_DURATION_MS = 8_000;
 
-export const MAP_WIDTH = 64;
-export const MAP_HEIGHT = 40;
+export const MAP_WIDTH = 140;
+export const MAP_HEIGHT = 100;
 /** v2: LPC art is 32×32; world logic is tile-indexed and never uses pixels */
 export const TILE_SIZE = 32;
 export const OBSERVATION_RADIUS = 4;
@@ -691,6 +691,18 @@ export interface Planner {
   advance(agentName: string, phase: Phase): void;
 }
 
+/**
+ * A single end-of-day first-person journal entry (additive subsystem modeled on
+ * reflection). One per agent per game-day: `day`/`phase` stamp the day that just
+ * ended, `text` is a short (1-2 sentence) first-person summary generated from the
+ * agent's memory stream. Live: one LLM call; Mock: deterministic template.
+ */
+export interface DiaryEntry {
+  day: number;
+  phase: string;
+  text: string;
+}
+
 // ---------------------------------------------------------------------------
 // v2 — Social relationship memory (AGA pattern, deep-research-v2 §3b)
 // ---------------------------------------------------------------------------
@@ -770,6 +782,7 @@ export interface AssetManifest {
 // v2 EventKind additions (open union — documented, not enforced):
 //   "memory_written"        payload { memoryId, type, importance }
 //   "reflection"            payload { questions?: string[], insightIds: string[] }
+//   "diary"                 payload { day, phase, text }   → end-of-day first-person journal entry
 //   "plan_created"          payload { day, steps: string[] }
 //   "relationship_updated"  payload { otherName, affinity, delta }
 //   "gift_given"            payload { from, to, itemId }

@@ -17,22 +17,23 @@ export {
 } from "@contracts/types";
 
 /**
- * Default spectator camera zoom. The map is 64×40 tiles (2048×1280 world px).
- * At DEFAULT_ZOOM=1.5 a typical 1440-wide viewport shows ~24 tiles across —
- * agents and buildings are readable. GAME_ZOOM is kept as an alias so existing
- * code that imports it still compiles; new code should prefer DEFAULT_ZOOM.
+ * Default spectator camera zoom. The map is 140×100 tiles (4480×3200 world px).
+ * At DEFAULT_ZOOM=1.2 a typical 1440-wide viewport shows ~30 tiles across —
+ * agents and buildings are readable on the larger canvas. GAME_ZOOM is kept as
+ * an alias so existing code that imports it still compiles; new code should
+ * prefer DEFAULT_ZOOM.
  */
-export const DEFAULT_ZOOM = 1.5;
+export const DEFAULT_ZOOM = 1.2;
 /** @deprecated prefer DEFAULT_ZOOM */
 export const GAME_ZOOM = DEFAULT_ZOOM;
 
 /**
  * Spectator camera zoom clamp.
- * MIN is set near the fit-to-map value for the 64×40 world on typical viewports
- * (~0.6) so the player can zoom out to see the whole town without endless void.
+ * MIN is set near the fit-to-map value for the 140×100 world on typical viewports
+ * (~0.28) so the player can zoom out to see the whole town without endless void.
  * MAX stays at 3 — good for close-up inspection.
  */
-export const CAMERA_ZOOM_MIN = 0.6;
+export const CAMERA_ZOOM_MIN = 0.28;
 export const CAMERA_ZOOM_MAX = 3;
 
 /**
@@ -61,16 +62,17 @@ export function zoomFactorForWheelDelta(
 }
 
 /** Keyboard pan speed (world px/sec at zoom 1, scaled by 1/zoom).
- *  Raised from 480→720 for the larger 64×40 map so panning the full width
- *  still takes a comfortable ~3s at zoom 1.
+ *  Raised for the larger 140×100 map so panning the full width still takes a
+ *  comfortable ~4s at zoom 1.
  */
-export const CAMERA_PAN_SPEED = 720;
+export const CAMERA_PAN_SPEED = 1100;
 
 /** Camera follow lerp (per-axis) when tracking a clicked agent. */
 export const CAMERA_FOLLOW_LERP = 0.12;
 
-/** Page / letterbox background. */
-export const BACKGROUND_COLOR = "#101014";
+/** Page / letterbox background — a soft slate (not pure black) so the HUD
+ *  chrome reads as a calm dark-UI surface rather than a harsh terminal void. */
+export const BACKGROUND_COLOR = "#181b22";
 
 /** Placeholder tile colors (zero-asset fallback rendering). */
 export const TILE_COLORS: Record<TileType, number> = {

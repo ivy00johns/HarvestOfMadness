@@ -1011,6 +1011,33 @@ export function mockReflection(
 }
 
 /**
+ * Templated first-person diary entry (mock path, modeled on mockReflection):
+ * a short 1-2 sentence journal line composed from the count of the day's
+ * memories plus a couple of snippets. Deterministic — same inputs, same entry;
+ * NO Math.random, NO Date. Empty memory list yields a sane "quiet day" entry.
+ */
+export function mockDiary(
+  agentName: string,
+  memories: { text: string }[],
+): { text: string } {
+  const texts = (Array.isArray(memories) ? memories : [])
+    .map((m) => (typeof m?.text === "string" ? m.text.replace(/[.\s]+$/, "").trim() : ""))
+    .filter((t) => t.length > 0);
+  if (texts.length === 0) {
+    return { text: `Dear journal: the day felt quiet, and nothing much stood out to me.` };
+  }
+  // Deterministically pick a couple of snippets (seeded by name + first text).
+  const seed = hash(`${agentName}:${texts[0]}`);
+  const first = texts[seed % texts.length];
+  const second = texts.length > 1 ? texts[(seed + 1) % texts.length] : null;
+  const tail =
+    second && second !== first ? ` I also remember that ${second.toLowerCase()}.` : "";
+  return {
+    text: `Dear journal: today I had ${texts.length} moment${texts.length === 1 ? "" : "s"} worth noting — chiefly, ${first.toLowerCase()}.${tail}`,
+  };
+}
+
+/**
  * Sensible deterministic 4-step plan (rule 12 mock path): one step per
  * phase, night always ends at the bed. Plans now mix farm work with social
  * and leisure activities keyed to persona keywords. A deterministic per-
@@ -1066,10 +1093,26 @@ export function mockDailyPlan(
     afternoonLandmark = "shop";
   } else if (wanderer) {
     afternoonGoal = "wander across town, stopping to chat with any farmer in sight";
-  } else if (day % 2 === 0) {
-    afternoonGoal = "harvest anything ready and keep the plots tended";
   } else {
-    afternoonGoal = "tend the crops and till new ground for the next planting";
+    // Default farmers — spread the afternoon across a few divergent (and mostly
+    // plot-local) activities, deterministic per persona+day, so the town shows
+    // varied life instead of every default farmer doing the identical chore.
+    // No convergence landmark: keywords keep them at/near their own plot or
+    // strolling the paths (the party event remains the only town-wide pull).
+    switch (varietySeed) {
+      case 0:
+        afternoonGoal = "harvest anything ready and keep the plots tended";
+        break;
+      case 1:
+        afternoonGoal = "tend the crops and till new ground for the next planting";
+        break;
+      case 2:
+        afternoonGoal = "take a slow walk along the field paths, checking the crops";
+        break;
+      default:
+        afternoonGoal = "water every planted crop and tidy up around the plot edges";
+        break;
+    }
   }
 
   // Evening: social/leisure rotation or selling.

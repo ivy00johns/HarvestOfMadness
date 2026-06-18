@@ -393,12 +393,52 @@
       "notes": "512x512, 16 frames/row. LPC house interior & decorations (Reemax/Sharm). Back-wall beams frames 0-2 (row 0); floors at row 4 (frame 64 stone/tile, 65 cobble); bookshelf 96, cabinet 98 (row 6); barrels 129 (row 8); stoves/fireplaces, clocks, tables lower rows. Used for open-roof interior rendering. CC-BY-SA 3.0."
     },
     {
+      "key": "interior_floor",
+      "path": "assets/lpc/interiors/wood_floor.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "buildings",
+      "notes": "32x32 single-tile seamless warm wood-plank floor (long horizontal boards, subtle grain), tone 0x8b6f47. interior.png ships only a blue-grey/tan checkerboard stone floor (frame 64) which tiles as an ugly checkerboard, so this dedicated tile is used for all interior floor/bedTile/shopTile cells (frame 0). Authored for this project, released CC0."
+    },
+    {
+      "key": "interior_wall",
+      "path": "assets/lpc/interiors/wood_wall.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "buildings",
+      "notes": "32x32 single-tile seamless warm timber-plank wall (vertical boards, a few shades deeper than the floor). Replaces interior.png's row-0 open-roof wall beams (large black voids that read as dark 'gold blocks' when ringed around a room) for the interior wall ring (frame 0). Authored for this project, released CC0."
+    },
+    {
       "key": "furniture_wood",
       "path": "assets/lpc/furniture/blonde-wood.png",
       "tileWidth": 32,
       "tileHeight": 32,
       "purpose": "buildings",
       "notes": "512x1024, 16 frames/row (32 rows). LPC wooden furniture (blonde tone). Beds at rows 13-14 (frames 208/209 head, 224/225 foot); round table ~125; benches/cabinets/bookshelves upper rows. Used for open-roof interior furnishing. CC-BY-SA 3.0."
+    },
+    {
+      "key": "plants",
+      "path": "assets/lpc/farming/plants.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "288x384, 9x12 tile grid (frame = row*9 + col). LPC bushes, shrubs, vegetables and small plants by Daniel Eddeland (daneeklu). Left cols are small sprouts/seedlings; mid cols leafy bushes; right cols tall corn. Bottom rows carry colourful produce/flowers. Used for decorative ground scatter (bush/flower). CC-BY-SA 3.0."
+    },
+    {
+      "key": "tallgrass",
+      "path": "assets/lpc/farming/tallgrass.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "96x192, 3x6 tile grid. LPC tall-grass patches and tufts by Daniel Eddeland (daneeklu). Bottom rows (frames 15-17) are small grass clumps used for decorative ground tufts. CC-BY-SA 3.0."
+    },
+    {
+      "key": "flowers",
+      "path": "assets/lpc/farming/flowers.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "128x32, 4x1 tile grid (frames 0-3: red/yellow/purple/white flower tufts on green stems). Authored for this project to replace the crop sheet's harvested produce as decorative ground flowers. CC0 — see CREDITS.md."
     }
   ],
   "water": {

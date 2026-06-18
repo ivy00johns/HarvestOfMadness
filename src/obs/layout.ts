@@ -2,23 +2,49 @@
  * HUD layout math — pure (no Phaser), so contract rule 14 ("minimum effective
  * 12px at zoom 1, integer pixel positions") is unit-testable headlessly.
  *
- * v3: the canvas is now fullscreen (Phaser.Scale.RESIZE — see src/main.ts), so
- * the HUD must DOCK to the live viewport instead of a fixed 768x576 frame.
- * `computeHud(viewW, viewH)` returns every rect docked to the window edges
- * (top chrome full-width; agent cards on the right edge; event feed bottom-left;
- * trace panel filling the left-middle). UIScene recomputes it on every resize.
+ * v4 — RESTRUCTURE for readability. The HUD now docks to the live viewport in
+ * three regions docked to the window edges:
  *
- * The legacy 768x576 constants/functions below are retained (as thin wrappers
- * over computeHud at the design size) so the pure layout unit tests keep
- * asserting the same geometry.
+ *   ┌──────────────────────────────── top chrome (full width) ───────────────┐
+ *   │ controls + clock                                                        │
+ *   ├──────────────────────────────────────────────┬─────────────────────────┤
+ *   │                                              │  CONVERSATION (top)      │
+ *   │                MAP (center-left, wide)        │  ─ right panel ─         │
+ *   │                                              │  EVENTS feed (bottom)    │
+ *   ├──────────────────────────────────────────────┴─────────────────────────┤
+ *   │ AGENTS — horizontal strip of compact cards (wraps / scrolls)            │
+ *   └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * The CONVERSATION transcript + EVENTS feed live in a fixed-width RIGHT panel
+ * (full height under the top chrome). The AGENTS cards moved to a HORIZONTAL
+ * BOTTOM STRIP (left-to-right, wrapping to a 2nd row). The map fills the wider
+ * center-left area between the top chrome, the right panel, and the bottom
+ * strip. The party/governance showcase strip and the decision-trace panel
+ * overlay the right panel's conversation region (they're transient).
+ *
+ * `computeHud(viewW, viewH)` returns every rect docked to the window edges and
+ * is recomputed on every resize. The legacy 768x576 constants/functions below
+ * are retained (as thin wrappers over computeHud at the design size) so the
+ * pure layout unit tests keep a stable design-size reference.
  */
 
 // -- contract rule 14: every HUD font ≥ 12 logical px ------------------------
-export const FONT_SIZE_SMALL = 12;
-export const FONT_SIZE_BASE = 13;
-export const FONT_SIZE_TITLE = 14;
-/** Family used across the HUD (monospace keeps clip math predictable). */
-export const HUD_FONT = "ui-monospace, Menlo, Consolas, monospace";
+// Readability polish: the whole scale is lifted ~15-25% over the old
+// 12/13/14 so dense cards and the feed read comfortably, while the smallest
+// size stays ≥ 12 (contract floor). Row pitch (line spacing) is widened at the
+// call sites that stack text (cards, feed, transcript) to match.
+export const FONT_SIZE_SMALL = 13;
+export const FONT_SIZE_BASE = 15;
+export const FONT_SIZE_TITLE = 17;
+/**
+ * Body family — a clean system sans for prose (names, labels, status) reads
+ * noticeably softer than a terminal mono. Numerals/code rows (gold, energy,
+ * meta, decision-trace JSON) keep MONO_FONT so columns stay aligned and the
+ * clip-char math (chars × px) remains predictable.
+ */
+export const HUD_FONT = "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif";
+/** Monospace family for numeric/code rows where column alignment matters. */
+export const MONO_FONT = "ui-monospace, Menlo, Consolas, monospace";
 
 export interface Rect {
   x: number;
@@ -33,8 +59,8 @@ export function pointInRect(px: number, py: number, r: Rect): boolean {
 
 /**
  * Smallest axis-aligned rect covering both inputs. Used to publish a single
- * click-through guard rect when the party strip AND the transcript panel are
- * both visible in the left band. Integer pixels (inputs are already integers).
+ * click-through guard rect when the showcase strip AND the transcript panel are
+ * both visible in the right panel. Integer pixels (inputs are already integers).
  */
 export function unionRect(a: Rect, b: Rect): Rect {
   const x = Math.min(a.x, b.x);
@@ -45,37 +71,59 @@ export function unionRect(a: Rect, b: Rect): Rect {
 }
 
 // -- fixed design metrics (independent of viewport size) ---------------------
-export const TOPBAR_H = 24;
-export const BADGE_ROW_H = 20;
+// Readability polish: chrome rows and cards gained vertical room to match the
+// larger type scale (above) and a touch more line spacing.
+export const TOPBAR_H = 30;
+export const BADGE_ROW_H = 26;
 /** Total height of the two-row top chrome. */
-export const HUD_TOP_H = TOPBAR_H + BADGE_ROW_H; // 44
+export const HUD_TOP_H = TOPBAR_H + BADGE_ROW_H; // 56
 
-export const CARD_W = 236;
-export const CARD_GAP = 4;
-/** Full card: swatch+name, gold/energy, plan, goal, 2-line thought, action,
- *  3 relationship rows, meta. */
-export const CARD_H_NORMAL = 168;
-/** Compact (4+ agents): drops thought + 2 relationship rows. */
-export const CARD_H_COMPACT = 108;
+// -- RIGHT panel (conversation + events) ------------------------------------
+/** Preferred width of the fixed right-side panel that holds the conversation
+ *  transcript (top) and the events feed (bottom). Comfortably readable. */
+export const RIGHT_PANEL_W = 360;
+/** Min width the right panel may shrink to on narrow viewports. */
+const RIGHT_PANEL_MIN_W = 220;
+/** Gutter inside the right panel (and between its conversation / events halves). */
+export const RIGHT_PAD = 8;
+/** Header band ("CONVERSATION" / "EVENTS") height within the right panel. */
+export const RIGHT_HEADER_H = 22;
 
+// -- BOTTOM strip (horizontal agent cards) ----------------------------------
+/** Height of the bottom agent strip. Tall enough for one compact card row plus
+ *  its section label; the strip scrolls/wraps horizontally for 26 agents. */
+export const STRIP_H = 200;
+/** Header gutter above the strip cards ("AGENTS · N"). */
+export const STRIP_HEADER_H = 18;
+/** Full bottom-strip card — laid out LEFT→RIGHT in a single row; the strip
+ *  scrolls horizontally so every agent's card is reachable (UIScene cardScroll).
+ *  Wide enough for the full intrinsic-drive needs row on its own line. */
+export const CARD_W = 246;
+export const CARD_H = STRIP_H - STRIP_HEADER_H - 8; // card body height inside strip
+export const CARD_GAP = 8;
+
+/** Minimum width the map stays visible at (the right panel never eats it all). */
+const MIN_WORLD_W = 360;
+/** Minimum height the map stays visible at (strip never eats it all). */
+const MIN_WORLD_H = 200;
+
+// -- event feed (now docked in the right panel's bottom half) ---------------
 export const LOG_LINES = 10;
-export const LOG_LINE_H = 14;
-export const LOG_PAD_X = 6;
-export const LOG_PAD_Y = 5;
-export const LOG_H = LOG_LINES * LOG_LINE_H + 10; // 150 — fixed height
-/** ~7.3px/char at 12px monospace inside LOG_W − padding. */
-export const LOG_MAX_CHARS = 68;
+export const LOG_LINE_H = 17;
+export const LOG_PAD_X = 8;
+export const LOG_PAD_Y = 7;
 
-export const PANEL_HEADER_H = 36;
+export const PANEL_HEADER_H = 42;
 export const PANEL_VISIBLE_TRACE = 5;
 
-/** Minimum width the world stays visible at (cards never eat the whole screen). */
-const MIN_WORLD_W = 280;
+/** Gutter reserved below the top chrome for section headers. */
+export const CARD_HEADER_H = 18;
 
 /**
  * Responsive HUD geometry docked to a live viewport. All rects are integer
- * pixels. Cards dock to the right edge, the feed to the bottom-left, the trace
- * panel fills the left-middle band between the top chrome and the feed.
+ * pixels. The conversation + events feed dock to a fixed-width RIGHT panel; the
+ * agent cards lay out horizontally along the BOTTOM strip; the map fills the
+ * wider center-left area between them and the top chrome.
  */
 export interface HudLayout {
   w: number;
@@ -85,10 +133,35 @@ export interface HudLayout {
   badgeRowH: number;
   topH: number;
   statusX: number;
+
+  // -- right panel (conversation top, events bottom) ------------------------
+  /** Left edge of the fixed-width right panel (also the map's right boundary). */
+  rightX: number;
+  rightW: number;
+  rightTop: number;
+  rightRect: Rect;
+
+  // -- map viewport (center-left) -------------------------------------------
+  mapX: number;
+  mapY: number;
+  mapW: number;
+  mapH: number;
+  mapRect: Rect;
+
+  // -- bottom agent strip ----------------------------------------------------
+  /** Top edge of the bottom agent strip. */
+  stripY: number;
+  stripH: number;
+  stripHeaderY: number;
   cardW: number;
+  /** Left edge of the right panel — retained name for isPointOverHud + headers. */
   cardX: number;
+  /** Top edge of the bottom-strip cards (below the strip's section header). */
   cardTop: number;
+  cardHeaderY: number;
   cardGap: number;
+
+  // -- events feed (right panel, bottom half) -------------------------------
   logX: number;
   logY: number;
   logW: number;
@@ -98,6 +171,8 @@ export interface HudLayout {
   logPadX: number;
   logPadY: number;
   logMaxChars: number;
+
+  // -- trace panel (overlays the right-panel conversation region) -----------
   panelX: number;
   panelY: number;
   panelW: number;
@@ -106,21 +181,25 @@ export interface HudLayout {
   panelCloseRect: Rect;
   panelHeaderH: number;
   panelVisibleTrace: number;
-  /** v3 — live party showcase strip, docked top-left over the trace-panel band */
+
+  // -- party / governance showcase strip (overlays conversation region) -----
   partyX: number;
   partyY: number;
   partyW: number;
   partyH: number;
   partyRect: Rect;
-  /** v3 (Wave 2) — conversation transcript panel, docked below the party strip
-   *  and above the feed, in the left band */
+
+  // -- conversation transcript (right panel, top half) ----------------------
   transcriptX: number;
   transcriptY: number;
   transcriptW: number;
   transcriptH: number;
   transcriptRect: Rect;
+
   cardHeight(count: number): number;
   cardRect(index: number, count: number): Rect;
+  /** How many full cards fit in the strip row (the horizontal scroll page). */
+  cardsPerPage(): number;
   feedLineRect(i: number): Rect;
   cardIndexAt(px: number, py: number, count: number): number | null;
   feedLineIndexAt(px: number, py: number): number | null;
@@ -129,45 +208,72 @@ export interface HudLayout {
 export function computeHud(viewW: number, viewH: number): HudLayout {
   const w = Math.max(1, Math.round(viewW));
   const h = Math.max(1, Math.round(viewH));
-  // Cards shrink only if the window is too narrow to keep the world visible.
-  const cardW = Math.min(CARD_W, Math.max(120, w - MIN_WORLD_W));
-  const cardX = w - cardW - 4;
-  const cardTop = HUD_TOP_H + 4;
-  const logH = LOG_H;
-  const logY = h - logH - 4;
-  const logX = 4;
-  const logW = Math.max(120, cardX - 8);
-  // Truncation must track the live feed width, not the old 768px design width:
-  // ~7.5px/char for the 12px monospace feed font (matches the design's 68 chars
-  // over its ~508px usable width). Without this the feed clips early on wide
-  // screens and leaves a large empty gutter.
-  const logMaxChars = Math.max(24, Math.floor((logW - 2 * LOG_PAD_X) / 7.5));
-  const panelX = 4;
-  const panelY = cardTop;
-  const panelW = Math.max(120, cardX - 8);
-  const panelH = Math.max(60, logY - panelY - 4);
-  const panelRect: Rect = { x: panelX, y: panelY, w: panelW, h: panelH };
 
-  // v3 — live party showcase: a slim strip (≤96px) overlaying the top of the
-  // trace-panel band (top-left). Reuses panelX/panelY/panelW; height is clamped
-  // so it never grows past the band. The trace panel is transient (opened on
-  // card click), so the strip overlays — never displaces — existing chrome.
-  const partyX = panelX;
-  const partyY = panelY;
-  const partyW = panelW;
-  const partyH = Math.min(96, Math.max(60, panelH));
+  // -- RIGHT panel: fixed width, shrinks only if the map would go below its
+  //    minimum. Spans full height under the top chrome.
+  const rightW = Math.min(
+    Math.max(RIGHT_PANEL_MIN_W, w - MIN_WORLD_W),
+    RIGHT_PANEL_W,
+  );
+  const rightX = w - rightW;
+  const rightTop = HUD_TOP_H;
+  // Bottom strip: a horizontal band along the bottom edge. Shrinks only if the
+  // map would go below its minimum height.
+  const stripH = Math.min(
+    STRIP_H,
+    Math.max(64, h - HUD_TOP_H - MIN_WORLD_H),
+  );
+  const stripY = h - stripH;
+  const rightH = Math.max(80, h - rightTop);
+  const rightRect: Rect = { x: rightX, y: rightTop, w: rightW, h: rightH };
+
+  // -- MAP viewport: center-left, between top chrome / right panel / strip.
+  const mapX = 0;
+  const mapY = HUD_TOP_H;
+  const mapW = Math.max(MIN_WORLD_W, rightX);
+  const mapH = Math.max(MIN_WORLD_H, stripY - mapY);
+  const mapRect: Rect = { x: mapX, y: mapY, w: mapW, h: mapH };
+
+  // -- Right panel split: conversation (top) over events feed (bottom). The
+  //    events feed gets a fixed slot sized to its LOG_LINES; the conversation
+  //    transcript takes the remaining upper space.
+  const panelInnerX = rightX + RIGHT_PAD;
+  const panelInnerW = Math.max(120, rightW - 2 * RIGHT_PAD);
+
+  // Events feed: docked to the BOTTOM of the right panel.
+  const logLineBlock = LOG_LINES * LOG_LINE_H + 2 * LOG_PAD_Y;
+  const eventsH = logLineBlock + 4;
+  const eventsTop = h - eventsH - 6;
+  const logX = panelInnerX;
+  const logW = panelInnerW;
+  const logH = eventsH;
+  const logY = eventsTop;
+  // ~8.0px/char for the 13px monospace feed font.
+  const logMaxChars = Math.max(24, Math.floor((logW - 2 * LOG_PAD_X) / 8.0));
+
+  // Conversation region top: just below the persistent "CONVERSATION" header.
+  const convTop = rightTop + RIGHT_HEADER_H + 2;
+  // Bottom of the conversation region: just above the events feed's header.
+  const convBottom = logY - RIGHT_HEADER_H - 4;
+
+  // Party / governance showcase strip: a slim banner pinned to the TOP of the
+  // conversation region. Transient — when shown it STACKS above the transcript
+  // (does not overlap it). Fixed slim height.
+  const partyX = panelInnerX;
+  const partyY = convTop;
+  const partyW = panelInnerW;
+  // Slim banner, clamped so it never eats more than ~40% of the conversation
+  // region (leaves the transcript its space even on short viewports).
+  const partyH = Math.max(68, Math.min(100, Math.floor((convBottom - convTop) * 0.4)));
   const partyRect: Rect = { x: partyX, y: partyY, w: partyW, h: partyH };
 
-  // v3 (Wave 2) — conversation transcript panel: docked BELOW the party strip
-  // and ABOVE the feed, reusing the left band's x/width. Height is clamped to the
-  // gap actually left above the feed (cap 120px). No min-floor: a 60px floor
-  // would push the bottom past logY and overlap the feed at viewport heights
-  // below ~362px. At the design size this is the full 120px. The trace panel is
-  // transient and overlays this band when open.
-  const transcriptX = panelX;
+  // Conversation transcript: BELOW the showcase strip band, down to just above
+  // the events feed header. (The strip overlays its own band only; the
+  // transcript starts beneath it so the two never collide.)
+  const transcriptX = panelInnerX;
   const transcriptY = partyY + partyH + 4;
-  const transcriptW = panelW;
-  const transcriptH = Math.max(0, Math.min(120, logY - transcriptY - 4));
+  const transcriptW = panelInnerW;
+  const transcriptH = Math.max(60, convBottom - transcriptY);
   const transcriptRect: Rect = {
     x: transcriptX,
     y: transcriptY,
@@ -175,14 +281,31 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     h: transcriptH,
   };
 
-  const cardHeight = (count: number): number => {
-    if (count <= 3) return CARD_H_NORMAL;
-    const fit = Math.floor((h - cardTop - 4) / count) - CARD_GAP;
-    return Math.max(40, Math.min(CARD_H_COMPACT, fit));
+  // Trace panel: overlays the FULL conversation region (from just below the
+  // persistent header down to just above the events feed). Transient — opened
+  // on card/feed click; covers both the showcase strip and the transcript.
+  const panelX = panelInnerX;
+  const panelY = convTop;
+  const panelW = panelInnerW;
+  const panelH = Math.max(60, convBottom - panelY);
+  const panelRect: Rect = { x: panelX, y: panelY, w: panelW, h: panelH };
+
+  // -- BOTTOM strip cards: full-size cards laid out LEFT→RIGHT in a single row
+  //    from x=4. The strip SCROLLS horizontally (UIScene windows the agent list
+  //    by cardScroll), so `index`/`count` here are SLOT positions in the current
+  //    visible window — every agent's card is reachable by scrolling. Cards whose
+  //    slot runs past the right panel are not drawn (they're scrolled to).
+  const cardTop = stripY + STRIP_HEADER_H;
+  const cardW = CARD_W;
+  const cardHeight = (_count: number): number => {
+    // Single full-height row of cards inside the strip body.
+    const body = stripH - STRIP_HEADER_H - 6;
+    return Math.max(40, Math.min(CARD_H, body));
   };
   const cardRect = (index: number, count: number): Rect => {
     const ch = cardHeight(count);
-    return { x: cardX, y: cardTop + index * (ch + CARD_GAP), w: cardW, h: ch };
+    const x = 4 + index * (cardW + CARD_GAP);
+    return { x, y: cardTop, w: cardW, h: ch };
   };
   const feedLineRect = (i: number): Rect => ({
     x: logX,
@@ -190,9 +313,19 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     w: logW,
     h: LOG_LINE_H,
   });
+  /** How many full cards fit in one row before the right panel (the scroll
+   *  window size). At least 1 so a narrow viewport still shows a card. */
+  const cardsPerPage = (): number => {
+    let n = 0;
+    while (4 + (n + 1) * (cardW + CARD_GAP) - CARD_GAP <= rightX) n++;
+    return Math.max(1, n);
+  };
   const cardIndexAt = (px: number, py: number, count: number): number | null => {
     for (let i = 0; i < count; i++) {
-      if (pointInRect(px, py, cardRect(i, count))) return i;
+      const r = cardRect(i, count);
+      // Only slots that fit left of the right panel are drawn + clickable.
+      if (r.x + r.w > rightX) break;
+      if (pointInRect(px, py, r)) return i;
     }
     return null;
   };
@@ -211,9 +344,22 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     badgeRowH: BADGE_ROW_H,
     topH: HUD_TOP_H,
     statusX: w - 6,
+    rightX,
+    rightW,
+    rightTop,
+    rightRect,
+    mapX,
+    mapY,
+    mapW,
+    mapH,
+    mapRect,
+    stripY,
+    stripH,
+    stripHeaderY: stripY + 2,
     cardW,
-    cardX,
+    cardX: rightX,
     cardTop,
+    cardHeaderY: stripY + 2,
     cardGap: CARD_GAP,
     logX,
     logY,
@@ -244,6 +390,7 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     transcriptRect,
     cardHeight,
     cardRect,
+    cardsPerPage,
     feedLineRect,
     cardIndexAt,
     feedLineIndexAt,
@@ -251,18 +398,16 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
 }
 
 /**
- * True when a screen point falls on opaque HUD chrome (top bar/badges, the
- * right-hand card column, or the bottom-left event feed). WorldScene uses this
- * to suppress camera pan / click-to-follow when the spectator is interacting
- * with the HUD. The trace panel is handled separately (it's transient) via the
- * REG_HUD_PANEL registry rect.
+ * True when a screen point falls on opaque HUD chrome (top chrome, the
+ * right-side conversation/events panel, or the bottom agent strip). WorldScene
+ * uses this to suppress camera pan / click-to-follow when the spectator is
+ * interacting with the HUD. The trace panel is handled separately (it's
+ * transient) via the REG_HUD_PANEL registry rect.
  */
 export function isPointOverHud(hud: HudLayout, px: number, py: number): boolean {
   if (py <= hud.topH) return true; // top bar + badge row, full width
-  if (px >= hud.cardX) return true; // right-hand card column
-  if (pointInRect(px, py, { x: hud.logX, y: hud.logY, w: hud.logW, h: hud.logH })) {
-    return true; // event feed
-  }
+  if (px >= hud.rightX) return true; // right-side conversation/events panel
+  if (py >= hud.stripY) return true; // bottom agent strip
   return false;
 }
 
@@ -275,7 +420,7 @@ export const REG_HUD = "hudPanelRect";
 // and any code still importing them). These mirror computeHud at design size.
 // ---------------------------------------------------------------------------
 // Legacy fixed design size (768×576) — the v1 logical frame the pure layout
-// unit tests assert. The live HUD docks to the viewport (computeHud), so this
+// unit tests reference. The live HUD docks to the viewport (computeHud), so this
 // design size is independent of the map dimensions.
 export const HUD_W = 768; // v1 design frame: 24 tiles × 32px (frozen)
 export const HUD_H = 576; // v1 design frame: 18 tiles × 32px (frozen)
@@ -283,14 +428,15 @@ export const HUD_H = 576; // v1 design frame: 18 tiles × 32px (frozen)
 const DESIGN = computeHud(HUD_W, HUD_H);
 
 export const BADGE_ROW_Y = DESIGN.badgeRowY;
-export const CARD_X = DESIGN.cardX; // 528
-export const CARD_TOP = DESIGN.cardTop; // 48
+export const CARD_X = DESIGN.cardX;
+export const CARD_TOP = DESIGN.cardTop;
 export const LOG_X = DESIGN.logX;
-export const LOG_W = DESIGN.logW; // 520
-export const LOG_Y = DESIGN.logY; // 422
+export const LOG_W = DESIGN.logW;
+export const LOG_Y = DESIGN.logY;
+export const LOG_H = DESIGN.logH;
 export const PANEL_X = DESIGN.panelX;
 export const PANEL_Y = DESIGN.panelY;
-export const PANEL_W = DESIGN.panelW; // 520
+export const PANEL_W = DESIGN.panelW;
 export const PANEL_H = DESIGN.panelH;
 export const PANEL_RECT: Rect = DESIGN.panelRect;
 export const PANEL_CLOSE_RECT: Rect = DESIGN.panelCloseRect;

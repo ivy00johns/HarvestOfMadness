@@ -40,7 +40,7 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly twelve walkable homesteads: full wall ring + 1 floor door perimeter, floor interior + 1 bed", () => {
+  it("has twelve walkable two-room homesteads: full wall ring + 1 door, divider + 1 reachable bed", () => {
     expect(HOMESTEADS).toHaveLength(12);
     for (const h of HOMESTEADS) {
       // Room bounds are SIZE-derived (varied 4×4 / 5×5 / 6×5), never +4.
@@ -86,25 +86,56 @@ describe("town generator", () => {
               : { x: h.door.x - 1, y: h.door.y };
       expect(at(ext), `${h.id} door exterior neighbour is a road path`).toBe("path");
 
-      // -- interior: (w-2)*(h-2)-1 floor + exactly 1 bedTile (== h.bed) -------
-      let intFloor = 0;
+      // -- interior: floor + EXACTLY 1 bedTile + a divider wall (two-room split).
+      //    The bed must be REACHABLE from the door through floor cells (BFS), so
+      //    the doorway gap in the divider really connects the two rooms.
+      void interiorTiles; // multi-room: exact floor count no longer fixed
       let intBed = 0;
+      let intWall = 0;
       let theBed: Vec2 | null = null;
       for (let y = y0 + 1; y <= y1 - 1; y++) {
         for (let x = x0 + 1; x <= x1 - 1; x++) {
           const t = map.tiles[y][x];
-          if (t === "floor") intFloor++;
-          else if (t === "bedTile") {
+          if (t === "bedTile") {
             intBed++;
             theBed = { x, y };
-          } else {
+          } else if (t === "wall") {
+            intWall++;
+          } else if (t !== "floor") {
             throw new Error(`unexpected interior tile ${t} at ${x},${y}`);
           }
         }
       }
-      expect(intFloor, `${h.id} interior floor count`).toBe(interiorTiles - 1);
       expect(intBed, `${h.id} interior bedTile count`).toBe(1);
       expect(theBed, `${h.id} bed`).toEqual(h.bed);
+      expect(intWall, `${h.id} has an interior divider wall`).toBeGreaterThan(0);
+
+      // BFS from the door over floor/bed cells must reach the bed.
+      const passable = (px: number, py: number): boolean => {
+        if (px < x0 || px > x1 || py < y0 || py > y1) return false;
+        const t = map.tiles[py][px];
+        return t === "floor" || t === "bedTile";
+      };
+      const seen = new Set<string>([`${h.door.x},${h.door.y}`]);
+      const queue: Vec2[] = [{ ...h.door }];
+      let bedReached = false;
+      while (queue.length > 0) {
+        const c = queue.shift() as Vec2;
+        if (c.x === h.bed.x && c.y === h.bed.y) {
+          bedReached = true;
+          break;
+        }
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = c.x + dx;
+          const ny = c.y + dy;
+          const k = `${nx},${ny}`;
+          if (!seen.has(k) && passable(nx, ny)) {
+            seen.add(k);
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+      expect(bedReached, `${h.id} bed reachable from the door`).toBe(true);
 
       // -- plot is all soil ---------------------------------------------------
       for (let y = h.plot.y0; y <= h.plot.y1; y++) {
@@ -197,17 +228,32 @@ describe("town generator", () => {
     }
   });
 
-  it("scatters decor only on grass, within bounds, capped", () => {
-    expect(map.decor.length).toBeGreaterThan(0);
-    expect(map.decor.length).toBeLessThanOrEqual(16);
+  it("scatters dense multi-kind decor only on grass, within bounds, one per tile", () => {
+    // Lush ground cover (trees/bushes/flowers/grass), not the old 16-tree cap.
+    expect(map.decor.length).toBeGreaterThan(100);
+    const kinds = new Set(map.decor.map((d) => d.kind));
+    for (const k of ["tree", "bush", "flower", "grass"] as const) {
+      expect(kinds.has(k), `decor includes ${k}`).toBe(true);
+    }
+    const seen = new Set<string>();
     for (const d of map.decor) {
-      expect(d.kind).toBe("tree");
+      expect(["tree", "bush", "flower", "grass"]).toContain(d.kind);
+      expect(typeof d.variant, "decor has a numeric variant").toBe("number");
       expect(d.pos.x).toBeGreaterThan(0);
       expect(d.pos.y).toBeGreaterThan(0);
       expect(d.pos.x).toBeLessThan(MAP_WIDTH - 1);
       expect(d.pos.y).toBeLessThan(MAP_HEIGHT - 1);
       expect(map.tiles[d.pos.y][d.pos.x], `decor at ${d.pos.x},${d.pos.y}`).toBe("grass");
+      const key = `${d.pos.x},${d.pos.y}`;
+      expect(seen.has(key), `one decor per tile at ${key}`).toBe(false);
+      seen.add(key);
     }
+  });
+
+  it("decor scatter is deterministic (zero RNG)", () => {
+    const a = generateMap().decor;
+    const b = generateMap().decor;
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
   it("every building footprint is actually built and its door is in range", () => {

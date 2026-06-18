@@ -16,11 +16,11 @@
  *
  * Each room's door-gap exterior neighbour is a road tile (roads are stamped
  * FIRST, rooms second), so every interior is BFS-connected to the tavern. The
- * tavern sits centrally in the downtown cluster so every homestead reaches it
- * within one phase (≤ 40 tiles A*; see tests/agents/party-emergence.test.ts).
+ * tavern sits dead-centre on the spine so every homestead reaches it within the
+ * ≤ 100 A* reachability floor (see tests/agents/party-emergence.test.ts).
  *
- * A horizontal main-connector path row at y=20 spans the interior (the spine
- * the downtown doors + the vertical roads open onto). Divergence is spatial:
+ * A horizontal main-connector path row at y=50 (the spine) spans the interior;
+ * the civic doors and the three vertical trunks open onto it. Divergence is spatial:
  * each agent starts at its own door and the LLM/mock both act on the NEAREST
  * crop/tile/bed, so agents tend their own plots and sleep in their own beds
  * without any ownership rules.
@@ -28,9 +28,13 @@
 import type { Landmark, TileType, Vec2, WorldObject } from "@contracts/types";
 import { MAP_HEIGHT, MAP_WIDTH } from "@contracts/types";
 
+export type DecorKind = "tree" | "bush" | "flower" | "grass";
+
 export interface DecorItem {
-  kind: "tree";
+  kind: DecorKind;
   pos: Vec2;
+  /** deterministic variant index into the kind's renderer frame list */
+  variant: number;
 }
 
 export interface MapData {
@@ -115,54 +119,69 @@ interface HomesteadSpec {
 }
 
 /**
- * Twelve homesteads scattered in an organic, asymmetric arrangement around the
- * downtown civic core. Sizes VARY (4×4, 5×5, 6×5) so the town reads
- * hand-built; each door faces a residential road spur (its exterior neighbour is
- * a `path`), and the soil plot hugs an open side within OBSERVATION_RADIUS=4 of
- * the door. Persona→quadrant intent (personas.ts) is preserved loosely: brix/
- * ford/wren/dora/gus/clem north; fern/nell/sage/rusty/moss/zola south.
+ * TWELVE big, multi-room homesteads in four corner HAMLETS (3 homes each) around
+ * the central civic hub (Option C 140×100 re-lay). Each is a large 8×8 / 9×8 home
+ * (NOT the old 5×6/5×7 cottage) with a vertical interior divider + doorway gap
+ * (see stampHomestead) splitting it into TWO rooms, a door facing a residential
+ * road (north y=20 / south y=80), and a soil plot beside the door. The bigger
+ * footprints reclaim the empty countryside that previously surrounded each corner
+ * hamlet (the rim + the central road stretches stay open).
  *
- * IDs and the one-bed-per-house invariant are unchanged, so personas.ts and the
- * 12-bed / 12-house landmark contract hold. Variety comes from SIZE + organic
- * placement, never from changing the count.
+ * Per hamlet: TWO homes sit on the outer road edge (door toward the road) and ONE
+ * sits inboard a row deeper, doors all opening onto the nearest residential road
+ * (north y=20 / south y=80) so each door's exterior neighbour is a path tile. Side
+ * plots sit within OBSERVATION_RADIUS (Chebyshev 4) of the door. Every door stays
+ * within the ≤100 A* tavern-reachability floor. One bed + one house landmark per
+ * home → the 12-bed / 12-house landmark contract. brix is HOMESTEADS[0] → its plot
+ * is FIELD_RECT; it extends DOWN to y=19 so a soil cell at y=19 borders the north
+ * road y=20 (the executor TILL-rejects-road fixture).
+ *
+ * Homes are 8×8 except the four inboard homes (wren/clem/sage/zola) which are 9×8,
+ * so the town spans ≥2 distinct house sizes (the organic, hand-built invariant).
  */
 export const HOMESTEADS: HomesteadSpec[] = [
-  // -- north band (rooms above the spine; doors face SOUTH onto the y=12
-  //    residential row → exterior neighbour = door.y + 1 = 12 = path). Soil
-  //    plots hug an OPEN side beside the house, nearest cell ≤ Chebyshev 4 of
-  //    the door. Sizes vary (5×5 / 6×5 / 4×4) for an organic, hand-built feel. --
-  // 5×5 — plot to the EAST
-  { id: "brix", house: { x: 2,  y: 7 }, size: { w: 5, h: 5 }, bed: { x: 4,  y: 9 }, door: { x: 4,  y: 11 }, doorSide: "S", plot: { x0: 7,  y0: 9, x1: 9,  y1: 11 } },
-  // 6×5 (wide) — plot to the WEST
-  { id: "ford", house: { x: 14, y: 7 }, size: { w: 6, h: 5 }, bed: { x: 16, y: 9 }, door: { x: 16, y: 11 }, doorSide: "S", plot: { x0: 11, y0: 9, x1: 13, y1: 11 } },
-  // 4×4 (small) — plot to the EAST
-  { id: "wren", house: { x: 22, y: 8 }, size: { w: 4, h: 4 }, bed: { x: 23, y: 9 }, door: { x: 23, y: 11 }, doorSide: "S", plot: { x0: 26, y0: 9, x1: 28, y1: 11 } },
-  // 5×5 — plot to the WEST
-  { id: "dora", house: { x: 38, y: 7 }, size: { w: 5, h: 5 }, bed: { x: 40, y: 9 }, door: { x: 40, y: 11 }, doorSide: "S", plot: { x0: 34, y0: 9, x1: 36, y1: 11 } },
-  // 6×5 (wide) — plot to the EAST
-  { id: "gus",  house: { x: 45, y: 7 }, size: { w: 6, h: 5 }, bed: { x: 47, y: 9 }, door: { x: 47, y: 11 }, doorSide: "S", plot: { x0: 51, y0: 9, x1: 53, y1: 11 } },
-  // 4×4 (small) — plot to the WEST
-  { id: "clem", house: { x: 57, y: 8 }, size: { w: 4, h: 4 }, bed: { x: 58, y: 9 }, door: { x: 58, y: 11 }, doorSide: "S", plot: { x0: 54, y0: 9, x1: 56, y1: 11 } },
-  // -- south band (rooms below the spine; doors face NORTH onto the y=28
-  //    residential row → exterior neighbour = door.y - 1 = 28 = path). --------
-  // 5×5 — plot to the EAST
-  { id: "fern",  house: { x: 2,  y: 29 }, size: { w: 5, h: 5 }, bed: { x: 4,  y: 31 }, door: { x: 4,  y: 29 }, doorSide: "N", plot: { x0: 7,  y0: 29, x1: 9,  y1: 31 } },
-  // 4×4 (small) — plot to the EAST
-  { id: "nell",  house: { x: 14, y: 29 }, size: { w: 4, h: 4 }, bed: { x: 15, y: 30 }, door: { x: 15, y: 29 }, doorSide: "N", plot: { x0: 18, y0: 29, x1: 20, y1: 31 } },
-  // 6×5 (wide) — plot to the WEST
-  { id: "sage",  house: { x: 24, y: 29 }, size: { w: 6, h: 5 }, bed: { x: 26, y: 31 }, door: { x: 26, y: 29 }, doorSide: "N", plot: { x0: 21, y0: 29, x1: 23, y1: 31 } },
-  // 5×5 — plot to the WEST
-  { id: "rusty", house: { x: 38, y: 29 }, size: { w: 5, h: 5 }, bed: { x: 40, y: 31 }, door: { x: 40, y: 29 }, doorSide: "N", plot: { x0: 34, y0: 29, x1: 36, y1: 31 } },
-  // 4×4 (small) — plot to the EAST
-  { id: "moss",  house: { x: 45, y: 29 }, size: { w: 4, h: 4 }, bed: { x: 46, y: 30 }, door: { x: 46, y: 29 }, doorSide: "N", plot: { x0: 49, y0: 29, x1: 51, y1: 31 } },
-  // 6×5 (wide) — plot to the WEST
-  { id: "zola",  house: { x: 55, y: 29 }, size: { w: 6, h: 5 }, bed: { x: 57, y: 31 }, door: { x: 57, y: 29 }, doorSide: "N", plot: { x0: 52, y0: 29, x1: 54, y1: 31 } },
+  // -- NW hamlet (doors onto the north road y=20) --
+  { id: "brix", house: { x: 2,  y: 12 }, size: { w: 8, h: 8 }, bed: { x: 8,  y: 14 }, door: { x: 8,  y: 19 }, doorSide: "S", plot: { x0: 10, y0: 15, x1: 12, y1: 19 } },
+  { id: "ford", house: { x: 14, y: 12 }, size: { w: 8, h: 8 }, bed: { x: 20, y: 14 }, door: { x: 20, y: 19 }, doorSide: "S", plot: { x0: 22, y0: 16, x1: 23, y1: 19 } },
+  { id: "wren", house: { x: 4,  y: 21 }, size: { w: 9, h: 8 }, bed: { x: 10, y: 26 }, door: { x: 10, y: 21 }, doorSide: "N", plot: { x0: 13, y0: 21, x1: 13, y1: 24 } },
+  // -- NE hamlet (doors onto the north road y=20) --
+  { id: "dora", house: { x: 130, y: 12 }, size: { w: 8, h: 8 }, bed: { x: 132, y: 14 }, door: { x: 132, y: 19 }, doorSide: "S", plot: { x0: 128, y0: 15, x1: 128, y1: 19 } },
+  { id: "gus",  house: { x: 118, y: 12 }, size: { w: 8, h: 8 }, bed: { x: 124, y: 14 }, door: { x: 124, y: 19 }, doorSide: "S", plot: { x0: 126, y0: 16, x1: 126, y1: 19 } },
+  { id: "clem", house: { x: 127, y: 21 }, size: { w: 9, h: 8 }, bed: { x: 129, y: 26 }, door: { x: 129, y: 21 }, doorSide: "N", plot: { x0: 126, y0: 22, x1: 126, y1: 25 } },
+  // -- SW hamlet (doors onto the south road y=80) --
+  { id: "fern", house: { x: 2,  y: 81 }, size: { w: 8, h: 8 }, bed: { x: 8,  y: 85 }, door: { x: 8,  y: 81 }, doorSide: "N", plot: { x0: 10, y0: 81, x1: 12, y1: 85 } },
+  { id: "nell", house: { x: 14, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 20, y: 85 }, door: { x: 20, y: 81 }, doorSide: "N", plot: { x0: 22, y0: 81, x1: 23, y1: 84 } },
+  { id: "sage", house: { x: 4,  y: 72 }, size: { w: 9, h: 8 }, bed: { x: 10, y: 74 }, door: { x: 10, y: 79 }, doorSide: "S", plot: { x0: 13, y0: 75, x1: 13, y1: 78 } },
+  // -- SE hamlet (doors onto the south road y=80) --
+  { id: "rusty", house: { x: 130, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 132, y: 85 }, door: { x: 132, y: 81 }, doorSide: "N", plot: { x0: 128, y0: 81, x1: 128, y1: 85 } },
+  { id: "moss",  house: { x: 118, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 124, y: 85 }, door: { x: 124, y: 81 }, doorSide: "N", plot: { x0: 126, y0: 81, x1: 126, y1: 84 } },
+  { id: "zola",  house: { x: 127, y: 72 }, size: { w: 9, h: 8 }, bed: { x: 129, y: 74 }, door: { x: 129, y: 79 }, doorSide: "S", plot: { x0: 126, y0: 75, x1: 126, y1: 78 } },
 ];
 
 /** persona id -> start (door) tile, consumed by src/agents/personas.ts. */
 export const HOMESTEAD_DOORS: Record<string, Vec2> = Object.fromEntries(
   HOMESTEADS.map((h) => [h.id, { ...h.door }]),
 );
+
+/**
+ * A reserved, road-adjacent grass footprint for a FUTURE homestead. Stamps no
+ * tiles, adds no landmark, binds no persona — pure capacity the agents layer
+ * can later activate (add a persona + promote to HOMESTEADS) with no re-survey.
+ *
+ * The original fourteen lots have all been PROMOTED into occupied HOMESTEADS
+ * (the 26-townsfolk expansion), so this array is now empty. The type + export
+ * are retained so future capacity can be reserved again with no re-survey.
+ */
+export interface ReserveLot {
+  id: string;
+  house: { x0: number; y0: number; x1: number; y1: number };
+  bed: Vec2;
+  door: Vec2;
+  doorSide: DoorSide;
+  plot: { x0: number; y0: number; x1: number; y1: number };
+}
+
+export const RESERVE_LOTS: ReserveLot[] = [];
 
 // -- road network ------------------------------------------------------------
 // A hand-authored set of road SEGMENTS (each a 1-wide horizontal or vertical
@@ -171,7 +190,11 @@ export const HOMESTEAD_DOORS: Record<string, Vec2> = Object.fromEntries(
 // park access. Stamped BEFORE rooms so every door's exterior neighbour is path.
 
 /** main connector path row — the spine the verticals + downtown doors meet. */
-const SPINE_Y = 20;
+const SPINE_Y = 50;
+/** north residential road row (north doors' exterior y) */
+const NORTH_ROAD_Y = 20;
+/** south residential road row (south doors' exterior y) */
+const SOUTH_ROAD_Y = 80;
 
 interface RoadSeg {
   x0: number;
@@ -181,34 +204,31 @@ interface RoadSeg {
 }
 
 /**
- * ROAD_SEGMENTS — every road run in the town. Order is irrelevant (they are all
- * stamped to `path`). Authored so: (a) the y=20 spine spans the interior; (b) a
- * downtown loop rings the central plaza; (c) residential spurs sit just outside
- * each homestead door; (d) verticals tie the bands to the spine.
+ * ROAD_SEGMENTS — every road run in the 140×100 town (Option C civic-hub layout).
+ * Order is irrelevant (all stamped to `path`). Six runs: (a) the y=50 spine spans
+ * the full interior and the five civic doors open directly onto it; (b) two
+ * residential roads (north y=20, south y=80) host the four corner hamlets;
+ * (c) three vertical trunks (x=24/70/116) tie both residential roads to the spine.
+ *
+ * The residential roads run x∈[7..132] (wider than the design draft's [10..130])
+ * so the westmost doors (brix {9,19}, fern {9,79}) and the eastmost columns
+ * (gus/moss {129,..}) land their exteriors on the road. The map rim and the empty
+ * central road stretches are left as countryside / future-hamlet ground.
  */
 export const ROAD_SEGMENTS: RoadSeg[] = [
-  // main horizontal connector spine (y=20) across the interior.
-  { x0: 1, y0: SPINE_Y, x1: MAP_WIDTH - 2, y1: SPINE_Y },
-  // -- north residential row (y=12) the north doors' exteriors (y=12) sit on --
-  { x0: 4,  y0: 12, x1: 60, y1: 12 },
-  // -- south residential row (y=28) the south doors' exteriors (y=28) sit on --
-  { x0: 4,  y0: 28, x1: 60, y1: 28 },
-  // -- vertical trunks tying the residential rows down to the spine ----------
-  { x0: 4,  y0: 12, x1: 4,  y1: 28 }, // far-west trunk (brix / fern)
-  { x0: 16, y0: 12, x1: 16, y1: 28 }, // west-mid trunk
-  { x0: 26, y0: 12, x1: 26, y1: 28 }, // mid-left trunk
-  { x0: 40, y0: 12, x1: 40, y1: 28 }, // mid-right trunk
-  { x0: 50, y0: 12, x1: 50, y1: 28 }, // east-mid trunk
-  { x0: 60, y0: 12, x1: 60, y1: 28 }, // far-east trunk (clem / zola)
-  // -- downtown plaza: a compact loop just above the spine, x 18..44, y 19 ----
-  // The civic doors all drop onto the y=19 plaza row (one above the spine),
-  // which is itself joined to the spine by short verticals at each door column.
-  { x0: 18, y0: 19, x1: 44, y1: 19 }, // plaza row (civic door exteriors)
-  { x0: 20, y0: 19, x1: 20, y1: 20 }, // shop column joiner to spine
-  { x0: 31, y0: 19, x1: 31, y1: 20 }, // tavern column joiner to spine
-  { x0: 41, y0: 19, x1: 41, y1: 20 }, // cafe column joiner to spine
-  // The PARK (open grass, y=14..19) needs no road: its bottom row (y=19) sits
-  // directly on top of the spine (y=20), so the whole region is BFS-connected.
+  // main horizontal connector spine across the full interior (y=50).
+  { x0: 6, y0: SPINE_Y, x1: 134, y1: SPINE_Y },
+  // north residential road (NW + NE hamlet doors open onto y=20).
+  // West end at x=7 (not the draft's x=10) so the brix door {9,19} exterior
+  // {9,20} lands on the road; east end at x=132 so gus's door column is covered.
+  { x0: 7, y0: NORTH_ROAD_Y, x1: 132, y1: NORTH_ROAD_Y },
+  // south residential road (SW + SE hamlet doors open onto y=80). Same x span
+  // so the fern {9,79} / rusty doors' exteriors land on the road.
+  { x0: 7, y0: SOUTH_ROAD_Y, x1: 132, y1: SOUTH_ROAD_Y },
+  // three vertical trunks tying the north + south roads to the spine.
+  { x0: 24,  y0: NORTH_ROAD_Y, x1: 24,  y1: SOUTH_ROAD_Y }, // west trunk
+  { x0: 70,  y0: NORTH_ROAD_Y, x1: 70,  y1: SOUTH_ROAD_Y }, // center trunk
+  { x0: 116, y0: NORTH_ROAD_Y, x1: 116, y1: SOUTH_ROAD_Y }, // east trunk
 ];
 
 // -- downtown civic cluster --------------------------------------------------
@@ -228,24 +248,27 @@ interface CommonsSpec {
 }
 
 /**
- * COMMONS — the five civic rooms ringing the plaza. Doors all open onto the
- * downtown loop / spine. The tavern is dead-centre so every homestead door is
- * ≤ 40 A* tiles away (party-emergence reachability gate).
+ * COMMONS — the five civic rooms straddling the central spine (y=50). Doors all
+ * open onto the spine. The tavern is dead-centre so every homestead door is
+ * ≤ 100 A* tiles away (party-emergence reachability gate).
  */
+// LARGE civic buildings (Smallville-scale rooms with space for aisles, desk
+// rows and full furnishing). The dead-centre tavern keeps the party-emergence
+// reachability floor (≤100 A* door→tavern) satisfied for the four corner
+// hamlets; shop/cafe sit west/east above the spine, school/office below it. They straddle a few
+// vertical road trunks, but the spine + the other trunks keep the town connected.
 const COMMONS: CommonsSpec[] = [
-  // Tavern: walkable 7×5 room, dead-centre just above the spine; door drops
-  // south onto the plaza row (y=19), one tile above the spine. landmark pos =
-  // the door-gap, so it is ≤ 2 tiles from the spine for every approaching agent.
-  { kind: "tavern", rect: { x0: 28, y0: 14, x1: 34, y1: 18 }, door: { x: 31, y: 18 }, doorSide: "S" },
-  // Shop: walkable 5×5 room, west of the tavern; door south onto the plaza row.
-  // shopTile on the centre interior cell.
-  { kind: "shop", rect: { x0: 18, y0: 14, x1: 22, y1: 18 }, door: { x: 20, y: 18 }, doorSide: "S", specialTile: { x: 20, y: 16 } },
-  // Cafe: walkable 5×4 room, east of the tavern; door south onto the plaza row.
-  { kind: "cafe", rect: { x0: 39, y0: 15, x1: 43, y1: 18 }, door: { x: 41, y: 18 }, doorSide: "S" },
-  // Office: walkable 5×5 room, below-left of the spine; door north onto the spine.
-  { kind: "office", rect: { x0: 22, y0: 21, x1: 26, y1: 25 }, door: { x: 24, y: 21 }, doorSide: "N" },
-  // School: walkable 6×5 room, below-right of the spine; door north onto the spine.
-  { kind: "school", rect: { x0: 35, y0: 21, x1: 40, y1: 25 }, door: { x: 38, y: 21 }, doorSide: "N" },
+  // Supermarket: 8×7 above the spine; door S onto the spine (ext y=50); shopTile gate.
+  { kind: "shop", rect: { x0: 50, y0: 43, x1: 57, y1: 49 }, door: { x: 53, y: 49 }, doorSide: "S", specialTile: { x: 53, y: 46 } },
+  // Tavern: 9×8, dead-centre above the spine; door S onto the spine (ext y=50).
+  // The tavern door is the party-emergence reachability anchor.
+  { kind: "tavern", rect: { x0: 62, y0: 42, x1: 70, y1: 49 }, door: { x: 66, y: 49 }, doorSide: "S" },
+  // Cafe: 7×6, east of the tavern; door S onto the spine.
+  { kind: "cafe", rect: { x0: 73, y0: 44, x1: 79, y1: 49 }, door: { x: 76, y: 49 }, doorSide: "S" },
+  // School: 9×8, below the spine; door N onto the spine (ext y=50).
+  { kind: "school", rect: { x0: 60, y0: 51, x1: 68, y1: 58 }, door: { x: 64, y: 51 }, doorSide: "N" },
+  // Office / town hall: 8×7, below-right of the spine; door N onto the spine.
+  { kind: "office", rect: { x0: 72, y0: 51, x1: 79, y1: 57 }, door: { x: 75, y: 51 }, doorSide: "N" },
 ];
 
 const SHOP_SPEC = COMMONS.find((c) => c.kind === "shop")!;
@@ -256,20 +279,23 @@ const SHOP_TILE: Vec2 = { ...SHOP_SPEC.specialTile! };
 // pond (water) and a few benches/trees. Sits in the open SE flat, clear of the
 // rooms and roads. The pond is ≥4 wide with grass flanks (pathfinding pond
 // detour test). WATER_POS is the pond's NW corner.
-export const PARK = { x0: 49, y0: 14, x1: 54, y1: 19 };
-/** Inner pond: 4 wide, grass border inside the park region. */
-const POND = { x0: 50, y0: 15, x1: 53, y1: 17 };
+export const PARK = { x0: 74, y0: 24, x1: 84, y1: 34 };
+/** Inner pond: exactly 4 wide (x0..x0+3), grass border inside the park region.
+ *  The 4-wide invariant is load-bearing — tests/world/pathfinding.test.ts derives
+ *  the pond's east grass flank as WATER_POS.x + 4 (= x1 + 1). */
+const POND = { x0: 77, y0: 27, x1: 80, y1: 30 };
 
 // -- v3: world object positions (plaza + park) -------------------------------
-// Well: on the central plaza row, between the shop and the tavern columns.
-export const WELL_POS: Vec2 = { x: 25, y: 19 };
+// Well: on the central plaza between the shop (x≤57) and the tavern (x≥62),
+// its south edge on the spine path (y=49 floor row → ext y=50 spine).
+export const WELL_POS: Vec2 = { x: 59, y: 49 };
 // Notice board: one step east of the well (same row) — objects.test geometry
 // pins board = well + (1,0).
-export const NOTICE_BOARD_POS: Vec2 = { x: 26, y: 19 };
+export const NOTICE_BOARD_POS: Vec2 = { x: 60, y: 49 };
 // Bench: on park grass immediately west of the pond (adjacent to water).
-export const BENCH_POS: Vec2 = { x: 49, y: 16 };
+export const BENCH_POS: Vec2 = { x: 75, y: 28 };
 // A second bench INSIDE the park (typology park-bench test), east of the pond.
-const PARK_BENCH_POS: Vec2 = { x: 54, y: 16 };
+const PARK_BENCH_POS: Vec2 = { x: 83, y: 28 };
 
 /** The usable world objects placed in the town (well, board, two benches). */
 export const WORLD_OBJECTS: WorldObject[] = [
@@ -338,6 +364,17 @@ function stampHomestead(tiles: TileType[][], landmarks: Landmark[], h: Homestead
   const x1 = h.house.x + h.size.w - 1;
   const y1 = h.house.y + h.size.h - 1;
   stampRoom(tiles, h.house.x, h.house.y, x1, y1, h.door);
+  // TWO-ROOM split: a vertical interior wall with a single doorway gap divides
+  // the home into two rooms (Smallville-style). The divider sits between the
+  // door's room and the bed's room; the gap (kept `floor`) connects them so the
+  // bed stays reachable. Skipped for any home too small to hold a divider.
+  if (h.size.w >= 5 && h.size.h >= 4) {
+    const dcol = h.house.x + Math.ceil(h.size.w / 2);
+    const gapRow = h.house.y + Math.floor(h.size.h / 2);
+    for (let y = h.house.y + 1; y <= y1 - 1; y++) {
+      if (y !== gapRow) tiles[y][dcol] = "wall";
+    }
+  }
   tiles[h.bed.y][h.bed.x] = "bedTile";
   fillRect(tiles, h.plot.x0, h.plot.y0, h.plot.x1, h.plot.y1, "soil");
   landmarks.push({ kind: "bed", pos: { ...h.bed } });
@@ -364,7 +401,7 @@ export function generateMap(): MapData {
   const landmarks: Landmark[] = [];
 
   // Homesteads (varied sizes) — rooms over roads, soil plots, bed + house
-  // landmarks (12 each).
+  // landmarks (10 each).
   for (const h of HOMESTEADS) stampHomestead(tiles, landmarks, h);
 
   // Civic cluster (shop / tavern / cafe / office / school).
@@ -391,37 +428,160 @@ export function generateMap(): MapData {
   const parkCentre: Vec2 = { x: PARK.x1, y: PARK.y1 }; // SE park corner — grass
   landmarks.push({ kind: "park", pos: { ...parkCentre } });
 
-  // Decorative trees on open grass (all-grass 4-neighbourhood), deterministic
-  // (no RNG) and capped so the bigger map reads alive without clutter. The
-  // (x*7 + y*13) % 17 test is a cheap coprime scatter selecting ~1/17 of
-  // eligible tiles with no clustering. Park-region grass tiles are eligible
-  // too, so a few trees naturally bias into the park.
+  // Decorative ground cover — deterministic (zero RNG / Date), placed to read as
+  // HAND-PLANTED copses + meadows rather than the procedural grid the old layout
+  // betrayed. The previous scatter keyed every kind off a single linear congruence
+  // (a·x + b·y) % m === 0, which is geometrically a family of parallel DIAGONAL
+  // lines — the "diagonal tree rows" the zoomed-out review flagged. This rewrite
+  // replaces that with: (a) deterministic tree COPSES grown as radial blobs around
+  // hash-jittered cluster centres, plus a thin rim woodland; and (b) bushes /
+  // flowers / grass scattered with a well-mixed 2D integer HASH (not a single
+  // congruence) and biased toward the copses, so no kind lines up into stripes.
+  // One decor item per grass tile (priority tree > bush > flower > grass).
+
+  // Well-mixed deterministic 2D integer hash → 32-bit unsigned. Bit-avalanche
+  // (xorshift/multiply) so neighbouring inputs scatter, with NO linear structure
+  // that could re-introduce diagonal banding. Pure integer math, no RNG/Date.
+  const hash2 = (a: number, b: number): number => {
+    let hsh = (a * 0x1f1f1f1f) ^ (b + 0x9e3779b9 + (a << 6) + (a >> 2));
+    hsh = Math.imul(hsh ^ (hsh >>> 15), 0x2c1b3c6d);
+    hsh = Math.imul(hsh ^ (hsh >>> 12), 0x297a2d39);
+    hsh ^= hsh >>> 15;
+    return hsh >>> 0;
+  };
+  // Float in [0,1) from the hash, for threshold tests.
+  const rand2 = (a: number, b: number): number => hash2(a, b) / 0x100000000;
+
   const decor: DecorItem[] = [];
-  for (let y = 2; y < MAP_HEIGHT - 2 && decor.length < 16; y++) {
-    for (let x = 2; x < MAP_WIDTH - 2; x++) {
-      if (tiles[y][x] !== "grass") continue;
-      const allGrass =
-        tiles[y - 1][x] === "grass" &&
-        tiles[y + 1][x] === "grass" &&
-        tiles[y][x - 1] === "grass" &&
-        tiles[y][x + 1] === "grass";
-      // Hard cap at 16: guard the push itself — the outer-loop guard alone lets
-      // a single row overshoot, since it is only re-checked between rows.
-      if (decor.length < 16 && allGrass && (x * 7 + y * 13) % 17 === 0) {
-        decor.push({ kind: "tree", pos: { x, y } });
+  const isGrass = (gx: number, gy: number): boolean =>
+    gy >= 0 && gy < MAP_HEIGHT && gx >= 0 && gx < MAP_WIDTH && tiles[gy][gx] === "grass";
+  // Building tile (room interior or wall) — a tree canopy over one of these
+  // reads as a tree growing out of the roof (the open-roof cutaway shows it).
+  const isBuilding = (gx: number, gy: number): boolean => {
+    if (gy < 0 || gy >= MAP_HEIGHT || gx < 0 || gx >= MAP_WIDTH) return false;
+    const t = tiles[gy][gx];
+    return t === "wall" || t === "floor" || t === "bedTile" || t === "shopTile";
+  };
+  // Fruit-tree sprites are 96×128 (3 tiles wide × 4 tall), bottom-anchored, so a
+  // tree at (gx,gy) paints the box cols gx-1..gx+1 × rows gy-3..gy. Place a tree
+  // only where its trunk sits on open grass AND that whole canopy box is clear of
+  // any building — otherwise the canopy overhangs a roof (the "tree in the cafe").
+  const clearCanopy = (gx: number, gy: number): boolean => {
+    if (!(isGrass(gx, gy) && isGrass(gx - 1, gy) && isGrass(gx + 1, gy) &&
+      isGrass(gx, gy - 1) && isGrass(gx, gy + 1))) return false;
+    for (let cy = gy - 3; cy <= gy; cy++) {
+      for (let cx = gx - 1; cx <= gx + 1; cx++) {
+        if (isBuilding(cx, cy)) return false;
+      }
+    }
+    return true;
+  };
+  // Grass tile that touches a soil plot — keep the showier decor (bushes,
+  // flowers) OFF these so fields read with clean borders instead of being
+  // "fenced" by a ring of scatter.
+  const bordersField = (gx: number, gy: number): boolean =>
+    tiles[gy][gx - 1] === "soil" || tiles[gy][gx + 1] === "soil" ||
+    tiles[gy - 1][gx] === "soil" || tiles[gy + 1][gx] === "soil";
+  // -- tree COPSES -----------------------------------------------------------
+  // Seed one cluster centre per coarse CELL of the map, then JITTER each centre
+  // by a hash so the centres are not gridded. ~14×10 cells over 140×100 ⇒ ~140
+  // candidate centres; the keep-probability culls them to ~80–110 actual copses
+  // scattered organically. Each kept centre carries a hash-varied radius and a
+  // base density; a tile becomes a tree when it falls inside some copse and a
+  // radial-falloff hash test passes (closer to the centre ⇒ more likely), so
+  // trees clump into rounded blobs instead of lines.
+  const CELL = 10;
+  interface Copse { cx: number; cy: number; r: number; density: number }
+  const copses: Copse[] = [];
+  for (let gy = 0; gy * CELL < MAP_HEIGHT; gy++) {
+    for (let gx = 0; gx * CELL < MAP_WIDTH; gx++) {
+      // ~45% of cells host a copse (deterministic per cell) so the map reads as
+      // discrete tree clumps with open lawn between them, not continuous forest.
+      if (rand2(gx * 2 + 1, gy * 2 + 7) > 0.45) continue;
+      // Jittered centre inside the cell (keeps centres off the grid lines).
+      const jx = Math.floor(rand2(gx + 11, gy + 3) * CELL);
+      const jy = Math.floor(rand2(gx + 5, gy + 17) * CELL);
+      const cx = gx * CELL + jx;
+      const cy = gy * CELL + jy;
+      const r = 2 + Math.floor(rand2(gx + 31, gy + 13) * 3); // 2..4 — tight copses
+      const density = 0.45 + rand2(gx + 23, gy + 41) * 0.3; // 0.45..0.75
+      copses.push({ cx, cy, r, density });
+    }
+  }
+  // A tile's tree probability = the strongest overlapping copse's radial falloff.
+  // Only copses whose cell is within the tile's 3×3 cell neighbourhood can reach
+  // it (r ≤ 6 < CELL), so this stays O(tiles · 9).
+  const treeProbAt = (x: number, y: number): number => {
+    let best = 0;
+    const gxBase = Math.floor(x / CELL);
+    const gyBase = Math.floor(y / CELL);
+    for (const c of copses) {
+      if (Math.abs(Math.floor(c.cx / CELL) - gxBase) > 1) continue;
+      if (Math.abs(Math.floor(c.cy / CELL) - gyBase) > 1) continue;
+      const d = Math.hypot(x - c.cx, y - c.cy);
+      if (d > c.r) continue;
+      const falloff = 1 - d / (c.r + 1); // 1 at centre → ~0 at the rim
+      const p = c.density * falloff;
+      if (p > best) best = p;
+    }
+    return best;
+  };
+  // Thin RIM woodland: a band a few tiles in from the map edge reads as the town's
+  // outer treeline. Sparse + hash-gated so it stays a natural fringe, not a wall.
+  const rimTreeAt = (x: number, y: number): boolean => {
+    const margin = Math.min(x, y, MAP_WIDTH - 1 - x, MAP_HEIGHT - 1 - y);
+    if (margin > 4) return false;
+    return rand2(x * 3 + 2, y * 5 + 9) < 0.22;
+  };
+
+  for (let y = 1; y < MAP_HEIGHT - 1; y++) {
+    for (let x = 1; x < MAP_WIDTH - 1; x++) {
+      if (!isGrass(x, y)) continue;
+      // Trees: only where the full canopy box is clear of buildings. A tile joins
+      // a copse when a radial-falloff hash test passes, or sits in the rim band.
+      if (clearCanopy(x, y)) {
+        let p = treeProbAt(x, y);
+        // Thin trees inside the PARK so it reads as open green with a few shade
+        // trees rather than a forested square (the pond + lawns stay visible).
+        const inPark = x >= PARK.x0 && x <= PARK.x1 && y >= PARK.y0 && y <= PARK.y1;
+        if (inPark) p *= 0.25;
+        const inCopse = p > 0 && rand2(x * 7 + 13, y * 7 + 29) < p;
+        if (inCopse || rimTreeAt(x, y)) {
+          decor.push({ kind: "tree", pos: { x, y }, variant: hash2(x, y) % 2 });
+          continue;
+        }
+      }
+      const edge = bordersField(x, y);
+      // Bushes cluster at the SKIRTS of copses (where the tree falloff is weak but
+      // nonzero) plus an occasional standalone shrub — a natural understorey, not
+      // a grid. Kept off field borders so plots read clean.
+      const tp = treeProbAt(x, y);
+      if (!edge) {
+        const bushHere =
+          (tp > 0 && tp < 0.5 && rand2(x + 101, y + 53) < 0.3) ||
+          rand2(x * 9 + 3, y * 4 + 19) < 0.012;
+        if (bushHere) { decor.push({ kind: "bush", pos: { x, y }, variant: hash2(x * 3, y) % 3 }); continue; }
+      }
+      // Flowers bloom in meadow PATCHES away from the copses: a low-frequency
+      // hash defines soft patch centres, a second hash speckles blossoms within.
+      if (!edge && tp < 0.3) {
+        const meadow = rand2(Math.floor(x / 6) + 71, Math.floor(y / 6) + 67) < 0.4;
+        if (meadow && rand2(x * 5 + 7, y * 3 + 11) < 0.22) {
+          decor.push({ kind: "flower", pos: { x, y }, variant: hash2(x, y * 2) % 4 });
+          continue;
+        }
+      }
+      // Grass tufts fill the open lawn at a gentle density (hash-gated, no grid).
+      if (rand2(x * 2 + 17, y * 6 + 5) < 0.08) {
+        decor.push({ kind: "grass", pos: { x, y }, variant: hash2(x + y, x) % 3 });
+        continue;
       }
     }
   }
-  // Guarantee at least one tree INSIDE the park region (typology park test):
-  // pick a deterministic park grass cell clear of the pond + benches.
+  // Guarantee at least one tree INSIDE the park region (typology park test).
   const parkTree: Vec2 = { x: PARK.x0, y: PARK.y0 + 1 };
-  if (
-    tiles[parkTree.y][parkTree.x] === "grass" &&
-    !decor.some((d) => d.pos.x === parkTree.x && d.pos.y === parkTree.y)
-  ) {
-    // Replace the last scattered tree if we are at the cap, else append.
-    if (decor.length >= 16) decor[decor.length - 1] = { kind: "tree", pos: { ...parkTree } };
-    else decor.push({ kind: "tree", pos: { ...parkTree } });
+  if (isGrass(parkTree.x, parkTree.y) && !decor.some((d) => d.pos.x === parkTree.x && d.pos.y === parkTree.y)) {
+    decor.push({ kind: "tree", pos: { ...parkTree }, variant: 0 });
   }
 
   return { width: MAP_WIDTH, height: MAP_HEIGHT, tiles, landmarks, decor, objects: WORLD_OBJECTS.map((o) => ({ ...o, pos: { ...o.pos } })) };
