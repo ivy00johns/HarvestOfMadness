@@ -56,6 +56,7 @@ import {
   BENCH_POS,
   BUILDINGS,
   NOTICE_BOARD_POS,
+  PARK,
   WELL_POS,
   WORLD_OBJECTS,
 } from "../world/map";
@@ -227,6 +228,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.createCharacterAnims();
       this.dressBuildings();
       this.dressTrees();
+      this.dressPark();
       this.time.addEvent({
         delay: WATER_ANIM_MS,
         loop: true,
@@ -695,18 +697,36 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
    * Each kind gets a distinct roof/wall tint and a sign emoji (via buildingStyle)
    * so buildings are visually distinguishable even with the shared house.png art.
    */
+  /**
+   * Hanging LPC sign frame for a civic room kind (shop/tavern/cafe/office/
+   * school), or undefined for houses (which keep the lightweight emoji sign from
+   * buildingStyle). Cafe=jug, office=board, school=book, shop=bread, tavern=beer.
+   */
+  private signFrameForKind(kind: string): number | undefined {
+    switch (kind) {
+      case "tavern":
+        return SIGN_FRAMES.BEER;
+      case "shop":
+        return SIGN_FRAMES.BREAD;
+      case "cafe":
+        return SIGN_FRAMES.JUG;
+      case "office":
+        return SIGN_FRAMES.BOARD;
+      case "school":
+        return SIGN_FRAMES.BOOK;
+      default:
+        return undefined;
+    }
+  }
+
   private dressBuildings(): void {
     const openRoof = this.textures.exists("interior");
     for (const b of BUILDINGS) {
       const isShop = b.kind === "shop";
       const isTavern = b.kind === "tavern";
-      // Shop/tavern get a real hanging LPC sign (tankard / bread loaf); houses
-      // keep the lightweight emoji sign from buildingStyle.
-      const signFrame = isTavern
-        ? SIGN_FRAMES.BEER
-        : isShop
-          ? SIGN_FRAMES.BREAD
-          : undefined;
+      // Civic rooms get a real hanging LPC sign; houses keep the lightweight
+      // emoji sign from buildingStyle.
+      const signFrame = this.signFrameForKind(b.kind);
       if (openRoof) {
         // Smallville-style open-roof furnished room (agents walk in visibly).
         this.paintInterior(b, signFrame);
@@ -794,9 +814,37 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       }
       put(ix1, iy0, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
       put(ix1, iy1, "interior", INTERIOR_FRAMES.BARREL, DEPTH_PROP);
+    } else if (kind === "cafe") {
+      // Cafe: a BAR counter along the back wall + two small tables with chairs.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.BAR, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix0, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      }
+    } else if (kind === "office") {
+      // Office: two cabinets (desks) along the back wall + a table, chair, shelf.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.CABINET, DEPTH_PROP);
+      put(ix0, iy1, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      }
+    } else if (kind === "school") {
+      // School: two bookshelves along the back wall + two desk tables with chairs.
+      put(ix0, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      put(ix1, iy0, "interior", INTERIOR_FRAMES.SHELF, DEPTH_PROP);
+      if (hasFurn) {
+        put(ix0, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix0 + 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_R, DEPTH_PROP);
+        put(ix1, iy1, "furniture_wood", FURNITURE_FRAMES.TABLE_SMALL, DEPTH_PROP);
+        put(ix1 - 1, iy1, "furniture_wood", FURNITURE_FRAMES.CHAIR_L, DEPTH_PROP);
+      }
     }
 
-    // Sign above the room: real hanging sign for shop/tavern, emoji for houses.
+    // Sign above the room: real hanging sign for civic rooms, emoji for houses.
     const midX = ((x0 + x1) / 2 + 0.5) * TILE_SIZE;
     if (signFrame != null && this.textures.exists("decorations")) {
       this.add
@@ -899,6 +947,31 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
           (t.y + 1) * TILE_SIZE - 2,
           "fruit_trees",
           TREE_FRAMES.includes(t.frame) ? t.frame : TREE_FRAMES[0],
+        )
+        .setOrigin(0.5, 1)
+        .setDepth(DEPTH_OVERHEAD);
+    }
+  }
+
+  /**
+   * Wave 5a — the green PARK region. The inner pond renders through the normal
+   * water tile path and the benches through dressWorldObjects; here we add the
+   * scattered decor trees that fall INSIDE the park region (the existing tree
+   * sprite path), giving the park its leafy feel. Asset-guarded: a no-op when
+   * the tree sheet is missing (placeholder mode keeps the open grass).
+   */
+  private dressPark(): void {
+    if (!this.textures.exists("fruit_trees")) return;
+    const inPark = (p: Vec2): boolean =>
+      p.x >= PARK.x0 && p.x <= PARK.x1 && p.y >= PARK.y0 && p.y <= PARK.y1;
+    for (const d of getWorld().decor()) {
+      if (d.kind !== "tree" || !inPark(d.pos)) continue;
+      this.add
+        .image(
+          d.pos.x * TILE_SIZE + TILE_SIZE / 2,
+          (d.pos.y + 1) * TILE_SIZE - 2,
+          "fruit_trees",
+          TREE_FRAMES[0],
         )
         .setOrigin(0.5, 1)
         .setDepth(DEPTH_OVERHEAD);

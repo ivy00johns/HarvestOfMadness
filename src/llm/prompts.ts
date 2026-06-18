@@ -284,7 +284,7 @@ ${goalBlock}${reflections}${places}Plan your day. Produce exactly 4 steps, one f
 - The morning is usually for farm work; afternoon/evening can include socializing, the market, or the pond.
 - The night step should end at the bed to sleep.
 
-"targetLandmark" is optional and must be one of "shop", "bed", "water", "house", "tavern" when used.
+"targetLandmark" is optional and must be one of "shop", "bed", "water", "house", "tavern", "cafe", "office", "park" when used.
 
 Respond with ONLY one JSON object shaped {"steps":[{"phase":"morning"|"afternoon"|"evening"|"night","goal":string,"targetLandmark":string?}]} with exactly 4 steps — no prose, no fences.`;
 }

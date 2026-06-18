@@ -78,8 +78,10 @@ export const WELL_FRAMES = {
  * hang from a top bar — used for the notice board and shop/tavern signage.
  */
 export const SIGN_FRAMES = {
-  BOARD: 6, // plain wooden board (notice board)
+  BOARD: 6, // plain wooden board (notice board / office)
+  JUG: 8, // jug/tankard — cafe (Wave 5a, row 0)
   BREAD: 9, // loaf — general store / shop
+  BOOK: 22, // book — school (Wave 5a, row 1)
   BEER: 23, // tankard — tavern
 } as const;
 

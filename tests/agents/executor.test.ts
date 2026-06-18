@@ -119,11 +119,27 @@ describe("TILL", () => {
     expect(again.ok).toBe(false);
     expect(again.reason).toMatch(/already tilled/);
 
-    // The x=12 vertical road is a path tile (not tillable). Stand adjacent on a
-    // plot soil cell (FIELD_RECT.x1 borders the x=12 road for the first plot).
-    const roadX = 12;
-    const roadStand = makeAgent({ x: roadX - 1, y: STAND.y });
-    const onPath = await exec(roadStand, act("TILL", { x: roadX, y: STAND.y }));
+    // A `path` road tile is not tillable. Find one adjacent to a plot soil cell
+    // (structure-derived: the residential road borders the first plot), stand on
+    // the soil and TILL the road tile.
+    const world = getWorld();
+    let soilStand: Vec2 | null = null;
+    let roadTarget: Vec2 | null = null;
+    for (let y = FIELD_RECT.y0; y <= FIELD_RECT.y1 && !roadTarget; y++)
+      for (let x = FIELD_RECT.x0; x <= FIELD_RECT.x1 && !roadTarget; x++) {
+        for (const [dx, dy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) {
+          const n = { x: x + dx, y: y + dy };
+          if (world.getTile(n.x, n.y)?.type === "path") {
+            soilStand = { x, y };
+            roadTarget = n;
+            break;
+          }
+        }
+      }
+    expect(soilStand, "a plot soil cell borders a road").not.toBeNull();
+    expect(roadTarget, "an adjacent road tile exists").not.toBeNull();
+    const roadStand = makeAgent({ ...soilStand! });
+    const onPath = await exec(roadStand, act("TILL", { ...roadTarget! }));
     expect(onPath.ok).toBe(false);
     expect(onPath.reason).toMatch(/not tillable/);
   });

@@ -66,15 +66,25 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("World.objects()", () => {
-  it("returns exactly 3 objects", () => {
+  it("returns exactly the map's WORLD_OBJECTS (well, notice_board, benches)", () => {
     const world = getWorld();
-    expect(world.objects()).toHaveLength(3);
+    // Independent literal pin (NOT WORLD_OBJECTS.length — that would be a
+    // tautology since World.objects() derives from the same array). 4 = well +
+    // notice_board + commons bench + park bench (Wave 5a added the park bench).
+    expect(world.objects()).toHaveLength(4);
   });
 
-  it("includes well, notice_board, and bench", () => {
+  it("includes the well, the notice board, and at least one bench", () => {
     const world = getWorld();
-    const kinds = world.objects().map((o) => o.kind).sort();
-    expect(kinds).toEqual(["bench", "notice_board", "well"]);
+    const kinds = new Set(world.objects().map((o) => o.kind));
+    expect(kinds.has("well")).toBe(true);
+    expect(kinds.has("notice_board")).toBe(true);
+    expect(kinds.has("bench")).toBe(true);
+    // Exactly one well + one notice board (singletons); ≥1 bench.
+    const count = (k: string) => world.objects().filter((o) => o.kind === k).length;
+    expect(count("well")).toBe(1);
+    expect(count("notice_board")).toBe(1);
+    expect(count("bench")).toBeGreaterThanOrEqual(1);
   });
 
   it("returns a defensive copy — mutating the result does not affect the world", () => {

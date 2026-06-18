@@ -43,12 +43,14 @@ function floodPassable(start: Vec2): Set<string> {
 }
 
 describe("walkable interiors — door-gap structure", () => {
-  it("each homestead perimeter is exactly 15 wall + 1 floor door-gap (== h.door)", () => {
+  it("each homestead perimeter is a full wall ring + 1 floor door-gap (== h.door)", () => {
     for (const h of HOMESTEADS) {
+      // SIZE-derived bounds (varied 4×4 / 5×5 / 6×5 rooms), never +4.
       const x0 = h.house.x;
       const y0 = h.house.y;
-      const x1 = h.house.x + 4;
-      const y1 = h.house.y + 4;
+      const x1 = h.house.x + h.size.w - 1;
+      const y1 = h.house.y + h.size.h - 1;
+      const perimTiles = h.size.w * h.size.h - (h.size.w - 2) * (h.size.h - 2);
       let wall = 0;
       let floor = 0;
       const floorCells: Vec2[] = [];
@@ -63,7 +65,7 @@ describe("walkable interiors — door-gap structure", () => {
           }
         }
       }
-      expect(wall, `${h.id} perimeter wall`).toBe(15);
+      expect(wall, `${h.id} perimeter wall`).toBe(perimTiles - 1);
       expect(floor, `${h.id} perimeter floor (door-gap)`).toBe(1);
       expect(floorCells[0], `${h.id} door-gap is h.door`).toEqual(h.door);
     }

@@ -161,6 +161,10 @@ describe("buildObservation", () => {
     expect(kinds.filter((k) => k === "shop").length).toBe(1);
     expect(kinds.filter((k) => k === "tavern").length).toBe(1);
     expect(kinds.filter((k) => k === "water").length).toBe(1);
+    // Wave 5a — new civic + park landmarks surface to observation (additive).
+    expect(kinds.filter((k) => k === "cafe").length).toBe(1);
+    expect(kinds.filter((k) => k === "office").length).toBe(1);
+    expect(kinds.filter((k) => k === "park").length).toBe(1);
     expect(obs.lastAction).toEqual({ action: "TILL", ok: false, reason: "nope" });
     expect(obs.economy.buys["seed:parsnip"]).toBe(20);
     expect(obs.economy.sells["crop:parsnip"]).toBe(35);

@@ -27,7 +27,7 @@ import { buildDailyPlanPrompt } from "../llm/prompts";
 import { extractFirstJsonObject } from "../llm/parse";
 
 const PHASE_ORDER: readonly Phase[] = ["morning", "afternoon", "evening", "night"];
-const LANDMARK_KINDS: readonly Landmark["kind"][] = ["shop", "bed", "water", "house", "tavern"];
+const LANDMARK_KINDS: readonly Landmark["kind"][] = ["shop", "bed", "water", "house", "tavern", "cafe", "office", "park"];
 
 /** Poignancy pinned for plan memories — never LLM-rated (budget rule). */
 export const PLAN_MEMORY_IMPORTANCE = 4;

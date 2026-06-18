@@ -4,14 +4,27 @@ import { MAP_HEIGHT, MAP_WIDTH, OBSERVATION_RADIUS } from "@contracts/types";
 import {
   BED_POS,
   BUILDINGS,
+  type BuildingFootprint,
+  exteriorOf,
   FIELD_RECT,
   generateMap,
   HOMESTEADS,
+  PARK,
   SHOP_POS,
 } from "../../src/world/map";
 
 const map = generateMap();
 const at = (p: Vec2): TileType => map.tiles[p.y][p.x];
+
+/** The single `floor` door-gap on a footprint's perimeter, or null. */
+function perimeterDoor(b: BuildingFootprint): Vec2 | null {
+  for (let y = b.y0; y <= b.y1; y++)
+    for (let x = b.x0; x <= b.x1; x++) {
+      const onPerim = x === b.x0 || x === b.x1 || y === b.y0 || y === b.y1;
+      if (onPerim && map.tiles[y][x] === "floor") return { x, y };
+    }
+  return null;
+}
 
 describe("town generator", () => {
   it("is MAP_WIDTH×MAP_HEIGHT with an intact wall ring", () => {
@@ -27,15 +40,19 @@ describe("town generator", () => {
     }
   });
 
-  it("has exactly twelve walkable homesteads: 15 wall + 1 floor door perimeter, 8 floor + 1 bed interior", () => {
+  it("has exactly twelve walkable homesteads: full wall ring + 1 floor door perimeter, floor interior + 1 bed", () => {
     expect(HOMESTEADS).toHaveLength(12);
     for (const h of HOMESTEADS) {
+      // Room bounds are SIZE-derived (varied 4×4 / 5×5 / 6×5), never +4.
       const x0 = h.house.x;
       const y0 = h.house.y;
-      const x1 = h.house.x + 4;
-      const y1 = h.house.y + 4;
+      const x1 = h.house.x + h.size.w - 1;
+      const y1 = h.house.y + h.size.h - 1;
+      // Perimeter tile count for the room's bounding box.
+      const perimTiles = h.size.w * h.size.h - (h.size.w - 2) * (h.size.h - 2);
+      const interiorTiles = (h.size.w - 2) * (h.size.h - 2);
 
-      // -- perimeter: exactly 15 wall + exactly 1 floor (the door-gap) --------
+      // -- perimeter: full wall ring minus exactly 1 floor (the door-gap) -----
       let perimWall = 0;
       let perimFloor = 0;
       let theDoor: Vec2 | null = null;
@@ -53,7 +70,7 @@ describe("town generator", () => {
           }
         }
       }
-      expect(perimWall, `${h.id} perimeter wall count`).toBe(15);
+      expect(perimWall, `${h.id} perimeter wall count`).toBe(perimTiles - 1);
       expect(perimFloor, `${h.id} perimeter floor (door) count`).toBe(1);
       expect(theDoor, `${h.id} door`).toEqual(h.door);
 
@@ -69,7 +86,7 @@ describe("town generator", () => {
               : { x: h.door.x - 1, y: h.door.y };
       expect(at(ext), `${h.id} door exterior neighbour is a road path`).toBe("path");
 
-      // -- interior 3×3: exactly 8 floor + exactly 1 bedTile (== h.bed) -------
+      // -- interior: (w-2)*(h-2)-1 floor + exactly 1 bedTile (== h.bed) -------
       let intFloor = 0;
       let intBed = 0;
       let theBed: Vec2 | null = null;
@@ -85,7 +102,7 @@ describe("town generator", () => {
           }
         }
       }
-      expect(intFloor, `${h.id} interior floor count`).toBe(8);
+      expect(intFloor, `${h.id} interior floor count`).toBe(interiorTiles - 1);
       expect(intBed, `${h.id} interior bedTile count`).toBe(1);
       expect(theBed, `${h.id} bed`).toEqual(h.bed);
 
@@ -96,6 +113,11 @@ describe("town generator", () => {
         }
       }
     }
+  });
+
+  it("houses span at least two distinct sizes (organic, hand-built feel)", () => {
+    const sizes = new Set(HOMESTEADS.map((h) => `${h.size.w}x${h.size.h}`));
+    expect(sizes.size).toBeGreaterThanOrEqual(2);
   });
 
   it("has exactly 12 bedTiles, zero `building` tiles, and the expected landmark counts", () => {
@@ -115,6 +137,10 @@ describe("town generator", () => {
     expect(count("shop")).toBe(1);
     expect(count("tavern")).toBe(1);
     expect(count("water")).toBeGreaterThanOrEqual(1);
+    // Wave 5a — new civic + park landmarks (additive). School emits no landmark.
+    expect(count("cafe")).toBe(1);
+    expect(count("office")).toBe(1);
+    expect(count("park")).toBe(1);
   });
 
   it("keeps the back-compat exports valid (tests stand agents on them)", () => {
@@ -148,6 +174,13 @@ describe("town generator", () => {
       expect(seen.has(key(h.bed)), `bed ${h.id}`).toBe(true);
     }
     expect(seen.has(key(SHOP_POS)), "shop").toBe(true);
+    // Every room's door (cafe / office / school doors included) is reached. The
+    // door is the single `floor` cell on the footprint perimeter (door-gap).
+    for (const b of BUILDINGS) {
+      const door = perimeterDoor(b);
+      expect(door, `${b.kind} has a door-gap`).not.toBeNull();
+      expect(seen.has(key(door!)), `${b.kind} door reachable`).toBe(true);
+    }
   });
 
   it("each homestead's plot is within observation range of its door (agents perceive their own plot)", () => {
@@ -188,7 +221,53 @@ describe("town generator", () => {
         for (let x = b.x0; x <= b.x1; x++)
           expect(built.has(map.tiles[y][x]), `building tile ${x},${y} is ${map.tiles[y][x]}`).toBe(true);
     }
-    // Expect 14 buildings: 12 homesteads + shop + tavern.
-    expect(BUILDINGS).toHaveLength(14);
+    // Expect 17 rooms: 12 homesteads + shop + tavern + cafe + office + school.
+    expect(BUILDINGS).toHaveLength(17);
+  });
+
+  it("every building kind is present at least once (typology coverage)", () => {
+    const kinds = new Set(BUILDINGS.map((b) => b.kind));
+    for (const k of ["house", "shop", "tavern", "cafe", "office", "school"] as const) {
+      expect(kinds.has(k), `kind ${k} present`).toBe(true);
+    }
+  });
+
+  it("each non-house room's door-gap exterior neighbour is a path tile", () => {
+    for (const b of BUILDINGS) {
+      if (b.kind === "house") continue; // covered per-homestead above
+      const door = perimeterDoor(b);
+      expect(door, `${b.kind} has a door-gap`).not.toBeNull();
+      const ext = exteriorOf(door!, b.doorSide);
+      expect(at(ext), `${b.kind} door exterior is a road path`).toBe("path");
+    }
+  });
+
+  it("the park is a walkable green region with an inner pond and ≥1 bench inside", () => {
+    // Count tile types inside the park region.
+    let grass = 0;
+    let water = 0;
+    for (let y = PARK.y0; y <= PARK.y1; y++)
+      for (let x = PARK.x0; x <= PARK.x1; x++) {
+        const t = map.tiles[y][x];
+        if (t === "grass") grass++;
+        else if (t === "water") water++;
+      }
+    expect(grass, "park has walkable grass").toBeGreaterThan(0);
+    expect(water, "park has an inner pond").toBeGreaterThanOrEqual(4); // ≥4-wide pond
+    // ≥1 bench WorldObject sits inside the park region.
+    const benchesInPark = map.objects.filter(
+      (o) =>
+        o.kind === "bench" &&
+        o.pos.x >= PARK.x0 && o.pos.x <= PARK.x1 &&
+        o.pos.y >= PARK.y0 && o.pos.y <= PARK.y1,
+    );
+    expect(benchesInPark.length, "≥1 bench inside the park").toBeGreaterThanOrEqual(1);
+    // ≥1 decor tree sits inside the park region.
+    const treesInPark = map.decor.filter(
+      (d) =>
+        d.pos.x >= PARK.x0 && d.pos.x <= PARK.x1 &&
+        d.pos.y >= PARK.y0 && d.pos.y <= PARK.y1,
+    );
+    expect(treesInPark.length, "≥1 tree inside the park").toBeGreaterThanOrEqual(1);
   });
 });

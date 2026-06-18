@@ -66,8 +66,11 @@ export interface InventoryEntry {
 export interface Landmark {
   // "tavern" is landmark-only: a plain building footprint with no special
   // tile type (social actions need only adjacency), unlike bed→bedTile /
-  // shop→shopTile.
-  kind: "shop" | "bed" | "water" | "house" | "tavern";
+  // shop→shopTile. Wave 5a ADDITIVELY widens this with the new civic kinds
+  // ("cafe"/"office") and the green "park" region; these are environmental
+  // only — the mock router filter (src/llm/mock.ts) still drops them, so they
+  // stay inert to the brain until a later wave wires them in.
+  kind: "shop" | "bed" | "water" | "house" | "tavern" | "cafe" | "office" | "park";
   pos: Vec2;
 }
 

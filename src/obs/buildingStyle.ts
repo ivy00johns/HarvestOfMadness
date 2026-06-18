@@ -8,12 +8,23 @@
  * Tint design:
  *   house   — warm red-brick (no tint, neutral white = 0xffffff)
  *   shop    — cool slate-blue  (general store)
- *   tavern  — amber-brown      (café / social hub)
+ *   tavern  — amber-brown      (social hub)
+ *   cafe    — warm peach       (Wave 5a — coffee/tea spot)
+ *   office  — cool steel-grey  (Wave 5a — town office)
+ *   school  — light grey-blue  (community building)
+ *   park    — leafy green      (Wave 5a — open green region marker)
  *   library — soft sage-green  (future community building)
- *   school  — light grey-blue  (future community building)
  */
 
-export type BuildingKind = "house" | "shop" | "tavern" | "library" | "school";
+export type BuildingKind =
+  | "house"
+  | "shop"
+  | "tavern"
+  | "cafe"
+  | "office"
+  | "school"
+  | "park"
+  | "library";
 
 export interface BuildingStyle {
   /** Phaser-compatible 0xRRGGBB tint (0xffffff = no tint / neutral) */
@@ -26,8 +37,11 @@ const STYLES: Record<BuildingKind, BuildingStyle> = {
   house:   { tint: 0xffffff, sign: "🏠" },
   shop:    { tint: 0xaabbdd, sign: "🛒" },
   tavern:  { tint: 0xddbb88, sign: "🍺" },
-  library: { tint: 0xaaddbb, sign: "📚" },
+  cafe:    { tint: 0xeecbb0, sign: "☕" },
+  office:  { tint: 0xb8c0c8, sign: "🏢" },
   school:  { tint: 0xbbccdd, sign: "🏫" },
+  park:    { tint: 0x88cc88, sign: "🌳" },
+  library: { tint: 0xaaddbb, sign: "📚" },
 };
 
 /**
