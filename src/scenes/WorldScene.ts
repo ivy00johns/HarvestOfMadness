@@ -62,7 +62,6 @@ import {
 import { activityEmoji } from "../obs/activityEmoji";
 import { buildingStyle } from "../obs/buildingStyle";
 import {
-  COBBLE_PATH_FRAMES,
   FURNITURE_FRAMES,
   INTERIOR_FRAMES,
   LANTERN_FRAMES,
@@ -587,10 +586,9 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       case "grass":
         break; // base layer already shows grass
       case "path":
-        // Cobblestone road (PathAndObjects) when present; else the v1 dirt path.
-        if (this.textures.exists("paths"))
-          place("paths", this.pick(COBBLE_PATH_FRAMES, x, y));
-        else place("terrain", this.pick(PATH_FRAMES, x, y));
+        // Warm packed-dirt road for an organic farm-village feel (replaces the
+        // cold grey cobble). Deterministic per-tile variant for a lived-in look.
+        place("terrain", this.pick(PATH_FRAMES, x, y));
         break;
       case "water": {
         const isWater = (dx: number, dy: number): boolean =>

@@ -18,7 +18,7 @@ Get to Smallville-level: **city size, character density, structure details, item
 ### Wave 1 — Visual richness (the core "Smallville look")  [item/structure/ground density]
 - [x] City size → 96×64 (12 homes + 14 reserve lots), 1023 tests green.
 - [ ] 1a. Terrain variety + grass↔path/water/soil autotile transitions
-- [ ] 1b. Organic dirt paths (replace rigid grey cobble)
+- [x] 1b. Warm dirt roads (replaced grey cobble) — big organic-farm-village win
 - [~] 1c+1d. Decor system: deterministic multi-kind scatter (clustered trees + bushes + flowers + grass tufts) in map.ts; pure decorSprite() mapping in render.ts; dressDecor() in WorldScene; plants.png + tallgrass.png added to manifest. 1027 tests green, tsc clean. FRAME TUNING pending visual check (bush/flower frames are best-guess).
 - [ ] 1e. Denser interiors — 8–12 furniture pieces/building (STRUCTURE DETAILS)
 - [ ] 1f. Building structure — roof-edge + wall polish
@@ -38,3 +38,6 @@ Get to Smallville-level: **city size, character density, structure details, item
 
 ## Log
 - **01:1x** Merged main, verified 1023 green @ 96×64. Created this log. Starting Wave 1a.
+- **01:28** Decor system shipped (a1dd037): dense multi-kind scatter (trees/bushes/flowers/tufts), 1027 green. Visual-confirmed: town went bare→lush/wooded. Screenshot: artifacts/wave1-decor.png.
+- **01:38** Warm dirt roads shipped (replaces grey cobble), 1027 green, visual-confirmed. Town now reads as an organic farm village.
+- **NEXT:** pivot to the big requested features. Visual parity (size+density+paths) substantially done. Interiors/terrain-variety = optional polish (room-size + frame-hunt constrained). Priorities: (2a) character density via reserve-lot activation + personas; (3a) diaries; (3b) jobs; (4a) UI revamp; (3c) death; (4b) build controls. Dev server (vite) was on :5180. Use Playwright wheel-events to zoom (no global game handle).
