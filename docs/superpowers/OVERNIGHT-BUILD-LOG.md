@@ -19,8 +19,7 @@ Get to Smallville-level: **city size, character density, structure details, item
 - [x] City size → 96×64 (12 homes + 14 reserve lots), 1023 tests green.
 - [ ] 1a. Terrain variety + grass↔path/water/soil autotile transitions
 - [ ] 1b. Organic dirt paths (replace rigid grey cobble)
-- [ ] 1c. Ground scatter — flowers/bushes/tallgrass/rocks (ITEM DENSITY; may need Playwright asset)
-- [ ] 1d. Foliage density — clustered trees / forest edges
+- [~] 1c+1d. Decor system: deterministic multi-kind scatter (clustered trees + bushes + flowers + grass tufts) in map.ts; pure decorSprite() mapping in render.ts; dressDecor() in WorldScene; plants.png + tallgrass.png added to manifest. 1027 tests green, tsc clean. FRAME TUNING pending visual check (bush/flower frames are best-guess).
 - [ ] 1e. Denser interiors — 8–12 furniture pieces/building (STRUCTURE DETAILS)
 - [ ] 1f. Building structure — roof-edge + wall polish
 

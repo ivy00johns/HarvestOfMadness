@@ -28,9 +28,13 @@
 import type { Landmark, TileType, Vec2, WorldObject } from "@contracts/types";
 import { MAP_HEIGHT, MAP_WIDTH } from "@contracts/types";
 
+export type DecorKind = "tree" | "bush" | "flower" | "grass";
+
 export interface DecorItem {
-  kind: "tree";
+  kind: DecorKind;
   pos: Vec2;
+  /** deterministic variant index into the kind's renderer frame list */
+  variant: number;
 }
 
 export interface MapData {
@@ -452,37 +456,36 @@ export function generateMap(): MapData {
   const parkCentre: Vec2 = { x: PARK.x1, y: PARK.y1 }; // SE park corner — grass
   landmarks.push({ kind: "park", pos: { ...parkCentre } });
 
-  // Decorative trees on open grass (all-grass 4-neighbourhood), deterministic
-  // (no RNG) and capped so the bigger map reads alive without clutter. The
-  // (x*7 + y*13) % 17 test is a cheap coprime scatter selecting ~1/17 of
-  // eligible tiles with no clustering. Park-region grass tiles are eligible
-  // too, so a few trees naturally bias into the park.
+  // Decorative ground cover — deterministic (zero RNG), dense and layered so the
+  // 96x64 town reads as a lush, lived-in place rather than bare lawn. Four kinds
+  // by descending size: clustered trees (forest feel) > bushes > flowers > grass
+  // tufts. Each kind uses a distinct coprime hash so the layers never align into
+  // visible stripes. One decor item per grass tile (priority tree>bush>flower>
+  // grass via early-continue). `variant` indexes the renderer's per-kind frames.
   const decor: DecorItem[] = [];
-  for (let y = 2; y < MAP_HEIGHT - 2 && decor.length < 16; y++) {
-    for (let x = 2; x < MAP_WIDTH - 2; x++) {
-      if (tiles[y][x] !== "grass") continue;
-      const allGrass =
-        tiles[y - 1][x] === "grass" &&
-        tiles[y + 1][x] === "grass" &&
-        tiles[y][x - 1] === "grass" &&
-        tiles[y][x + 1] === "grass";
-      // Hard cap at 16: guard the push itself — the outer-loop guard alone lets
-      // a single row overshoot, since it is only re-checked between rows.
-      if (decor.length < 16 && allGrass && (x * 7 + y * 13) % 17 === 0) {
-        decor.push({ kind: "tree", pos: { x, y } });
+  const isGrass = (gx: number, gy: number): boolean =>
+    gy >= 0 && gy < MAP_HEIGHT && gx >= 0 && gx < MAP_WIDTH && tiles[gy][gx] === "grass";
+  const clearCanopy = (gx: number, gy: number): boolean =>
+    isGrass(gx, gy) && isGrass(gx - 1, gy) && isGrass(gx + 1, gy) && isGrass(gx, gy - 1) && isGrass(gx, gy + 1);
+  for (let y = 1; y < MAP_HEIGHT - 1; y++) {
+    for (let x = 1; x < MAP_WIDTH - 1; x++) {
+      if (!isGrass(x, y)) continue;
+      // Trees: need a clear canopy neighbourhood, biased into sparse "forest"
+      // cells so they clump at the rural edges instead of dotting lawns evenly.
+      if (clearCanopy(x, y)) {
+        const forestCell = (((x / 6) | 0) * 13 + ((y / 6) | 0) * 29) % 7 === 0;
+        const treeHit = forestCell ? (x * 11 + y * 7) % 6 === 0 : (x * 11 + y * 7) % 31 === 0;
+        if (treeHit) { decor.push({ kind: "tree", pos: { x, y }, variant: (x + y) % 2 }); continue; }
       }
+      if ((x * 17 + y * 5) % 23 === 0) { decor.push({ kind: "bush", pos: { x, y }, variant: (x * 3 + y) % 3 }); continue; }
+      if ((x * 5 + y * 11) % 11 === 0) { decor.push({ kind: "flower", pos: { x, y }, variant: (x + y * 2) % 4 }); continue; }
+      if ((x * 13 + y * 3) % 8 === 0) { decor.push({ kind: "grass", pos: { x, y }, variant: (x + y) % 3 }); continue; }
     }
   }
-  // Guarantee at least one tree INSIDE the park region (typology park test):
-  // pick a deterministic park grass cell clear of the pond + benches.
+  // Guarantee at least one tree INSIDE the park region (typology park test).
   const parkTree: Vec2 = { x: PARK.x0, y: PARK.y0 + 1 };
-  if (
-    tiles[parkTree.y][parkTree.x] === "grass" &&
-    !decor.some((d) => d.pos.x === parkTree.x && d.pos.y === parkTree.y)
-  ) {
-    // Replace the last scattered tree if we are at the cap, else append.
-    if (decor.length >= 16) decor[decor.length - 1] = { kind: "tree", pos: { ...parkTree } };
-    else decor.push({ kind: "tree", pos: { ...parkTree } });
+  if (isGrass(parkTree.x, parkTree.y) && !decor.some((d) => d.pos.x === parkTree.x && d.pos.y === parkTree.y)) {
+    decor.push({ kind: "tree", pos: { ...parkTree }, variant: 0 });
   }
 
   return { width: MAP_WIDTH, height: MAP_HEIGHT, tiles, landmarks, decor, objects: WORLD_OBJECTS.map((o) => ({ ...o, pos: { ...o.pos } })) };

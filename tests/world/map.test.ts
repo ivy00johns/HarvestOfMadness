@@ -197,17 +197,32 @@ describe("town generator", () => {
     }
   });
 
-  it("scatters decor only on grass, within bounds, capped", () => {
-    expect(map.decor.length).toBeGreaterThan(0);
-    expect(map.decor.length).toBeLessThanOrEqual(16);
+  it("scatters dense multi-kind decor only on grass, within bounds, one per tile", () => {
+    // Lush ground cover (trees/bushes/flowers/grass), not the old 16-tree cap.
+    expect(map.decor.length).toBeGreaterThan(100);
+    const kinds = new Set(map.decor.map((d) => d.kind));
+    for (const k of ["tree", "bush", "flower", "grass"] as const) {
+      expect(kinds.has(k), `decor includes ${k}`).toBe(true);
+    }
+    const seen = new Set<string>();
     for (const d of map.decor) {
-      expect(d.kind).toBe("tree");
+      expect(["tree", "bush", "flower", "grass"]).toContain(d.kind);
+      expect(typeof d.variant, "decor has a numeric variant").toBe("number");
       expect(d.pos.x).toBeGreaterThan(0);
       expect(d.pos.y).toBeGreaterThan(0);
       expect(d.pos.x).toBeLessThan(MAP_WIDTH - 1);
       expect(d.pos.y).toBeLessThan(MAP_HEIGHT - 1);
       expect(map.tiles[d.pos.y][d.pos.x], `decor at ${d.pos.x},${d.pos.y}`).toBe("grass");
+      const key = `${d.pos.x},${d.pos.y}`;
+      expect(seen.has(key), `one decor per tile at ${key}`).toBe(false);
+      seen.add(key);
     }
+  });
+
+  it("decor scatter is deterministic (zero RNG)", () => {
+    const a = generateMap().decor;
+    const b = generateMap().decor;
+    expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
   it("every building footprint is actually built and its door is in range", () => {

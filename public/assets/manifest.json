@@ -399,6 +399,22 @@
       "tileHeight": 32,
       "purpose": "buildings",
       "notes": "512x1024, 16 frames/row (32 rows). LPC wooden furniture (blonde tone). Beds at rows 13-14 (frames 208/209 head, 224/225 foot); round table ~125; benches/cabinets/bookshelves upper rows. Used for open-roof interior furnishing. CC-BY-SA 3.0."
+    },
+    {
+      "key": "plants",
+      "path": "assets/lpc/farming/plants.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "288x384, 9x12 tile grid (frame = row*9 + col). LPC bushes, shrubs, vegetables and small plants by Daniel Eddeland (daneeklu). Left cols are small sprouts/seedlings; mid cols leafy bushes; right cols tall corn. Bottom rows carry colourful produce/flowers. Used for decorative ground scatter (bush/flower). CC-BY-SA 3.0."
+    },
+    {
+      "key": "tallgrass",
+      "path": "assets/lpc/farming/tallgrass.png",
+      "tileWidth": 32,
+      "tileHeight": 32,
+      "purpose": "farming",
+      "notes": "96x192, 3x6 tile grid. LPC tall-grass patches and tufts by Daniel Eddeland (daneeklu). Bottom rows (frames 15-17) are small grass clumps used for decorative ground tufts. CC-BY-SA 3.0."
     }
   ],
   "water": {

@@ -56,7 +56,6 @@ import {
   BENCH_POS,
   BUILDINGS,
   NOTICE_BOARD_POS,
-  PARK,
   WELL_POS,
   WORLD_OBJECTS,
 } from "../world/map";
@@ -72,6 +71,7 @@ import {
   WATER_FRAMES,
   WELL_FRAMES,
   cropStripFrame,
+  decorSprite,
   fenceFrame,
   setRenderApi,
   soilFrame,
@@ -228,7 +228,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.createCharacterAnims();
       this.dressBuildings();
       this.dressTrees();
-      this.dressPark();
+      this.dressDecor();
       this.time.addEvent({
         delay: WATER_ANIM_MS,
         loop: true,
@@ -954,27 +954,28 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   }
 
   /**
-   * Wave 5a — the green PARK region. The inner pond renders through the normal
-   * water tile path and the benches through dressWorldObjects; here we add the
-   * scattered decor trees that fall INSIDE the park region (the existing tree
-   * sprite path), giving the park its leafy feel. Asset-guarded: a no-op when
-   * the tree sheet is missing (placeholder mode keeps the open grass).
+   * Render the deterministic decor scatter (clustered trees + bushes + flowers +
+   * grass tufts) generated in map.ts. Each kind maps to a concrete sprite via the
+   * pure decorSprite() helper; depth follows the layer: trees overhead (canopy
+   * over agents), bushes y-sorted, flowers/tufts flat under agents. Asset-guarded
+   * per kind, so a missing sheet is simply skipped (placeholder mode stays bare).
    */
-  private dressPark(): void {
-    if (!this.textures.exists("fruit_trees")) return;
-    const inPark = (p: Vec2): boolean =>
-      p.x >= PARK.x0 && p.x <= PARK.x1 && p.y >= PARK.y0 && p.y <= PARK.y1;
+  private dressDecor(): void {
     for (const d of getWorld().decor()) {
-      if (d.kind !== "tree" || !inPark(d.pos)) continue;
+      const sprite = decorSprite(d.kind, d.variant ?? 0);
+      if (!this.textures.exists(sprite.texture)) continue;
+      const cx = d.pos.x * TILE_SIZE + TILE_SIZE / 2;
+      const bottom = (d.pos.y + 1) * TILE_SIZE;
+      const depth =
+        sprite.layer === "overhead"
+          ? DEPTH_OVERHEAD
+          : sprite.layer === "ysort"
+            ? bottom - 1
+            : DEPTH_PROP;
       this.add
-        .image(
-          d.pos.x * TILE_SIZE + TILE_SIZE / 2,
-          (d.pos.y + 1) * TILE_SIZE - 2,
-          "fruit_trees",
-          TREE_FRAMES[0],
-        )
+        .image(cx, bottom - 2, sprite.texture, sprite.frame)
         .setOrigin(0.5, 1)
-        .setDepth(DEPTH_OVERHEAD);
+        .setDepth(depth);
     }
   }
 

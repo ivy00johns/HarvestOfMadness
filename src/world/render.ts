@@ -177,3 +177,43 @@ export function fenceFrame(
   if (y === height - 1) return FENCE_FRAMES.H_LEGS;
   return FENCE_FRAMES.V;
 }
+
+// ---------------------------------------------------------------------------
+// Decorative ground cover (DecorItem kinds → concrete sprite). Pure mapping so
+// the WorldScene placement stays a thin blit and the frame choices are unit-
+// testable. Frame indices are tuned against the committed sheets via a render
+// screenshot; keep them here so a sheet swap is a one-line change.
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-kind decor frames + render layer.
+ *  - tree:  fruit-trees sheet (tall, bottom-anchored, canopy OVER agents)
+ *  - bush:  plants.png leafy shrubs (occlude by y, like crops)
+ *  - flower:plants.png small colourful plants (flat, under agents)
+ *  - grass: tallgrass.png tufts (flat, under agents)
+ */
+export const DECOR_FRAMES = {
+  tree: { texture: "fruit_trees", frames: [0, 10] as readonly number[], layer: "overhead" },
+  bush: { texture: "plants", frames: [28, 37, 46] as readonly number[], layer: "ysort" },
+  flower: { texture: "plants", frames: [99, 100, 101, 102] as readonly number[], layer: "ground" },
+  grass: { texture: "tallgrass", frames: [15, 16, 17] as readonly number[], layer: "ground" },
+} as const;
+
+export type DecorLayer = "overhead" | "ysort" | "ground";
+
+export interface DecorSprite {
+  texture: string;
+  frame: number;
+  layer: DecorLayer;
+}
+
+/** Resolve a decor kind + variant to a concrete sprite. Variant wraps the list. */
+export function decorSprite(
+  kind: keyof typeof DECOR_FRAMES,
+  variant: number,
+): DecorSprite {
+  const spec = DECOR_FRAMES[kind];
+  const n = spec.frames.length;
+  const frame = spec.frames[((variant % n) + n) % n];
+  return { texture: spec.texture, frame, layer: spec.layer as DecorLayer };
+}
