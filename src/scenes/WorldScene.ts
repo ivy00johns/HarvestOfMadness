@@ -207,6 +207,10 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   private dragging = false;
   private dragMoved = false;
   private readonly dragStart = { px: 0, py: 0, scrollX: 0, scrollY: 0 };
+  /** Lowest zoom that still fits the WHOLE map in the current map viewport.
+   *  Computed per-resize in frameCamera; the wheel-out clamp uses it so the
+   *  player can always reach a view of the entire town (no clipped corners). */
+  private fitMinZoom = CAMERA_ZOOM_MIN;
   /** agent the camera is currently tracking, or null for free-pan */
   private following: string | null = null;
 
@@ -331,10 +335,17 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     const mapH = MAP_HEIGHT * TILE_SIZE;
     cam.setViewport(view.x, view.y, view.w, view.h);
     cam.setBounds(0, 0, mapW, mapH);
-    // Use the configured DEFAULT_ZOOM for a readable starting view, but clamp
-    // it so we never zoom in tighter than the map fills the viewport (no void),
-    // and never lower than CAMERA_ZOOM_MIN.
-    const zoom = Phaser.Math.Clamp(DEFAULT_ZOOM, CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+    // Fit-to-map: the zoom at which the WHOLE 140×100 town fits inside the map
+    // viewport (limited by whichever of width/height is tighter). The player must
+    // be able to zoom out at least this far, even if it's below the configured
+    // CAMERA_ZOOM_MIN — otherwise the corner hamlets get clipped (the bug on the
+    // taller 140×100 map). A 2% margin keeps a sliver of countryside on the edge.
+    const fitZoom = Math.min(view.w / mapW, view.h / mapH) * 0.98;
+    this.fitMinZoom = Math.min(CAMERA_ZOOM_MIN, fitZoom);
+    // Readable starting view (DEFAULT_ZOOM), but never tighter than MAX and never
+    // below the whole-town fit floor — so zooming all the way out always shows
+    // the entire town with no clipped corners.
+    const zoom = Phaser.Math.Clamp(DEFAULT_ZOOM, this.fitMinZoom, CAMERA_ZOOM_MAX);
     cam.setZoom(zoom);
     cam.centerOn(mapW / 2, mapH / 2);
   }
@@ -410,7 +421,7 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     // A single mouse notch (dy≈100) gives factor≈0.86 (zoom out ×0.86 or in ×1.16).
     const z = Phaser.Math.Clamp(
       cam.zoom * zoomFactorForWheelDelta(dy),
-      CAMERA_ZOOM_MIN,
+      this.fitMinZoom, // never tighter than the whole-town fit (no clipped corners)
       CAMERA_ZOOM_MAX,
     );
     cam.setZoom(z);
