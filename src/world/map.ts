@@ -127,36 +127,35 @@ interface HomesteadSpec {
  * placement, never from changing the count.
  */
 export const HOMESTEADS: HomesteadSpec[] = [
-  // -- north band (rooms above the spine; doors face SOUTH onto the y=12
-  //    residential row → exterior neighbour = door.y + 1 = 12 = path). Soil
+  // -- north band: doors face S onto the y=22 road (house bottom row y=21). Soil
   //    plots hug an OPEN side beside the house, nearest cell ≤ Chebyshev 4 of
   //    the door. Sizes vary (5×5 / 6×5 / 4×4) for an organic, hand-built feel. --
-  // 5×5 — plot to the EAST
-  { id: "brix", house: { x: 2,  y: 7 }, size: { w: 5, h: 5 }, bed: { x: 4,  y: 9 }, door: { x: 4,  y: 11 }, doorSide: "S", plot: { x0: 7,  y0: 9, x1: 9,  y1: 11 } },
-  // 6×5 (wide) — plot to the WEST
-  { id: "ford", house: { x: 14, y: 7 }, size: { w: 6, h: 5 }, bed: { x: 16, y: 9 }, door: { x: 16, y: 11 }, doorSide: "S", plot: { x0: 11, y0: 9, x1: 13, y1: 11 } },
-  // 4×4 (small) — plot to the EAST
-  { id: "wren", house: { x: 22, y: 8 }, size: { w: 4, h: 4 }, bed: { x: 23, y: 9 }, door: { x: 23, y: 11 }, doorSide: "S", plot: { x0: 26, y0: 9, x1: 28, y1: 11 } },
+  // 5×5 — plot to the WEST; its south edge (y=21) borders the y=22 road so the
+  //   executor TILL-rejects-road test (FIELD_RECT = this plot) finds a road neighbour.
+  { id: "brix", house: { x: 25, y: 17 }, size: { w: 5, h: 5 }, bed: { x: 27, y: 19 }, door: { x: 27, y: 21 }, doorSide: "S", plot: { x0: 21, y0: 19, x1: 23, y1: 21 } },
+  // 6×5 (wide) — plot to the EAST (between ford and wren)
+  { id: "ford", house: { x: 31, y: 17 }, size: { w: 6, h: 5 }, bed: { x: 34, y: 19 }, door: { x: 34, y: 21 }, doorSide: "S", plot: { x0: 38, y0: 18, x1: 39, y1: 20 } },
+  // 4×4 (small) — plot to the EAST (between wren and dora)
+  { id: "wren", house: { x: 41, y: 18 }, size: { w: 4, h: 4 }, bed: { x: 42, y: 19 }, door: { x: 42, y: 21 }, doorSide: "S", plot: { x0: 45, y0: 19, x1: 47, y1: 21 } },
+  // 5×5 — plot to the WEST (between wren and dora, lower row)
+  { id: "dora", house: { x: 52, y: 17 }, size: { w: 5, h: 5 }, bed: { x: 54, y: 19 }, door: { x: 54, y: 21 }, doorSide: "S", plot: { x0: 49, y0: 18, x1: 50, y1: 20 } },
+  // 6×5 (wide) — plot to the EAST (between gus and clem)
+  { id: "gus",  house: { x: 58, y: 17 }, size: { w: 6, h: 5 }, bed: { x: 60, y: 19 }, door: { x: 60, y: 21 }, doorSide: "S", plot: { x0: 64, y0: 18, x1: 65, y1: 20 } },
+  // 4×4 (small) — plot to the EAST (right of clem)
+  { id: "clem", house: { x: 67, y: 18 }, size: { w: 4, h: 4 }, bed: { x: 68, y: 19 }, door: { x: 68, y: 21 }, doorSide: "S", plot: { x0: 71, y0: 19, x1: 73, y1: 21 } },
+  // -- south band: doors face N onto the y=50 road; house top row y=51 ---------
   // 5×5 — plot to the WEST
-  { id: "dora", house: { x: 38, y: 7 }, size: { w: 5, h: 5 }, bed: { x: 40, y: 9 }, door: { x: 40, y: 11 }, doorSide: "S", plot: { x0: 34, y0: 9, x1: 36, y1: 11 } },
+  { id: "fern",  house: { x: 25, y: 51 }, size: { w: 5, h: 5 }, bed: { x: 27, y: 53 }, door: { x: 27, y: 51 }, doorSide: "N", plot: { x0: 21, y0: 52, x1: 23, y1: 54 } },
+  // 4×4 (small) — plot to the EAST
+  { id: "nell",  house: { x: 33, y: 51 }, size: { w: 4, h: 4 }, bed: { x: 34, y: 53 }, door: { x: 34, y: 51 }, doorSide: "N", plot: { x0: 38, y0: 52, x1: 39, y1: 54 } },
   // 6×5 (wide) — plot to the EAST
-  { id: "gus",  house: { x: 45, y: 7 }, size: { w: 6, h: 5 }, bed: { x: 47, y: 9 }, door: { x: 47, y: 11 }, doorSide: "S", plot: { x0: 51, y0: 9, x1: 53, y1: 11 } },
-  // 4×4 (small) — plot to the WEST
-  { id: "clem", house: { x: 57, y: 8 }, size: { w: 4, h: 4 }, bed: { x: 58, y: 9 }, door: { x: 58, y: 11 }, doorSide: "S", plot: { x0: 54, y0: 9, x1: 56, y1: 11 } },
-  // -- south band (rooms below the spine; doors face NORTH onto the y=28
-  //    residential row → exterior neighbour = door.y - 1 = 28 = path). --------
+  { id: "sage",  house: { x: 41, y: 51 }, size: { w: 6, h: 5 }, bed: { x: 44, y: 53 }, door: { x: 44, y: 51 }, doorSide: "N", plot: { x0: 48, y0: 52, x1: 49, y1: 54 } },
   // 5×5 — plot to the EAST
-  { id: "fern",  house: { x: 2,  y: 29 }, size: { w: 5, h: 5 }, bed: { x: 4,  y: 31 }, door: { x: 4,  y: 29 }, doorSide: "N", plot: { x0: 7,  y0: 29, x1: 9,  y1: 31 } },
+  { id: "rusty", house: { x: 52, y: 51 }, size: { w: 5, h: 5 }, bed: { x: 54, y: 53 }, door: { x: 54, y: 51 }, doorSide: "N", plot: { x0: 57, y0: 52, x1: 59, y1: 54 } },
   // 4×4 (small) — plot to the EAST
-  { id: "nell",  house: { x: 14, y: 29 }, size: { w: 4, h: 4 }, bed: { x: 15, y: 30 }, door: { x: 15, y: 29 }, doorSide: "N", plot: { x0: 18, y0: 29, x1: 20, y1: 31 } },
-  // 6×5 (wide) — plot to the WEST
-  { id: "sage",  house: { x: 24, y: 29 }, size: { w: 6, h: 5 }, bed: { x: 26, y: 31 }, door: { x: 26, y: 29 }, doorSide: "N", plot: { x0: 21, y0: 29, x1: 23, y1: 31 } },
-  // 5×5 — plot to the WEST
-  { id: "rusty", house: { x: 38, y: 29 }, size: { w: 5, h: 5 }, bed: { x: 40, y: 31 }, door: { x: 40, y: 29 }, doorSide: "N", plot: { x0: 34, y0: 29, x1: 36, y1: 31 } },
-  // 4×4 (small) — plot to the EAST
-  { id: "moss",  house: { x: 45, y: 29 }, size: { w: 4, h: 4 }, bed: { x: 46, y: 30 }, door: { x: 46, y: 29 }, doorSide: "N", plot: { x0: 49, y0: 29, x1: 51, y1: 31 } },
-  // 6×5 (wide) — plot to the WEST
-  { id: "zola",  house: { x: 55, y: 29 }, size: { w: 6, h: 5 }, bed: { x: 57, y: 31 }, door: { x: 57, y: 29 }, doorSide: "N", plot: { x0: 52, y0: 29, x1: 54, y1: 31 } },
+  { id: "moss",  house: { x: 60, y: 51 }, size: { w: 4, h: 4 }, bed: { x: 61, y: 53 }, door: { x: 62, y: 51 }, doorSide: "N", plot: { x0: 64, y0: 52, x1: 65, y1: 54 } },
+  // 6×5 (wide) — plot to the EAST
+  { id: "zola",  house: { x: 66, y: 51 }, size: { w: 6, h: 5 }, bed: { x: 68, y: 53 }, door: { x: 68, y: 51 }, doorSide: "N", plot: { x0: 72, y0: 52, x1: 73, y1: 54 } },
 ];
 
 /** persona id -> start (door) tile, consumed by src/agents/personas.ts. */
@@ -171,7 +170,11 @@ export const HOMESTEAD_DOORS: Record<string, Vec2> = Object.fromEntries(
 // park access. Stamped BEFORE rooms so every door's exterior neighbour is path.
 
 /** main connector path row — the spine the verticals + downtown doors meet. */
-const SPINE_Y = 20;
+const SPINE_Y = 36;
+/** north residential road row (north doors' exterior y) */
+const NORTH_ROAD_Y = 22;
+/** south residential road row (south doors' exterior y) */
+const SOUTH_ROAD_Y = 50;
 
 interface RoadSeg {
   x0: number;
@@ -181,34 +184,46 @@ interface RoadSeg {
 }
 
 /**
- * ROAD_SEGMENTS — every road run in the town. Order is irrelevant (they are all
- * stamped to `path`). Authored so: (a) the y=20 spine spans the interior; (b) a
- * downtown loop rings the central plaza; (c) residential spurs sit just outside
- * each homestead door; (d) verticals tie the bands to the spine.
+ * ROAD_SEGMENTS — every road run in the 96×64 town. Order is irrelevant (they
+ * are all stamped to `path`). Authored so: (a) the y=36 spine spans the full
+ * interior; (b) two residential roads (north y=22, south y=50) host the twelve
+ * homes; (c) eleven evenly-spaced vertical trunks tie both residential rows to
+ * the spine so every home column has a near trunk (keeps the door→tavern A*
+ * path ≤ 40 even at the band edges); (d) a central downtown plaza row drops the
+ * civic doors onto the spine; (e) a park spur reaches the eastern park region.
+ *
+ * NOTE — the residential roads sit at y=22/y=50 (not the design draft's y=14/
+ * y=54): with a centrally-placed tavern the wider y=14/54 separation pushes the
+ * band-edge homes past the 40-tile reachability budget (their Manhattan
+ * distance alone exceeds it). y=22/y=50 keeps the spine dead-centre, leaves the
+ * y<18 / y>54 rim as open countryside, and lets the homes spread x∈[24..70].
  */
 export const ROAD_SEGMENTS: RoadSeg[] = [
-  // main horizontal connector spine (y=20) across the interior.
+  // main horizontal connector spine across the full interior.
   { x0: 1, y0: SPINE_Y, x1: MAP_WIDTH - 2, y1: SPINE_Y },
-  // -- north residential row (y=12) the north doors' exteriors (y=12) sit on --
-  { x0: 4,  y0: 12, x1: 60, y1: 12 },
-  // -- south residential row (y=28) the south doors' exteriors (y=28) sit on --
-  { x0: 4,  y0: 28, x1: 60, y1: 28 },
-  // -- vertical trunks tying the residential rows down to the spine ----------
-  { x0: 4,  y0: 12, x1: 4,  y1: 28 }, // far-west trunk (brix / fern)
-  { x0: 16, y0: 12, x1: 16, y1: 28 }, // west-mid trunk
-  { x0: 26, y0: 12, x1: 26, y1: 28 }, // mid-left trunk
-  { x0: 40, y0: 12, x1: 40, y1: 28 }, // mid-right trunk
-  { x0: 50, y0: 12, x1: 50, y1: 28 }, // east-mid trunk
-  { x0: 60, y0: 12, x1: 60, y1: 28 }, // far-east trunk (clem / zola)
-  // -- downtown plaza: a compact loop just above the spine, x 18..44, y 19 ----
-  // The civic doors all drop onto the y=19 plaza row (one above the spine),
-  // which is itself joined to the spine by short verticals at each door column.
-  { x0: 18, y0: 19, x1: 44, y1: 19 }, // plaza row (civic door exteriors)
-  { x0: 20, y0: 19, x1: 20, y1: 20 }, // shop column joiner to spine
-  { x0: 31, y0: 19, x1: 31, y1: 20 }, // tavern column joiner to spine
-  { x0: 41, y0: 19, x1: 41, y1: 20 }, // cafe column joiner to spine
-  // The PARK (open grass, y=14..19) needs no road: its bottom row (y=19) sits
-  // directly on top of the spine (y=20), so the whole region is BFS-connected.
+  // north residential road (homes above face S onto y=22)
+  { x0: 4, y0: NORTH_ROAD_Y, x1: 92, y1: NORTH_ROAD_Y },
+  // south residential road (homes below face N onto y=50)
+  { x0: 4, y0: SOUTH_ROAD_Y, x1: 92, y1: SOUTH_ROAD_Y },
+  // vertical trunks tying both residential rows to the spine (every 8 cols)
+  { x0: 8,  y0: NORTH_ROAD_Y, x1: 8,  y1: SOUTH_ROAD_Y },
+  { x0: 16, y0: NORTH_ROAD_Y, x1: 16, y1: SOUTH_ROAD_Y },
+  { x0: 24, y0: NORTH_ROAD_Y, x1: 24, y1: SOUTH_ROAD_Y },
+  { x0: 32, y0: NORTH_ROAD_Y, x1: 32, y1: SOUTH_ROAD_Y },
+  { x0: 40, y0: NORTH_ROAD_Y, x1: 40, y1: SOUTH_ROAD_Y },
+  { x0: 48, y0: NORTH_ROAD_Y, x1: 48, y1: SOUTH_ROAD_Y },
+  { x0: 56, y0: NORTH_ROAD_Y, x1: 56, y1: SOUTH_ROAD_Y },
+  { x0: 64, y0: NORTH_ROAD_Y, x1: 64, y1: SOUTH_ROAD_Y },
+  { x0: 72, y0: NORTH_ROAD_Y, x1: 72, y1: SOUTH_ROAD_Y },
+  { x0: 80, y0: NORTH_ROAD_Y, x1: 80, y1: SOUTH_ROAD_Y },
+  { x0: 88, y0: NORTH_ROAD_Y, x1: 88, y1: SOUTH_ROAD_Y },
+  // downtown plaza row (civic door exteriors), one above the spine
+  { x0: 34, y0: 35, x1: 58, y1: 35 },
+  { x0: 36, y0: 35, x1: 36, y1: 36 }, // shop column joiner to spine
+  { x0: 47, y0: 35, x1: 47, y1: 36 }, // tavern column joiner to spine
+  { x0: 56, y0: 35, x1: 56, y1: 36 }, // cafe column joiner to spine
+  // park access spur (east): drop from the spine up to the park's south edge
+  { x0: 78, y0: 24, x1: 78, y1: 36 },
 ];
 
 // -- downtown civic cluster --------------------------------------------------
@@ -233,19 +248,16 @@ interface CommonsSpec {
  * ≤ 40 A* tiles away (party-emergence reachability gate).
  */
 const COMMONS: CommonsSpec[] = [
-  // Tavern: walkable 7×5 room, dead-centre just above the spine; door drops
-  // south onto the plaza row (y=19), one tile above the spine. landmark pos =
-  // the door-gap, so it is ≤ 2 tiles from the spine for every approaching agent.
-  { kind: "tavern", rect: { x0: 28, y0: 14, x1: 34, y1: 18 }, door: { x: 31, y: 18 }, doorSide: "S" },
-  // Shop: walkable 5×5 room, west of the tavern; door south onto the plaza row.
-  // shopTile on the centre interior cell.
-  { kind: "shop", rect: { x0: 18, y0: 14, x1: 22, y1: 18 }, door: { x: 20, y: 18 }, doorSide: "S", specialTile: { x: 20, y: 16 } },
-  // Cafe: walkable 5×4 room, east of the tavern; door south onto the plaza row.
-  { kind: "cafe", rect: { x0: 39, y0: 15, x1: 43, y1: 18 }, door: { x: 41, y: 18 }, doorSide: "S" },
-  // Office: walkable 5×5 room, below-left of the spine; door north onto the spine.
-  { kind: "office", rect: { x0: 22, y0: 21, x1: 26, y1: 25 }, door: { x: 24, y: 21 }, doorSide: "N" },
-  // School: walkable 6×5 room, below-right of the spine; door north onto the spine.
-  { kind: "school", rect: { x0: 35, y0: 21, x1: 40, y1: 25 }, door: { x: 38, y: 21 }, doorSide: "N" },
+  // Tavern: 7×5, dead-centre above the spine; door S onto plaza row y=35.
+  { kind: "tavern", rect: { x0: 44, y0: 30, x1: 50, y1: 34 }, door: { x: 47, y: 34 }, doorSide: "S" },
+  // Shop: 5×5, west of tavern; door S onto plaza; shopTile centre interior.
+  { kind: "shop", rect: { x0: 34, y0: 30, x1: 38, y1: 34 }, door: { x: 36, y: 34 }, doorSide: "S", specialTile: { x: 36, y: 32 } },
+  // Cafe: 5×4, east of tavern; door S onto plaza.
+  { kind: "cafe", rect: { x0: 54, y0: 31, x1: 58, y1: 34 }, door: { x: 56, y: 34 }, doorSide: "S" },
+  // Office: 5×5, below the spine; door N onto the spine (exterior y=36).
+  { kind: "office", rect: { x0: 40, y0: 37, x1: 44, y1: 41 }, door: { x: 42, y: 37 }, doorSide: "N" },
+  // School: 6×5, below-right of the spine; door N onto the spine.
+  { kind: "school", rect: { x0: 50, y0: 37, x1: 55, y1: 41 }, door: { x: 52, y: 37 }, doorSide: "N" },
 ];
 
 const SHOP_SPEC = COMMONS.find((c) => c.kind === "shop")!;
@@ -256,20 +268,22 @@ const SHOP_TILE: Vec2 = { ...SHOP_SPEC.specialTile! };
 // pond (water) and a few benches/trees. Sits in the open SE flat, clear of the
 // rooms and roads. The pond is ≥4 wide with grass flanks (pathfinding pond
 // detour test). WATER_POS is the pond's NW corner.
-export const PARK = { x0: 49, y0: 14, x1: 54, y1: 19 };
-/** Inner pond: 4 wide, grass border inside the park region. */
-const POND = { x0: 50, y0: 15, x1: 53, y1: 17 };
+export const PARK = { x0: 74, y0: 24, x1: 84, y1: 34 };
+/** Inner pond: exactly 4 wide (x0..x0+3), grass border inside the park region.
+ *  The 4-wide invariant is load-bearing — tests/world/pathfinding.test.ts derives
+ *  the pond's east grass flank as WATER_POS.x + 4 (= x1 + 1). */
+const POND = { x0: 77, y0: 27, x1: 80, y1: 30 };
 
 // -- v3: world object positions (plaza + park) -------------------------------
-// Well: on the central plaza row, between the shop and the tavern columns.
-export const WELL_POS: Vec2 = { x: 25, y: 19 };
+// Well: on the central plaza row, west of the tavern.
+export const WELL_POS: Vec2 = { x: 41, y: 35 };
 // Notice board: one step east of the well (same row) — objects.test geometry
 // pins board = well + (1,0).
-export const NOTICE_BOARD_POS: Vec2 = { x: 26, y: 19 };
+export const NOTICE_BOARD_POS: Vec2 = { x: 42, y: 35 };
 // Bench: on park grass immediately west of the pond (adjacent to water).
-export const BENCH_POS: Vec2 = { x: 49, y: 16 };
+export const BENCH_POS: Vec2 = { x: 75, y: 28 };
 // A second bench INSIDE the park (typology park-bench test), east of the pond.
-const PARK_BENCH_POS: Vec2 = { x: 54, y: 16 };
+const PARK_BENCH_POS: Vec2 = { x: 83, y: 28 };
 
 /** The usable world objects placed in the town (well, board, two benches). */
 export const WORLD_OBJECTS: WorldObject[] = [
