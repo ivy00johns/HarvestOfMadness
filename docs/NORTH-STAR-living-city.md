@@ -230,7 +230,7 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 - [x] A3. 12 homesteads (4 hamlets × 3), TDD-converged against map + party tests. ✓ `9961b4b` — personas 10→12 (clem, moss); all 12 doors ≤96 A* to tavern.
 - [x] A6b. **Camera fit-to-map** — zoom-out floor now frames the whole town (no clipped corners). ✓ `c3a7044`, visually verified.
 - [ ] A4. 14 reserve lots + new `reserve-lots.test.ts`; document future-hamlet ground.
-- [ ] A5. **Bigger multi-room homes + per-home storage** ([Living Homes](#3a-living-homes-agent-owned-furnishable-growable) 1+2) + **park/pond relocation** (east, spine-connected) + ~500 **natural-looking** decor (kill the 16-cap AND the diagonal tree-rows) + ~1,300 interior pieces. _(park/pond/decor were left in place during A1.)_
+- [~] A5. **Bigger multi-room homes (8×8/9×8) + per-home storage cabinet + ~14–16-prop interiors + natural copse decor** (killed the diagonal tree-rows). ✓ `df10580` — visually verified. _Remaining: park/pond relocation east (still NW-center) + the functional storage **deposit** mechanic (Phase D-adjacent)._
 - [x] A6. Reach budget 40→100 **floor only** — shipped inside A0 (`7fc770c`). _Distance-weighted attendance deferred to Phase C._
 
 **A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Remaining in Phase A: A4 (reserve lots) + A5 (bigger homes + storage + park move + natural decor + interiors).**
