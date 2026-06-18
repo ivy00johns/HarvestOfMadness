@@ -22,11 +22,22 @@ import type {
   RetrievalConfig,
 } from "@contracts/types";
 import { gameHours, RETRIEVAL_DEFAULTS } from "@contracts/types";
-import { embedTexts } from "../../llm/embed";
+import { EMBED_BATCH_SIZE, embedTexts } from "../../llm/embed";
 import { scoreMemory } from "./retrieval";
 
 /** Max ms a retrieve() will wait for the query embedding before scoring with relevance 0. */
 export const QUERY_EMBED_WAIT_MS = 800;
+
+/**
+ * Micro-batch debounce window (Fix C, 429-storm resilience). On the first
+ * queued append we schedule a drain after this many ms; every other append in
+ * the same window joins the batch, collapsing a burst of writes (recordOutcome
+ * + recordSpeech + recordNearbyActivity + ... per decision) into ONE
+ * embedTexts() call. A 0ms window coalesces a synchronous burst in the same
+ * tick into a single macrotask drain (spec-permitted microtask coalescing)
+ * while keeping embedding latency negligible.
+ */
+export const EMBED_BATCH_DEBOUNCE_MS = 0;
 
 export interface MemoryStoreDeps {
   /** game clock — defaults to a day-1-morning stub; the cognition layer injects the world clock */
@@ -38,6 +49,8 @@ export interface MemoryStoreDeps {
   config?: Partial<RetrievalConfig>;
   /** query-embedding wait bound override (tests) */
   queryEmbedWaitMs?: number;
+  /** micro-batch debounce window for append embeddings (tests); default EMBED_BATCH_DEBOUNCE_MS */
+  embedBatchDebounceMs?: number;
 }
 
 const DEFAULT_NOW = (): GameStamp => ({ day: 1, phase: "morning" });
@@ -55,6 +68,11 @@ export class InMemoryMemoryStore implements MemoryStore {
   private readonly embed: (texts: string[]) => Promise<number[][]>;
   private readonly config: RetrievalConfig;
   private readonly queryEmbedWaitMs: number;
+  private readonly embedBatchDebounceMs: number;
+
+  /** Pending fire-and-forget embedding writes, drained as one batched call. */
+  private readonly embedQueue: Array<{ entry: MemoryEntry; text: string }> = [];
+  private embedTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(deps: MemoryStoreDeps = {}) {
     this.now = deps.now ?? DEFAULT_NOW;
@@ -62,6 +80,7 @@ export class InMemoryMemoryStore implements MemoryStore {
     this.embed = deps.embed ?? embedTexts;
     this.config = { ...RETRIEVAL_DEFAULTS, ...deps.config };
     this.queryEmbedWaitMs = deps.queryEmbedWaitMs ?? QUERY_EMBED_WAIT_MS;
+    this.embedBatchDebounceMs = deps.embedBatchDebounceMs ?? EMBED_BATCH_DEBOUNCE_MS;
   }
 
   async append(
@@ -94,17 +113,58 @@ export class InMemoryMemoryStore implements MemoryStore {
 
     // Rule 10: fire-and-forget embedding — the entry works without it, and
     // a failed/slow endpoint never surfaces here. Skipped in mock mode.
-    if (this.live()) {
-      void this.embed([entry.text])
-        .then((vecs) => {
-          if (Array.isArray(vecs) && vecs.length === 1) entry.embedding = vecs[0];
-        })
-        .catch(() => {
-          /* embedTexts never throws, but a test stub might */
-        });
-    }
+    // Fix C: instead of one POST per write, enqueue and micro-batch — a burst
+    // of writes in a tick collapses into a single embedTexts() call.
+    if (this.live()) this.enqueueEmbedding(entry);
 
     return entry;
+  }
+
+  /**
+   * Stop the micro-batch timer (test/teardown). Flushing is best-effort and
+   * fire-and-forget, so we simply cancel any pending drain to avoid leaking an
+   * open handle; queued entries stay functional without their embedding.
+   */
+  stop(): void {
+    if (this.embedTimer !== null) {
+      clearTimeout(this.embedTimer);
+      this.embedTimer = null;
+    }
+    this.embedQueue.length = 0;
+  }
+
+  /** Queue an entry for batched embedding; schedule a drain on the first push. */
+  private enqueueEmbedding(entry: MemoryEntry): void {
+    this.embedQueue.push({ entry, text: entry.text });
+    if (this.embedTimer === null) {
+      this.embedTimer = setTimeout(() => {
+        this.embedTimer = null;
+        void this.drainEmbedQueue();
+      }, this.embedBatchDebounceMs);
+    }
+  }
+
+  /**
+   * Drain the pending queue in chunks of EMBED_BATCH_SIZE — one embedTexts()
+   * call per chunk (embed.ts batches at 32) — assigning each vector back to its
+   * entry by index. Fire-and-forget + never-throw (rule 10): a failed/slow
+   * batch just leaves those entries unembedded.
+   */
+  private async drainEmbedQueue(): Promise<void> {
+    const pending = this.embedQueue.splice(0);
+    for (let i = 0; i < pending.length; i += EMBED_BATCH_SIZE) {
+      const chunk = pending.slice(i, i + EMBED_BATCH_SIZE);
+      try {
+        const vecs = await this.embed(chunk.map((p) => p.text));
+        if (Array.isArray(vecs) && vecs.length === chunk.length) {
+          chunk.forEach((p, j) => {
+            if (Array.isArray(vecs[j])) p.entry.embedding = vecs[j];
+          });
+        }
+      } catch {
+        /* embedTexts never throws, but a test stub might — degrade, never surface */
+      }
+    }
   }
 
   async retrieve(

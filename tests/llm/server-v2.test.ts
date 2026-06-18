@@ -12,7 +12,11 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createApp } from "../../server/app";
 import { createBudget, type Budget } from "../../server/llm/budget";
-import type { UpstreamConfig } from "../../server/llm/upstream";
+import {
+  __resetBreakerForTests,
+  __setBreakerNowForTests,
+  type UpstreamConfig,
+} from "../../server/llm/upstream";
 
 const KEY = "freellmapi-TestKey1234567890abcdef";
 
@@ -27,6 +31,7 @@ interface UpstreamSeen {
 const openServers: http.Server[] = [];
 
 afterEach(async () => {
+  __resetBreakerForTests(); // clear any open 429 breaker + restore the real clock
   await Promise.all(
     openServers.splice(0).map(
       (s) =>
@@ -417,5 +422,130 @@ describe("POST /api/agent/complete — auto retry resilience", () => {
     const res = await post(base, "/api/agent/complete", COMPLETE);
     expect(res.status).toBe(502);
     expect(seen).toHaveLength(3); // home + 2 auto retries
+  });
+});
+
+describe("POST /api/agent/complete — 429 is NOT bounceable (Fix A)", () => {
+  const COMPLETE = { agentId: "dora", system: "sys", user: "obs" };
+
+  it("propagates a 429 immediately with exactly ONE upstream POST (no auto-retry storm)", async () => {
+    const { port, seen } = await startUpstream((_p, _b, res) =>
+      replyJson(res, 429, { error: { message: "rate limited", type: "rate_limit_error" } }),
+    );
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}` });
+
+    const res = await post(base, "/api/agent/complete", COMPLETE);
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as { error: { type: string } }).error.type).toBe("rate_limit_error");
+    // Contrast the 5xx case (which bounces to 3): a 429 is a GLOBAL gateway
+    // window, so re-routing cannot escape it — fire once, propagate.
+    expect(seen).toHaveLength(1);
+  });
+});
+
+describe("Reset-honoring 429 circuit breaker (Fix B)", () => {
+  const COMPLETE = { agentId: "dora", system: "sys", user: "obs" };
+
+  /** A stub whose 429/200 reply + Retry-After is controlled per call. */
+  function flakyUpstream(state: { status: number; retryAfter?: string }) {
+    return startUpstream((path, body, res) => {
+      if (state.status === 429) {
+        const headers = state.retryAfter ? { "Retry-After": state.retryAfter } : {};
+        replyJson(res, 429, { error: { message: "limited", type: "rate_limit_error" } }, headers);
+        return;
+      }
+      if (path === "/v1/embeddings") {
+        const input = (body as { input: string[] }).input;
+        replyJson(res, 200, { model: "m", data: input.map((_t, index) => ({ index, embedding: [1] })) });
+        return;
+      }
+      replyJson(
+        res,
+        200,
+        { model: "served", choices: [{ message: { content: '{"action":"WAIT"}' } }] },
+        { "X-Routed-Via": "served" },
+      );
+    });
+  }
+
+  it("opens on a 429+Retry-After, short-circuits BOTH forwarders, then closes on first success", async () => {
+    let nowMs = 1_000_000;
+    __setBreakerNowForTests(() => nowMs);
+
+    const state = { status: 429, retryAfter: "1" }; // 1s window
+    const { port, seen } = await flakyUpstream(state);
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}` });
+
+    // First request hits upstream, gets 429, opens the breaker.
+    const first = await post(base, "/api/agent/complete", COMPLETE);
+    expect(first.status).toBe(429);
+    expect(seen).toHaveLength(1);
+
+    // While open: 5 more requests across BOTH forwarders short-circuit — 0 new
+    // upstream calls, all return 429 fast.
+    expect((await post(base, "/api/agent/complete", COMPLETE)).status).toBe(429);
+    expect((await post(base, "/api/agent/complete", { ...COMPLETE, tier: "fast" })).status).toBe(429);
+    expect((await post(base, "/api/embeddings", { texts: ["a"] })).status).toBe(429);
+    expect((await post(base, "/api/embeddings", { texts: ["b"] })).status).toBe(429);
+    expect((await post(base, "/api/agent/complete", COMPLETE)).status).toBe(429);
+    expect(seen).toHaveLength(1); // breaker absorbed every one
+
+    // Advance past the 1s window AND flip the stub to healthy.
+    nowMs += 1_500;
+    state.status = 200;
+
+    const recovered = await post(base, "/api/agent/complete", COMPLETE);
+    expect(recovered.status).toBe(200);
+    expect(seen).toHaveLength(2); // exactly one new upstream call
+
+    // Breaker is closed — subsequent calls flow normally to upstream again.
+    expect((await post(base, "/api/embeddings", { texts: ["c"] })).status).toBe(200);
+    expect(seen).toHaveLength(3);
+  });
+
+  it("honors X-RateLimit-Reset (epoch seconds) and clamps an absurd window to <=60s", async () => {
+    let nowMs = 5_000_000; // 5_000s epoch
+    __setBreakerNowForTests(() => nowMs);
+
+    // Reset 9999s in the future — must be clamped to a 60s max.
+    const resetEpochSec = Math.floor(nowMs / 1000) + 9_999;
+    const { port, seen } = await startUpstream((_p, _b, res) =>
+      replyJson(
+        res,
+        429,
+        { error: { message: "limited", type: "rate_limit_error" } },
+        { "X-RateLimit-Reset": String(resetEpochSec) },
+      ),
+    );
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}` });
+
+    expect((await post(base, "/api/agent/complete", COMPLETE)).status).toBe(429);
+    expect(seen).toHaveLength(1);
+
+    // Still open at +30s (< clamped 60s) — short-circuited, no new call.
+    nowMs += 30_000;
+    expect((await post(base, "/api/agent/complete", COMPLETE)).status).toBe(429);
+    expect(seen).toHaveLength(1);
+
+    // Past the 60s clamp (+61s total) — breaker reopens the lane to upstream.
+    nowMs += 31_000;
+    expect((await post(base, "/api/agent/complete", COMPLETE)).status).toBe(429);
+    expect(seen).toHaveLength(2); // window had been clamped to 60s, not 9999s
+  });
+
+  it("does NOT open on 401/5xx — only 429 trips the breaker", async () => {
+    __setBreakerNowForTests(() => 2_000_000);
+
+    // 503 storm: bounces (home + 2 retries = 3) but never opens the breaker,
+    // so a following request still reaches upstream.
+    const { port, seen } = await startUpstream((_p, _b, res) =>
+      replyJson(res, 503, { error: { message: "down", type: "server_error" } }),
+    );
+    const { base } = await startApp({ baseUrl: `http://127.0.0.1:${port}` });
+
+    expect((await post(base, "/api/agent/complete", COMPLETE)).status).toBe(502);
+    expect(seen).toHaveLength(3);
+    expect((await post(base, "/api/embeddings", { texts: ["x"] })).status).toBe(502);
+    expect(seen).toHaveLength(4); // not short-circuited — breaker stayed closed
   });
 });
