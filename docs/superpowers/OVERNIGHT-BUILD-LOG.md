@@ -24,8 +24,8 @@ Get to Smallville-level: **city size, character density, structure details, item
 - [ ] 1f. Building structure — roof-edge + wall polish
 
 ### Wave 2 — Character density
-- [ ] 2a. Activate reserve lots → ~24 personas/agents (map + personas.ts)
-- [ ] 2b. More character sprite variety
+- [x] 2a. Activated all 14 reserve lots → 26 homesteads + 26 personas (34ae07c). 1024 green, reachability holds (max BFS 38). 14 new archetypes (gravedigger, prepper, poet, athlete, con-merchant, teacher, forager, herbalist, blacksmith, seer, miser, drunkard, carpenter, child).
+- [ ] 2b. More character sprite variety (optional)
 
 ### Wave 3 — New agent systems
 - [ ] 3a. Diaries (per-agent daily journal + memory + UI panel)
