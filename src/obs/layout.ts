@@ -460,7 +460,9 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     panelW,
     panelH,
     panelRect,
-    panelCloseRect: { x: panelX + panelW - 22, y: panelY, w: 22, h: 20 },
+    // Hit target for the INSPECTOR close ✕ control (a 26×26 button inset by the
+    // card's 16px x-pad / 14px y-pad — UIScene.INSP_PAD_*; README §6).
+    panelCloseRect: { x: panelX + panelW - 42, y: panelY + 12, w: 26, h: 26 },
     panelHeaderH: PANEL_HEADER_H,
     panelVisibleTrace: PANEL_VISIBLE_TRACE,
     activeConvX,

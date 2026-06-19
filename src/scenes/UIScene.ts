@@ -16,7 +16,7 @@
  * rebuilds. No nested containers (Phaser 4.1 gotcha).
  */
 import Phaser from "phaser";
-import type { DecisionTraceEntry, WorldEvent } from "@contracts/types";
+import type { WorldEvent } from "@contracts/types";
 import {
   FeedModel,
   formatFeedItem,
@@ -26,11 +26,16 @@ import { KillSwitchModel } from "../obs/KillSwitch";
 import { toCssColor } from "../obs/EventLog";
 import {
   buildAgentCard,
-  formatTraceEntry,
-  formatTraceSummary,
   personaText,
   type ObsAgentCardModel,
 } from "../obs/Inspector";
+import {
+  memoryTagChip,
+  modelStrip,
+  orderMemoryStream,
+  traceNodes,
+  type TraceNode,
+} from "../obs/inspectorRail";
 import {
   FONT_SIZE_BASE,
   FONT_SIZE_KPI_LABEL,
@@ -51,6 +56,7 @@ import {
 import {
   borderCard,
   borderControl,
+  borderInspector,
   brand400,
   brand500,
   brand600,
@@ -103,7 +109,6 @@ const COLOR_FAINT = ink500.hex; // tertiary / faint meta — ink500
 const COLOR_GOAL = cyan300.hex; // the one accent → cyan300
 const COLOR_PLAN = brand400.hex; // plan → brand400
 const COLOR_OK = positive500.hex; // ok → positive500
-const COLOR_BAD = p1.hex; // bad → red (P1)
 const COLOR_CHROME = cardSurface.num; // chrome → card surface
 const COLOR_CARD_BG = cardSurface.num; // card background → card surface
 const COLOR_BORDER = borderCard.num; // separator → card border
@@ -112,6 +117,15 @@ const COLOR_INSET = insetTile.num; // inset mini-stat tiles → insetTile
 const COLOR_STAR = brand400.hex; // ★ accent (Active-conversation card title)
 const COLOR_BUBBLE_HOST = bubbleHost.num; // host (left) chat bubble fill
 const COLOR_BUBBLE_GUEST = bubbleGuest.num; // other-speaker (right) chat bubble fill
+
+// -- SpaceCon INSPECTOR rail (design README §6) — token-sourced, no new hex ----
+const INSP_BORDER = borderInspector.num; // inspector card border (#2f4a6b)
+const INSP_CTRL_BG = control.num; // close-✕ control fill (#0c1424)
+const INSP_CTRL_BORDER = borderControl.num; // close-✕ + model-strip border (#24324d)
+const INSP_PERSONA = ink400.hex; // persona sub (#76839B)
+const INSP_CONNECTOR = borderCard.num; // trace-timeline connector (#1f2c46)
+const INSP_MODEL_MOCK = ink400.hex; // model strip — mock (#76839B)
+const INSP_MODEL_LIVE = cyan300.hex; // model strip — live (#7FD3EC)
 
 // -- SpaceCon command bar (design README §1) — token-sourced, no new hex ------
 const CMD_BAR_BG = cmdGradTop.num; // flat navy fill (gradient impractical in Phaser)
@@ -280,13 +294,27 @@ export class UIScene extends Phaser.Scene {
    *  advance one card per WHEEL_NOTCH of travel (no "flying through" blur). */
   private cardScrollAccum = 0;
 
-  // trace panel
+  // INSPECTOR rail (right-rail INSPECTOR state, README §6): one tall card that
+  // REPLACES the DEFAULT Active-conversation card in place (panelRect ===
+  // activeConvRect). `panelObjects` holds the fixed chrome (bg, header, close,
+  // stat strip); `panelEntryTexts` holds the scrollable content below the stat
+  // strip (trace timeline + model strip + memory stream) — the wheel scrolls
+  // this list when it overflows the card.
   private selectedAgent: string | null = null;
-  private readonly expandedTurnIds = new Set<string>();
   private traceScroll = 0;
   private panelObjects: Phaser.GameObjects.GameObject[] = [];
-  private panelEntryTexts: Phaser.GameObjects.Text[] = [];
-  private panelTraceEntries: DecisionTraceEntry[] = [];
+  private panelEntryTexts: Phaser.GameObjects.GameObject[] = [];
+  /** scrollable content objects with their unscrolled base-Y + height (the
+   *  trace timeline + model strip + memory stream below the fixed stat strip). */
+  private panelContent: Array<{
+    obj: Phaser.GameObjects.GameObject & { setY(y: number): unknown; setVisible(v: boolean): unknown };
+    baseY: number;
+    h: number;
+  }> = [];
+  /** y the scrollable content region starts at (just below the stat strip). */
+  private panelContentTop = 0;
+  /** total laid-out content height (drives scroll clamp). */
+  private panelContentH = 0;
 
   constructor() {
     super({ key: "ui", active: true });
@@ -344,7 +372,7 @@ export class UIScene extends Phaser.Scene {
     this.feedLineItems = [];
     this.panelObjects = [];
     this.panelEntryTexts = [];
-    this.panelTraceEntries = [];
+    this.panelContent = [];
     this.selectedAgent = null;
     // removeAll(true) destroyed the Active-conversation card objects — drop the
     // stale refs; buildActiveConvChrome() recreates them. arrivedByEvent +
@@ -550,8 +578,10 @@ export class UIScene extends Phaser.Scene {
         return;
       }
       if (pointInRect(px, py, this.hud.panelRect)) {
-        this.onPanelClick(py);
-        return; // panel swallows its clicks — nothing leaks to the map
+        // INSPECTOR is a fixed structured card (no expandable rows). The only
+        // interactive element is the close ✕ (handled above); every other click
+        // inside the card is swallowed so nothing leaks to the map underneath.
+        return;
       }
     }
     const count = this.cardNames.length;
@@ -564,18 +594,6 @@ export class UIScene extends Phaser.Scene {
     if (lineIdx !== null) {
       const item = this.feedLineItems[lineIdx];
       if (item && item.type === "turn") this.toggleTracePanel(item.agentName);
-    }
-  }
-
-  private onPanelClick(py: number): void {
-    for (let i = 0; i < this.panelEntryTexts.length; i++) {
-      const t = this.panelEntryTexts[i];
-      if (!t.visible) continue;
-      if (py >= t.y && py <= t.y + t.height) {
-        const entry = this.panelTraceEntries[i];
-        if (entry) this.toggleTraceEntry(entry);
-        return;
-      }
     }
   }
 
@@ -1806,7 +1824,11 @@ export class UIScene extends Phaser.Scene {
     return flat.length > maxChars ? `${flat.slice(0, maxChars - 1)}…` : flat;
   }
 
-  // -- decision trace panel ---------------------------------------------------
+  // -- INSPECTOR rail (right-rail INSPECTOR state, README §6) ------------------
+
+  /** Inspector card inner padding. */
+  private static readonly INSP_PAD_X = 16;
+  private static readonly INSP_PAD_Y = 14;
 
   private toggleTracePanel(name: string): void {
     if (this.selectedAgent === name) {
@@ -1816,158 +1838,362 @@ export class UIScene extends Phaser.Scene {
     this.closePanel();
     this.selectedAgent = name;
     this.traceScroll = 0;
-    this.expandedTurnIds.clear();
     this.buildPanelChrome(name);
     this.rebuildPanelEntries();
-    // Auto-expand the newest entry (obs backlog: panel opened fully collapsed).
-    const first = this.panelTraceEntries[0];
-    if (first) {
-      this.expandedTurnIds.add(first.turnId);
-      this.rebuildPanelEntries();
-    }
     this.renderActiveConv(); // hide the Active-conversation card behind the open panel
     this.publishPanelRect();
   }
 
+  /**
+   * Build the fixed inspector chrome (README §6): the tall card surface +
+   * #2f4a6b inspector border, the header (color swatch · name · persona sub ·
+   * state badge · close ✕ control), and the three-tile stat strip (Gold /
+   * Energy / Decisions). These never scroll; the trace timeline + model strip +
+   * memory stream below them are the scrollable content (rebuildPanelEntries).
+   * No nested containers (Phaser 4.1 gotcha); reads REAL card data.
+   */
   private buildPanelChrome(name: string): void {
-    // v1 defect d: text sat directly on the map — the panel now has a
-    // near-opaque backing rect plus a visible border.
+    const x = this.hud.panelX;
+    const y = this.hud.panelY;
+    const w = this.hud.panelW;
+    const h = this.hud.panelH;
+    const padX = UIScene.INSP_PAD_X;
+    const padY = UIScene.INSP_PAD_Y;
+    const objs: Phaser.GameObjects.GameObject[] = [];
+
+    const agent = (this.conn?.controls.agents() ?? []).find((a) => a.name === name);
+    const card = agent ? buildAgentCard(agent) : null;
+
+    // Card surface + the distinctive inspector border (#2f4a6b).
     const bg = this.add
-      .rectangle(this.hud.panelX, this.hud.panelY, this.hud.panelW, this.hud.panelH, 0x191d24, 0.97)
+      .rectangle(x, y, w, h, COLOR_CARD_BG, 0.96)
       .setOrigin(0, 0)
-      .setStrokeStyle(2, COLOR_BORDER, 1)
+      .setStrokeStyle(1, INSP_BORDER, 1)
       .setDepth(DEPTH_PANEL);
-    const title = this.add
-      .text(this.hud.panelX + 10, this.hud.panelY + 6, `${name} — decision trace`, {
+    objs.push(bg);
+
+    // -- Header: swatch · name · persona · state badge · close ✕ -------------
+    const swatch = this.add
+      .rectangle(x + padX, y + padY + 2, 13, 13, card?.color ?? COLOR_DIM_NUM, 1)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_PANEL + 1);
+    objs.push(swatch);
+    const nameText = this.add
+      .text(x + padX + 20, y + padY - 2, this.clip(name, 22), {
         fontFamily: HUD_FONT,
         fontSize: PX_TITLE,
         fontStyle: "bold",
         color: COLOR_TEXT,
       })
       .setDepth(DEPTH_PANEL + 1);
-    const agent = (this.conn?.controls.agents() ?? []).find((a) => a.name === name);
-    const subtitle = this.add
+    objs.push(nameText);
+    const persona = this.add
       .text(
-        this.hud.panelX + 10,
-        this.hud.panelY + 26,
-        this.clip(
-          `${agent ? personaText(agent.persona) : ""} · click a row to expand · wheel scrolls`,
-          70,
-        ),
-        // Persona prose → IBM Plex Sans (FONT_BODY).
-        { fontFamily: HUD_FONT_BODY, fontSize: PX_SMALL, color: COLOR_FAINT },
+        x + padX + 20,
+        y + padY + 20,
+        this.clip(agent ? personaText(agent.persona) : "", 44),
+        { fontFamily: HUD_FONT_BODY, fontSize: PX_SMALL, color: INSP_PERSONA },
       )
       .setDepth(DEPTH_PANEL + 1);
-    const close = this.add
-      .text(this.hud.panelX + this.hud.panelW - 10, this.hud.panelY + 6, "✕", {
-        fontFamily: HUD_FONT,
-        fontSize: PX_TITLE,
-        color: COLOR_BAD,
-      })
-      .setOrigin(1, 0)
-      .setDepth(DEPTH_PANEL + 1);
+    objs.push(persona);
 
-    this.panelObjects = [bg, title, subtitle, close];
+    // Close ✕ control — a 26×26 control-bg button (border #24324d), aligned to
+    // the published panelCloseRect so the scene-level hit test lands on it.
+    const closeBtnX = x + w - padX - 26;
+    const closeBg = this.add
+      .rectangle(closeBtnX, y + padY - 2, 26, 26, INSP_CTRL_BG, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, INSP_CTRL_BORDER, 1)
+      .setDepth(DEPTH_PANEL + 1);
+    objs.push(closeBg);
+    const close = this.add
+      .text(closeBtnX + 13, y + padY + 11, "✕", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        color: COLOR_DIM,
+      })
+      .setOrigin(0.5, 0.5)
+      .setDepth(DEPTH_PANEL + 2);
+    objs.push(close);
+
+    // State badge pill (FSM), to the left of the close control.
+    const badge = stateBadge(card?.fsm ?? "IDLE");
+    const badgeText = this.add
+      .text(0, 0, badge.label, {
+        fontFamily: MONO_FONT,
+        fontSize: PX_SMALL,
+        fontStyle: "bold",
+        color: `#${badge.color.toString(16).padStart(6, "0")}`,
+      })
+      .setDepth(DEPTH_PANEL + 2);
+    const badgeW = Math.ceil(badgeText.width) + 12;
+    const badgeH = Math.ceil(badgeText.height) + 6;
+    const badgeX = closeBtnX - 8 - badgeW;
+    const badgeBg = this.add
+      .rectangle(badgeX, y + padY, badgeW, badgeH, badge.tint.color, badge.tint.alpha)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_PANEL + 1);
+    badgeText.setPosition(badgeX + 6, y + padY + 3);
+    objs.push(badgeBg, badgeText);
+
+    // -- Stat strip: Gold / Energy / Decisions inset mini tiles --------------
+    const stripTop = y + padY + 44;
+    const gap = 8;
+    const innerW = w - 2 * padX;
+    const tileW = Math.floor((innerW - 2 * gap) / 3);
+    const tileH = 40;
+    const energyRatio = (card?.energy ?? 0) / 100;
+    const stats: { label: string; value: string; color: string }[] = [
+      { label: "GOLD", value: String(card?.gold ?? 0), color: p2.hex },
+      {
+        label: "ENERGY",
+        value: `${Math.round(card?.energy ?? 0)}`,
+        color: `#${energyLevelColor(energyRatio).toString(16).padStart(6, "0")}`,
+      },
+      { label: "DECISIONS", value: String(card?.decisionsTotal ?? 0), color: COLOR_TEXT },
+    ];
+    for (let i = 0; i < 3; i++) {
+      const tx = x + padX + i * (tileW + gap);
+      objs.push(
+        this.add
+          .rectangle(tx, stripTop, tileW, tileH, COLOR_INSET, 1)
+          .setOrigin(0, 0)
+          .setStrokeStyle(1, COLOR_BORDER, 1)
+          .setDepth(DEPTH_PANEL + 1),
+      );
+      objs.push(
+        this.add
+          .text(tx + 8, stripTop + 6, stats[i].label, {
+            fontFamily: MONO_FONT,
+            fontSize: PX_SMALL,
+            color: COLOR_HEADER,
+          })
+          .setDepth(DEPTH_PANEL + 2),
+      );
+      objs.push(
+        this.add
+          .text(tx + 8, stripTop + 19, stats[i].value, {
+            fontFamily: HUD_FONT,
+            fontSize: PX_BASE,
+            fontStyle: "bold",
+            color: stats[i].color,
+          })
+          .setDepth(DEPTH_PANEL + 2),
+      );
+    }
+
+    this.panelContentTop = stripTop + tileH + 12;
+    this.panelObjects = objs;
   }
 
   private closePanel(): void {
     this.selectedAgent = null;
     for (const obj of this.panelEntryTexts) obj.destroy();
     this.panelEntryTexts = [];
-    this.panelTraceEntries = [];
+    this.panelContent = [];
     for (const obj of this.panelObjects) obj.destroy();
     this.panelObjects = [];
     this.renderActiveConv(); // restore the Active-conversation card once the panel closes
     this.publishPanelRect();
   }
 
-  /** Rebuild entry texts (content changed); positions set by layoutPanel(). */
+  /**
+   * Build the scrollable inspector content below the stat strip: the four-node
+   * decision-trace timeline (Observation → Thought → Action → Result), the
+   * model/cost strip, and the memory stream. All projections come from the pure
+   * inspectorRail helpers (honest Result, no fabricated cost) + the additive
+   * memoryStream seam (REAL memory entries, honest empty state). Each object's
+   * base-Y is recorded so layoutPanel() can apply the wheel scroll.
+   */
   private rebuildPanelEntries(): void {
     const name = this.selectedAgent;
     if (!name) return;
     const agent = (this.conn?.controls.agents() ?? []).find((a) => a.name === name);
     for (const obj of this.panelEntryTexts) obj.destroy();
     this.panelEntryTexts = [];
-    this.panelTraceEntries = [];
+    this.panelContent = [];
     if (!agent) return;
 
-    const entries = buildAgentCard(agent).trace.slice(0, this.hud.panelVisibleTrace);
-    this.panelTraceEntries = entries;
-    for (const entry of entries) {
-      const expanded = this.expandedTurnIds.has(entry.turnId);
-      const content = expanded
-        ? `▾ ${formatTraceSummary(entry, 68)}\n${this.indent(formatTraceEntry(entry))}`
-        : `▸ ${formatTraceSummary(entry, 68)}`;
-      const textObj = this.add
-        .text(this.hud.panelX + 10, 0, content, {
+    const x = this.hud.panelX;
+    const w = this.hud.panelW;
+    const padX = UIScene.INSP_PAD_X;
+    const card = buildAgentCard(agent);
+    const textW = w - 2 * padX - 18; // 18px gutter for node dots / chips
+    let y = this.panelContentTop;
+
+    const push = (
+      obj: Phaser.GameObjects.GameObject & {
+        setY(v: number): unknown;
+        setVisible(v: boolean): unknown;
+      },
+      h: number,
+    ): void => {
+      this.panelContent.push({ obj, baseY: y, h });
+      this.panelEntryTexts.push(obj);
+    };
+
+    // -- Decision-trace timeline (4 colored nodes + connector) ----------------
+    const nodes = traceNodes({
+      trace: card.trace,
+      lastThought: card.lastThought,
+      lastAction: card.lastAction,
+    });
+    const dotX = x + padX + 4;
+    const labelX = x + padX + 18;
+    for (let i = 0; i < nodes.length; i++) {
+      const node: TraceNode = nodes[i];
+      const labelText = this.add
+        .text(labelX, y, node.label, {
           fontFamily: MONO_FONT,
           fontSize: PX_SMALL,
-          color: expanded ? "#cdd3dd" : COLOR_DIM,
-          // advanced wrap: raw JSON has no spaces, must hard-break long runs
-          wordWrap: { width: this.hud.panelW - 20, useAdvancedWrap: true },
+          fontStyle: "bold",
+          color: `#${node.labelColor.toString(16).padStart(6, "0")}`,
         })
-        .setDepth(DEPTH_PANEL + 1);
-      this.panelEntryTexts.push(textObj);
+        .setDepth(DEPTH_PANEL + 2);
+      const labelH = Math.ceil(labelText.height);
+      const body = this.add
+        .text(labelX, y + labelH + 1, node.text, {
+          fontFamily: node.italic ? HUD_FONT_BODY : MONO_FONT,
+          fontSize: PX_SMALL,
+          fontStyle: node.italic ? "italic" : "normal",
+          color: `#${node.textColor.toString(16).padStart(6, "0")}`,
+          wordWrap: { width: textW, useAdvancedWrap: true },
+        })
+        .setDepth(DEPTH_PANEL + 2);
+      const bodyH = Math.ceil(body.height);
+      const nodeBlockH = labelH + 1 + bodyH + 10;
+      // Node dot.
+      const dot = this.add
+        .rectangle(dotX, y + 2, 7, 7, node.nodeColor, 1)
+        .setOrigin(0, 0)
+        .setDepth(DEPTH_PANEL + 2);
+      // Connector below the dot toward the next node.
+      if (i < nodes.length - 1) {
+        const conn = this.add
+          .rectangle(dotX + 3, y + 10, 1, nodeBlockH - 4, INSP_CONNECTOR, 1)
+          .setOrigin(0, 0)
+          .setDepth(DEPTH_PANEL + 1);
+        push(conn, 0); // zero-height: rides the node block, not its own row
+      }
+      push(dot, 0);
+      push(labelText, 0);
+      push(body, nodeBlockH);
+      y += nodeBlockH;
     }
-    if (entries.length === 0) {
+
+    // -- Model/cost strip (model · latency · tokens; NO dollar cost) ----------
+    y += 4;
+    const strip = modelStrip(card);
+    const stripText = this.add
+      .text(x + padX + 8, y + 6, strip.text, {
+        fontFamily: MONO_FONT,
+        fontSize: PX_SMALL,
+        color: strip.live ? INSP_MODEL_LIVE : INSP_MODEL_MOCK,
+      })
+      .setDepth(DEPTH_PANEL + 2);
+    const stripH = Math.ceil(stripText.height) + 12;
+    const stripBg = this.add
+      .rectangle(x + padX, y, w - 2 * padX, stripH, COLOR_INSET, 1)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, INSP_CTRL_BORDER, 1)
+      .setDepth(DEPTH_PANEL + 1);
+    push(stripBg, 0);
+    push(stripText, stripH + 12);
+    y += stripH + 12;
+
+    // -- Memory stream (tag chip + text + importance; from the real seam) -----
+    const memHeader = this.add
+      .text(x + padX, y, "MEMORY STREAM", {
+        fontFamily: MONO_FONT,
+        fontSize: PX_SMALL,
+        fontStyle: "bold",
+        color: COLOR_HEADER,
+      })
+      .setDepth(DEPTH_PANEL + 2);
+    push(memHeader, Math.ceil(memHeader.height) + 8);
+    y += Math.ceil(memHeader.height) + 8;
+
+    const memories = orderMemoryStream(
+      this.conn?.controls.memoryStream?.(name) ?? [],
+    );
+    if (memories.length === 0) {
       const empty = this.add
-        .text(this.hud.panelX + 10, 0, "(no decisions yet)", {
-          fontFamily: HUD_FONT,
+        .text(x + padX, y, "No memories yet", {
+          fontFamily: HUD_FONT_BODY,
           fontSize: PX_SMALL,
           color: COLOR_FAINT,
         })
-        .setDepth(DEPTH_PANEL + 1);
-      this.panelEntryTexts.push(empty);
+        .setDepth(DEPTH_PANEL + 2);
+      push(empty, Math.ceil(empty.height) + 6);
+      y += Math.ceil(empty.height) + 6;
+    } else {
+      const chipX = x + padX;
+      const chipW = 52;
+      const memTextX = chipX + chipW + 8;
+      const impW = 22;
+      const memTextW = w - padX - memTextX - impW - 6;
+      for (const m of memories) {
+        const chip = memoryTagChip(m.type);
+        const bodyText = this.add
+          .text(memTextX, y, this.clip(m.text, 120), {
+            fontFamily: HUD_FONT_BODY,
+            fontSize: PX_SMALL,
+            color: COLOR_DIM,
+            wordWrap: { width: memTextW, useAdvancedWrap: true },
+          })
+          .setDepth(DEPTH_PANEL + 2);
+        const rowH = Math.max(18, Math.ceil(bodyText.height)) + 8;
+        const chipBg = this.add
+          .rectangle(chipX, y, chipW, 16, chip.fill.color, chip.fill.alpha)
+          .setOrigin(0, 0)
+          .setDepth(DEPTH_PANEL + 1);
+        const chipLabel = this.add
+          .text(chipX + chipW / 2, y + 8, chip.label, {
+            fontFamily: MONO_FONT,
+            fontSize: PX_SMALL,
+            fontStyle: "bold",
+            color: `#${chip.color.toString(16).padStart(6, "0")}`,
+          })
+          .setOrigin(0.5, 0.5)
+          .setDepth(DEPTH_PANEL + 2);
+        const imp = this.add
+          .text(x + w - padX, y, String(m.importance), {
+            fontFamily: MONO_FONT,
+            fontSize: PX_SMALL,
+            color: COLOR_FAINT,
+          })
+          .setOrigin(1, 0)
+          .setDepth(DEPTH_PANEL + 2);
+        push(chipBg, 0);
+        push(chipLabel, 0);
+        push(imp, 0);
+        push(bodyText, rowH);
+        y += rowH;
+      }
     }
+
+    this.panelContentH = y - this.panelContentTop;
     this.layoutPanel();
   }
 
-  private toggleTraceEntry(entry: DecisionTraceEntry): void {
-    if (this.expandedTurnIds.has(entry.turnId)) {
-      this.expandedTurnIds.delete(entry.turnId);
-    } else {
-      this.expandedTurnIds.add(entry.turnId);
-    }
-    this.rebuildPanelEntries();
-  }
-
   /**
-   * Stack entries vertically from the (clamped) scroll offset, clipping to
-   * the panel window via visibility + setCrop — GeometryMask is unsupported
-   * by Phaser 4's WebGL renderer.
+   * Apply the wheel scroll to the inspector content below the stat strip:
+   * translate every content object by the clamped scroll offset and hide the
+   * ones whose top falls outside the content window (visibility clip — the rail
+   * card has a hard bottom). The header/stat-strip chrome stays fixed.
    */
   private layoutPanel(): void {
-    const top = this.hud.panelY + this.hud.panelHeaderH;
-    const availH = this.hud.panelH - this.hud.panelHeaderH - 6;
-    const bottom = top + availH;
-    const contentH = this.panelEntryTexts.reduce((h, t) => h + t.height + 6, 0);
-    const minScroll = Math.min(0, availH - contentH);
+    const top = this.panelContentTop;
+    const bottom = this.hud.panelY + this.hud.panelH - 8;
+    const availH = bottom - top;
+    const minScroll = Math.min(0, availH - this.panelContentH);
     this.traceScroll = Phaser.Math.Clamp(this.traceScroll, minScroll, 0);
-    let y = Math.round(top + this.traceScroll);
-    for (const t of this.panelEntryTexts) {
-      t.setY(y);
-      const h = t.height;
-      if (y + h <= top || y >= bottom) {
-        t.setVisible(false);
-      } else {
-        t.setVisible(true);
-        const cropTop = Math.max(0, top - y);
-        const cropBottom = Math.max(0, y + h - bottom);
-        if (cropTop > 0 || cropBottom > 0) {
-          t.setCrop(0, cropTop, t.width, h - cropTop - cropBottom);
-        } else if (t.isCropped) {
-          t.setCrop();
-        }
-      }
-      y += h + 6;
+    for (const c of this.panelContent) {
+      const ny = Math.round(c.baseY + this.traceScroll);
+      c.obj.setY(ny);
+      // Hide content scrolled above the window top or below the card bottom.
+      c.obj.setVisible(ny + c.h > top && ny < bottom);
     }
-  }
-
-  private indent(block: string): string {
-    return block
-      .split("\n")
-      .map((l) => `  ${l}`)
-      .join("\n");
   }
 
   private onWheel(pointer: Phaser.Input.Pointer, deltaY: number): void {
