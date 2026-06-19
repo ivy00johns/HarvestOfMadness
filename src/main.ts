@@ -39,7 +39,15 @@ async function bootGame(): Promise<void> {
   new Phaser.Game({
     type: Phaser.AUTO,
     parent: "game",
-    pixelArt: true,
+    // Smooth, antialiased TEXT. The HUD read as a blurry "Game Boy" because the
+    // old global `pixelArt: true` forced NEAREST filtering on EVERY glyph
+    // texture, so labels stair-stepped and went to mush when the canvas was
+    // upscaled on a HiDPI/Retina display. We keep the world's crisp pixel-art
+    // look by applying a NEAREST filter per-texture to the loaded tile/sprite
+    // sheets (BootScene.crispenTextures) instead — so text is smooth AND tiles
+    // stay sharp. (HUD text also renders at devicePixelRatio via crispText.)
+    pixelArt: false,
+    antialias: true,
     roundPixels: true,
     backgroundColor: BACKGROUND_COLOR,
     scale: {

@@ -97,10 +97,31 @@ export class BootScene extends Phaser.Scene {
         );
         this.startWorld(false, null);
       } else {
+        this.crispenTextures(manifest);
         this.startWorld(true, manifest);
       }
     });
     this.load.start();
+  }
+
+  /**
+   * Keep the loaded pixel-art crisp now that the game no longer runs in global
+   * `pixelArt` mode (which we dropped so HUD TEXT renders smooth, not jagged —
+   * see src/main.ts). Antialiasing is fine for text but would bilinear-blur the
+   * tile/sprite art, so every loaded sheet gets a NEAREST filter: crisp tiles,
+   * smooth text. Vector placeholders (no-asset mode) need nothing.
+   */
+  private crispenTextures(manifest: AssetManifest): void {
+    const keys = [
+      ...manifest.characters.map((c) => c.key),
+      ...manifest.crops.map((c) => `${CROP_TEXTURE_PREFIX}${c.kind}`),
+      ...manifest.tilesets.map((t) => t.key),
+    ];
+    for (const key of keys) {
+      if (this.textures.exists(key)) {
+        this.textures.get(key).setFilter(Phaser.Textures.FilterMode.NEAREST);
+      }
+    }
   }
 
   private startWorld(assetsOn: boolean, manifest: AssetManifest | null): void {
