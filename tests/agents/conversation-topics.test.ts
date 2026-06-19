@@ -300,10 +300,23 @@ describe("focal grounding (mock) — a heard rumor surfaces as a topic", () => {
     conv.handleReply(alice, bob, "Morning!");
     await SETTLE();
 
-    // ONE pair: Bob "told" + Alice "heard". No per-turn memories, no extras.
-    expect(writes.length).toBe(2);
-    expect(writes[0].agentName).toBe("Bob");
-    expect(writes[1].agentName).toBe("Alice");
+    // Per CONVERSATION (NOT per turn): exactly 4 writes — the ONE legacy pair
+    // (Bob "told", Alice "heard") PLUS the 2 conversation summaries (one per
+    // participant). No per-turn spam: the exchange ran multiple turns but the
+    // memory stream still gains a fixed, bounded set.
+    const legacy = writes.filter(
+      (w) => w.text.startsWith("I told ") || w.text.includes(" replied: "),
+    );
+    const summaries = writes.filter((w) => w.text.startsWith("Chatted with"));
+    // Exactly ONE legacy pair (Bob told + Alice heard) — unchanged invariant.
+    expect(legacy).toHaveLength(2);
+    expect(legacy[0].agentName).toBe("Bob");
+    expect(legacy[1].agentName).toBe("Alice");
+    // Exactly 2 summaries (one per participant), gossip-inert at importance 4.
+    expect(summaries).toHaveLength(2);
+    expect(summaries.every((w) => w.importance === 4)).toBe(true);
+    // Nothing else: 2 legacy + 2 summaries, no per-turn extras.
+    expect(writes.length).toBe(4);
   });
 });
 

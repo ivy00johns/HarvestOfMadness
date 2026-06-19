@@ -348,7 +348,15 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         }
       },
       writeMemory: (agentName, text, importance) => {
-        this.writeObservation(agentName, text, importance);
+        // Pin the EXACT importance the ConversationSystem chose — do NOT re-rate
+        // through the mock importance heuristic. The conversation summary is
+        // written at SUMMARY_IMPORTANCE=4 to stay BELOW the gossip first-hand
+        // gate (importance>=5, Cognition.ts:891); but rateImportanceMock would
+        // bump any "Chatted with …" text to 5 (it matches "chat"), promoting the
+        // summary into a gossip candidate and leaking it into gossip.test.ts.
+        // The legacy pair already passes importance 5, so pinning is a no-op for
+        // it (heuristic also yields 5) — only the summary's 4 is preserved.
+        void this.write(agentName, "observation", text, importance).catch(() => {});
       },
       // Smallville new_retrieve(focal=other): the deterministic store retrieve
       // (proven by retrieval-determinism.test.ts) grounds reply topics in what
