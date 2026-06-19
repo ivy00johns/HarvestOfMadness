@@ -5,8 +5,8 @@
  * v4 — RESTRUCTURE for readability. The HUD now docks to the live viewport in
  * three regions docked to the window edges:
  *
- *   ┌──────────────────────────────── top chrome (full width) ───────────────┐
- *   │ controls + clock                                                        │
+ *   ┌──────────────────────── SpaceCon command bar (full width) ─────────────┐
+ *   │ wordmark · transport · speed · mock/live    →    clock · telemetry chips│
  *   ├──────────────────────────────────────────────┬─────────────────────────┤
  *   │                                              │  CONVERSATION (top)      │
  *   │                MAP (center-left, wide)        │  ─ right panel ─         │
@@ -27,6 +27,7 @@
  * are retained (as thin wrappers over computeHud at the design size) so the
  * pure layout unit tests keep a stable design-size reference.
  */
+import { FONT_BODY, FONT_DISPLAY, FONT_MONO } from "./theme";
 
 // -- contract rule 14: every HUD font ≥ 12 logical px ------------------------
 // Readability polish: the whole scale is lifted ~15-25% over the old
@@ -36,21 +37,47 @@
 export const FONT_SIZE_SMALL = 13;
 export const FONT_SIZE_BASE = 15;
 export const FONT_SIZE_TITLE = 17;
+
 /**
- * Body family — a clean system sans for prose (names, labels, status) reads
- * noticeably softer than a terminal mono. Numerals/code rows (gold, energy,
- * meta, decision-trace JSON) keep MONO_FONT so columns stay aligned and the
- * clip-char math (chars × px) remains predictable.
+ * HUD font families — SpaceCon design-token stacks (single source: theme.ts).
+ *
+ *  - HUD_FONT (display, Space Grotesk) — names, numbers, titles, section headers.
+ *  - HUD_FONT_BODY (IBM Plex Sans) — prose: goals, thought/quote, persona, chat.
+ *  - MONO_FONT (IBM Plex Mono) — numeric/code rows, labels, telemetry, badges
+ *    where column alignment matters and the clip-char math (chars × px) holds.
  */
-export const HUD_FONT = "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif";
+export const HUD_FONT = FONT_DISPLAY;
+/** Body family for prose strings (goal, thought/quote, persona, transcript). */
+export const HUD_FONT_BODY = FONT_BODY;
 /** Monospace family for numeric/code rows where column alignment matters. */
-export const MONO_FONT = "ui-monospace, Menlo, Consolas, monospace";
+export const MONO_FONT = FONT_MONO;
 
 export interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
+}
+
+// -- KPI value formatters (pure — testable headlessly) -----------------------
+/**
+ * Economy KPI value: a non-negative integer gold total with thousands
+ * separators and a trailing `g` (e.g. 2400 → "2,400g", 0 → "0g"). The caller
+ * renders the `g` faint (ink400). Non-finite / negative inputs clamp to "0g"
+ * (honest empty — never a fabricated number).
+ */
+export function formatEconomy(gold: number): string {
+  const n = Number.isFinite(gold) ? Math.max(0, Math.round(gold)) : 0;
+  return `${n.toLocaleString("en-US")}g`;
+}
+
+/**
+ * Average-energy KPI value: a mean 0..100 rounded to a whole percent
+ * (e.g. 71.4 → "71%"). Non-finite input (no agents) clamps to "0%".
+ */
+export function formatPercent(mean: number): string {
+  const n = Number.isFinite(mean) ? Math.max(0, Math.round(mean)) : 0;
+  return `${n}%`;
 }
 
 export function pointInRect(px: number, py: number, r: Rect): boolean {
@@ -71,12 +98,37 @@ export function unionRect(a: Rect, b: Rect): Rect {
 }
 
 // -- fixed design metrics (independent of viewport size) ---------------------
-// Readability polish: chrome rows and cards gained vertical room to match the
-// larger type scale (above) and a touch more line spacing.
-export const TOPBAR_H = 30;
-export const BADGE_ROW_H = 26;
-/** Total height of the two-row top chrome. */
-export const HUD_TOP_H = TOPBAR_H + BADGE_ROW_H; // 56
+// B-2: the old two-row top chrome (TOPBAR_H + BADGE_ROW_H) collapses into a
+// SINGLE SpaceCon command bar (design README §1). CMDBAR_H is the bar height;
+// it is the single top-region anchor every other region (map / right panel /
+// strip) and isPointOverHud key off via `topH`.
+export const CMDBAR_H = 46;
+/** Single command-bar height. The badge row is gone — the kill-switch + paused
+ *  + budget indicators fold into the bar. Retained name = CMDBAR_H. */
+export const TOPBAR_H = CMDBAR_H;
+/** The badge row collapsed into the command bar — zero height, anchored at the
+ *  bar's bottom edge (kept so readers of these fields still resolve). */
+export const BADGE_ROW_H = 0;
+/** Total height of the top chrome — now a single command bar. */
+export const HUD_TOP_H = CMDBAR_H;
+
+// -- KPI band (B-3, design README §2) ----------------------------------------
+// A horizontal row of FIVE equal KPI tiles in the LEFT column, directly below
+// the command bar and ABOVE the map. The map shifts down by KPI_BAND_H. The
+// right panel + bottom strip are UNCHANGED (the band is left-column only; the
+// right rail still starts at topH). Integer; the band is tall enough for a
+// 10.5px mono label over a 24px display value plus ~12px top/bottom padding.
+export const KPI_BAND_H = 60;
+/** Number of KPI tiles in the band (design README §2: five run-level numbers). */
+export const KPI_TILE_COUNT = 5;
+/** Gap between KPI tiles (design README §2: flex row, gap ~12px). */
+export const KPI_TILE_GAP = 12;
+/** Outer inset of the KPI band from the left/right edges of the left column. */
+export const KPI_BAND_PAD = 4;
+/** Value font for the KPI tiles — a NEW larger display size (≥12, rule 14). */
+export const FONT_SIZE_KPI_VALUE = 24;
+/** Mono label font for the KPI tiles (≥12, rule 14). */
+export const FONT_SIZE_KPI_LABEL = 12;
 
 // -- RIGHT panel (conversation + events) ------------------------------------
 /** Preferred width of the fixed right-side panel that holds the conversation
@@ -97,8 +149,8 @@ export const STRIP_H = 200;
 export const STRIP_HEADER_H = 18;
 /** Full bottom-strip card — laid out LEFT→RIGHT in a single row; the strip
  *  scrolls horizontally so every agent's card is reachable (UIScene cardScroll).
- *  Wide enough for the full intrinsic-drive needs row on its own line. */
-export const CARD_W = 246;
+ *  248px per the SpaceCon card design (handoff §4 — fixed width 248). */
+export const CARD_W = 248;
 export const CARD_H = STRIP_H - STRIP_HEADER_H - 8; // card body height inside strip
 export const CARD_GAP = 8;
 
@@ -141,6 +193,18 @@ export interface HudLayout {
   rightTop: number;
   rightRect: Rect;
 
+  // -- KPI band (left column, below the command bar, above the map) ---------
+  /** Top edge of the KPI band (== topH). */
+  kpiY: number;
+  /** Height of the KPI band (== KPI_BAND_H). */
+  kpiH: number;
+  /** Left-column width the band spans (== rightX / the map's width). */
+  kpiW: number;
+  /** Full KPI band rect (x:0, y:topH, w:kpiW, h:KPI_BAND_H). */
+  kpiBandRect: Rect;
+  /** Per-tile rect (i: 0..4) — five equal tiles with KPI_TILE_GAP between. */
+  kpiTileRect(i: number): Rect;
+
   // -- map viewport (center-left) -------------------------------------------
   mapX: number;
   mapY: number;
@@ -182,19 +246,19 @@ export interface HudLayout {
   panelHeaderH: number;
   panelVisibleTrace: number;
 
-  // -- party / governance showcase strip (overlays conversation region) -----
-  partyX: number;
-  partyY: number;
-  partyW: number;
-  partyH: number;
-  partyRect: Rect;
-
-  // -- conversation transcript (right panel, top half) ----------------------
-  transcriptX: number;
-  transcriptY: number;
-  transcriptW: number;
-  transcriptH: number;
-  transcriptRect: Rect;
+  // -- Active-conversation card (right rail DEFAULT state, README §5) --------
+  // The consolidated upper card combining the gathering stats + conversation
+  // thread. Occupies the full conversation region of the right panel (from just
+  // below the persistent header down to just above the events feed). Replaces
+  // the old partyRect + transcriptRect (the two were stacked banners; they are
+  // now ONE card whose internals — stat tiles, chat bubbles — are drawn by
+  // UIScene). Same span as panelRect (the trace panel overlays this card in the
+  // INSPECTOR state).
+  activeConvX: number;
+  activeConvY: number;
+  activeConvW: number;
+  activeConvH: number;
+  activeConvRect: Rect;
 
   cardHeight(count: number): number;
   cardRect(index: number, count: number): Rect;
@@ -227,9 +291,34 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const rightH = Math.max(80, h - rightTop);
   const rightRect: Rect = { x: rightX, y: rightTop, w: rightW, h: rightH };
 
-  // -- MAP viewport: center-left, between top chrome / right panel / strip.
+  // -- KPI band: a row of five equal tiles in the LEFT column, directly below
+  //    the command bar and above the map. Spans the map's width (x:0..rightX).
+  const kpiY = HUD_TOP_H;
+  const kpiH = KPI_BAND_H;
+  const kpiW = rightX;
+  const kpiBandRect: Rect = { x: 0, y: kpiY, w: kpiW, h: kpiH };
+  // Five equal tiles inside the band (after the outer pad), separated by
+  // KPI_TILE_GAP. Integer pixels — widths/offsets are floored, with the tile's
+  // own width derived from its start so rounding never overflows the band.
+  const kpiInnerX = KPI_BAND_PAD;
+  const kpiInnerW = Math.max(
+    KPI_TILE_COUNT, // never collapse below 1px/tile
+    kpiW - 2 * KPI_BAND_PAD,
+  );
+  const kpiTileTop = kpiY + KPI_BAND_PAD;
+  const kpiTileH = Math.max(1, kpiH - 2 * KPI_BAND_PAD);
+  const kpiSpan = kpiInnerW - (KPI_TILE_COUNT - 1) * KPI_TILE_GAP;
+  const kpiTileRect = (i: number): Rect => {
+    const idx = Math.max(0, Math.min(KPI_TILE_COUNT - 1, i));
+    const x0 = kpiInnerX + Math.floor((kpiSpan * idx) / KPI_TILE_COUNT) + idx * KPI_TILE_GAP;
+    const x1 = kpiInnerX + Math.floor((kpiSpan * (idx + 1)) / KPI_TILE_COUNT) + idx * KPI_TILE_GAP;
+    return { x: x0, y: kpiTileTop, w: Math.max(1, x1 - x0), h: kpiTileH };
+  };
+
+  // -- MAP viewport: center-left, between the KPI band / right panel / strip.
+  //    The map shifts DOWN by KPI_BAND_H (B-3): its top is topH + KPI_BAND_H.
   const mapX = 0;
-  const mapY = HUD_TOP_H;
+  const mapY = HUD_TOP_H + KPI_BAND_H;
   const mapW = Math.max(MIN_WORLD_W, rightX);
   const mapH = Math.max(MIN_WORLD_H, stripY - mapY);
   const mapRect: Rect = { x: mapX, y: mapY, w: mapW, h: mapH };
@@ -256,34 +345,23 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   // Bottom of the conversation region: just above the events feed's header.
   const convBottom = logY - RIGHT_HEADER_H - 4;
 
-  // Party / governance showcase strip: a slim banner pinned to the TOP of the
-  // conversation region. Transient — when shown it STACKS above the transcript
-  // (does not overlap it). Fixed slim height.
-  const partyX = panelInnerX;
-  const partyY = convTop;
-  const partyW = panelInnerW;
-  // Slim banner, clamped so it never eats more than ~40% of the conversation
-  // region (leaves the transcript its space even on short viewports).
-  const partyH = Math.max(68, Math.min(100, Math.floor((convBottom - convTop) * 0.4)));
-  const partyRect: Rect = { x: partyX, y: partyY, w: partyW, h: partyH };
-
-  // Conversation transcript: BELOW the showcase strip band, down to just above
-  // the events feed header. (The strip overlays its own band only; the
-  // transcript starts beneath it so the two never collide.)
-  const transcriptX = panelInnerX;
-  const transcriptY = partyY + partyH + 4;
-  const transcriptW = panelInnerW;
-  const transcriptH = Math.max(60, convBottom - transcriptY);
-  const transcriptRect: Rect = {
-    x: transcriptX,
-    y: transcriptY,
-    w: transcriptW,
-    h: transcriptH,
+  // Active-conversation card (README §5): the consolidated upper card holding
+  // the gathering stats + the conversation thread. It fills the WHOLE
+  // conversation region (the old party banner + transcript are now one card).
+  const activeConvX = panelInnerX;
+  const activeConvY = convTop;
+  const activeConvW = panelInnerW;
+  const activeConvH = Math.max(60, convBottom - activeConvY);
+  const activeConvRect: Rect = {
+    x: activeConvX,
+    y: activeConvY,
+    w: activeConvW,
+    h: activeConvH,
   };
 
   // Trace panel: overlays the FULL conversation region (from just below the
   // persistent header down to just above the events feed). Transient — opened
-  // on card/feed click; covers both the showcase strip and the transcript.
+  // on card/feed click; covers the Active-conversation card (INSPECTOR state).
   const panelX = panelInnerX;
   const panelY = convTop;
   const panelW = panelInnerW;
@@ -339,15 +417,22 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   return {
     w,
     h,
-    topbarH: TOPBAR_H,
-    badgeRowY: TOPBAR_H,
-    badgeRowH: BADGE_ROW_H,
+    topbarH: CMDBAR_H,
+    // Badge row collapsed into the command bar: zero height, anchored at the
+    // bar's bottom edge. `topH` stays the single top-region anchor.
+    badgeRowY: CMDBAR_H,
+    badgeRowH: 0,
     topH: HUD_TOP_H,
     statusX: w - 6,
     rightX,
     rightW,
     rightTop,
     rightRect,
+    kpiY,
+    kpiH,
+    kpiW,
+    kpiBandRect,
+    kpiTileRect,
     mapX,
     mapY,
     mapW,
@@ -375,19 +460,16 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     panelW,
     panelH,
     panelRect,
-    panelCloseRect: { x: panelX + panelW - 22, y: panelY, w: 22, h: 20 },
+    // Hit target for the INSPECTOR close ✕ control (a 26×26 button inset by the
+    // card's 16px x-pad / 14px y-pad — UIScene.INSP_PAD_*; README §6).
+    panelCloseRect: { x: panelX + panelW - 42, y: panelY + 12, w: 26, h: 26 },
     panelHeaderH: PANEL_HEADER_H,
     panelVisibleTrace: PANEL_VISIBLE_TRACE,
-    partyX,
-    partyY,
-    partyW,
-    partyH,
-    partyRect,
-    transcriptX,
-    transcriptY,
-    transcriptW,
-    transcriptH,
-    transcriptRect,
+    activeConvX,
+    activeConvY,
+    activeConvW,
+    activeConvH,
+    activeConvRect,
     cardHeight,
     cardRect,
     cardsPerPage,
@@ -405,15 +487,25 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
  * transient) via the REG_HUD_PANEL registry rect.
  */
 export function isPointOverHud(hud: HudLayout, px: number, py: number): boolean {
-  if (py <= hud.topH) return true; // top bar + badge row, full width
+  if (py <= hud.topH) return true; // command bar, full width
   if (px >= hud.rightX) return true; // right-side conversation/events panel
   if (py >= hud.stripY) return true; // bottom agent strip
+  // B-3: the KPI band is opaque chrome in the LEFT column directly below the
+  // command bar (x < rightX, y in [topH, topH+KPI_BAND_H)). Guard it so world
+  // clicks on the band don't fall through to the map beneath it.
+  if (py < hud.mapY && px < hud.rightX) return true; // KPI band
   return false;
 }
 
 /** Registry key: UIScene publishes the open trace-panel rect (or null) here so
  *  WorldScene can ignore world clicks that land on it. */
 export const REG_HUD = "hudPanelRect";
+
+/** Registry key (Phase B-4): UIScene publishes the SELECTED agent NAME (or
+ *  null) here when the inspector opens/closes. WorldScene reads it in update()
+ *  to camera-follow + pulse-ring that agent. Additive to REG_HUD — render-only,
+ *  no sim/contract change. */
+export const REG_SELECTED = "hudSelectedAgent";
 
 // ---------------------------------------------------------------------------
 // Legacy 768x576 design-space exports (retained for the pure layout unit tests

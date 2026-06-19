@@ -47,8 +47,11 @@ import {
   WATER_ANIM_MS,
   zoomFactorForWheelDelta,
 } from "../config";
-import { computeHud, FONT_SIZE_SMALL, isPointOverHud, pointInRect, REG_HUD } from "../obs/layout";
+import { computeHud, FONT_SIZE_SMALL, isPointOverHud, pointInRect, REG_HUD, REG_SELECTED } from "../obs/layout";
 import type { Rect } from "../obs/layout";
+import { visibleBubbleAgents } from "../obs/bubblePolicy";
+import { spreadAssignments } from "../obs/spread";
+import { brand400 } from "../obs/theme";
 import { getTimeSystem, getWorld } from "../world/instance";
 import {
   BENCH_POS,
@@ -146,6 +149,13 @@ const DEPTH_TINT = 9_000;
 const DEPTH_OVERHEAD = 10_000;
 const DEPTH_BUBBLE = 20_000;
 
+/**
+ * B-1 body-spreading radius (px): how far co-located agents fan out from the
+ * tile center. Kept to a fraction of a tile (~0.34·TILE) so a crowd reads as
+ * distinct bodies while every agent stays clearly ON its own tile. RENDER-ONLY.
+ */
+const SPREAD_RADIUS = TILE_SIZE * 0.34;
+
 type Dir = "up" | "down" | "left" | "right";
 
 interface AgentSprite {
@@ -162,6 +172,12 @@ interface AgentSprite {
   charKey: string | null;
   facing: Dir;
   tilePos: Vec2;
+  /**
+   * B-1 body-spreading: render-only pixel nudge from the tile center so
+   * co-located agents fan out instead of stacking. NEVER feeds back into
+   * `tilePos`/sim — it is folded into the container's resting position only.
+   */
+  spread: { dx: number; dy: number };
   speech: Phaser.GameObjects.Container | null;
   speechTimer: Phaser.Time.TimerEvent | null;
 }
@@ -213,6 +229,20 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   private fitMinZoom = CAMERA_ZOOM_MIN;
   /** agent the camera is currently tracking, or null for free-pan */
   private following: string | null = null;
+
+  // -- B-4: HUD-driven selection (REG_SELECTED) overlays ----------------------
+  /** the agent name last read from REG_SELECTED (drives follow + pulse ring). */
+  private selected: string | null = null;
+  /** the 2-ring pulse drawn under the selected agent (one at a time), or null. */
+  private selectionRing: Phaser.GameObjects.Graphics | null = null;
+  /** the gentle scale/alpha loop animating the ring (killed when it moves). */
+  private selectionRingTween: Phaser.Tweens.Tween | null = null;
+  /** which agent the ring currently follows (the ring re-parents on change). */
+  private ringFor: string | null = null;
+  /** B-4 bubble cap: recency key (monotonic counter) per currently-speaking
+   *  agent. Higher = more recent. Cleared when a bubble expires/destroys. */
+  private readonly speakingAt = new Map<string, number>();
+  private speakSeq = 0;
 
   constructor() {
     super("world");
@@ -274,6 +304,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       this.scale.off(Phaser.Scale.Events.RESIZE, this.frameCamera, this);
       this.unsubscribeWorld?.();
       this.unsubscribeTime?.();
+      this.clearSelectionRing();
+      this.speakingAt.clear();
       setRenderApi(null);
     });
 
@@ -453,6 +485,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   override update(_time: number, delta: number): void {
     getWorld().timeSystem.tick(delta);
     this.panFromKeyboard(delta);
+    // B-4: pick up HUD selection changes (camera-follow + pulse ring).
+    this.syncSelection();
     for (const agent of this.agents.values()) {
       // y-sort walking agents (feet position decides paint order).
       agent.container.setDepth(agent.container.y + TILE_SIZE / 2);
@@ -465,7 +499,101 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         );
       }
     }
+    // B-4: glue the selection ring to the selected agent (one ring at a time),
+    // sitting just BELOW the sprite so the agent stays on top.
+    if (this.selectionRing && this.ringFor) {
+      const a = this.agents.get(this.ringFor);
+      if (a) {
+        this.selectionRing.setPosition(a.container.x, a.container.y);
+        this.selectionRing.setDepth(a.container.y + TILE_SIZE / 2 - 0.5);
+      } else {
+        this.clearSelectionRing(); // agent vanished — drop the ring
+      }
+    }
     this.restackLabels();
+  }
+
+  // -- B-4: HUD-driven selection (camera-follow + pulse ring) -----------------
+
+  /**
+   * React to REG_SELECTED (published by UIScene on inspector open/close). When
+   * the selection changes to an agent that exists on the map: camera-follow it
+   * (reusing the click-follow machinery + CAMERA_FOLLOW_LERP) and draw the
+   * 2-ring pulse on it. Selecting null (or a drag/pan, handled elsewhere)
+   * releases the follow + ring. Coexists with click-to-follow — both set
+   * `this.following` + startFollow, so a later click-follow simply takes over.
+   */
+  private syncSelection(): void {
+    const next = (this.registry.get(REG_SELECTED) as string | null | undefined) ?? null;
+    if (next === this.selected) return;
+    this.selected = next;
+    if (next && this.agents.has(next)) {
+      const agent = this.agents.get(next)!;
+      this.following = next;
+      this.cameras.main.startFollow(
+        agent.container,
+        false,
+        CAMERA_FOLLOW_LERP,
+        CAMERA_FOLLOW_LERP,
+      );
+      this.showSelectionRing(next);
+    } else {
+      // Deselected: drop the ring + release the camera follow. (A drag/pan or a
+      // fresh click-follow re-sets `following` on its own; this only fires on a
+      // genuine selection→null transition.)
+      this.clearSelectionRing();
+      this.cameras.main.stopFollow();
+      this.following = null;
+    }
+  }
+
+  /** Inner-ring radius for the selection pulse (a hair wider than the body). */
+  private selectionRingRadius(): number {
+    return TILE_SIZE * 0.7;
+  }
+
+  /**
+   * Draw the 2-ring pulse for the selected agent (one ring at a time). Inner
+   * stroke brand400 + an outer halo brand400 at ~0.35 alpha, animated by a
+   * gentle scale/alpha loop. The Graphics is positioned on the agent each frame
+   * (update()) at a depth just BELOW the sprite. Re-parents (moves) when the
+   * selection changes.
+   */
+  private showSelectionRing(name: string): void {
+    this.clearSelectionRing();
+    const agent = this.agents.get(name);
+    if (!agent) return;
+    const r = this.selectionRingRadius();
+    const g = this.add.graphics();
+    // Outer halo (translucent brand400) + inner stroke (solid brand400).
+    g.fillStyle(brand400.num, 0.35);
+    g.fillCircle(0, 0, r * 1.35);
+    g.lineStyle(2, brand400.num, 1);
+    g.strokeCircle(0, 0, r);
+    g.setPosition(agent.container.x, agent.container.y);
+    g.setDepth(agent.container.y + TILE_SIZE / 2 - 0.5);
+    this.selectionRing = g;
+    this.ringFor = name;
+    // Gentle pulse: scale 1→1.18 with alpha 0.9→0.45, yoyo loop.
+    g.setScale(1).setAlpha(0.9);
+    this.selectionRingTween = this.tweens.add({
+      targets: g,
+      scale: 1.18,
+      alpha: 0.45,
+      duration: 850,
+      ease: "Sine.easeInOut",
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  /** Destroy the current selection ring + its tween (no-op if none). */
+  private clearSelectionRing(): void {
+    this.selectionRingTween?.remove();
+    this.selectionRingTween = null;
+    this.selectionRing?.destroy();
+    this.selectionRing = null;
+    this.ringFor = null;
   }
 
   /** Arrow / WASD keyboard panning (stops any active follow). */
@@ -1370,12 +1498,15 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   registerAgentSprite(name: string, color: number, pos: Vec2): void {
     const existing = this.agents.get(name);
     if (existing) {
-      existing.container.setPosition(...this.tileCenter(pos));
       existing.tilePos = { ...pos };
+      // Snap to the (current) spread resting spot; recomputeSpread below
+      // refreshes the fan-out for the possibly-changed co-located set.
+      existing.container.setPosition(...this.restingSpot(existing));
       if (existing.circle) {
         existing.circle.clear();
         this.paintAgentCircle(existing.circle, color);
       }
+      this.recomputeSpread();
       return;
     }
 
@@ -1456,11 +1587,14 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       charKey: null,
       facing: "down",
       tilePos: { ...pos },
+      spread: { dx: 0, dy: 0 },
       speech: null,
       speechTimer: null,
     });
     this.agentNames.push(name);
     this.rebindAgentVisuals();
+    // Fan out the (possibly newly-shared) tile now that this agent exists.
+    this.recomputeSpread();
   }
 
   /**
@@ -1471,11 +1605,16 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   setAgentPos(name: string, pos: Vec2): void {
     const agent = this.agents.get(name);
     if (!agent) return;
-    const [cx, cy] = this.tileCenter(pos);
     const dx = pos.x - agent.tilePos.x;
     const dy = pos.y - agent.tilePos.y;
     const dist = Math.abs(dx) + Math.abs(dy);
     agent.tilePos = { ...pos };
+    // B-1: the co-located set changed (this agent moved on/off a tile), so
+    // refresh every affected tile's fan-out FIRST. This also updates this
+    // agent's own `spread`, which the resting-spot target below folds in.
+    // RENDER-ONLY — `tilePos` (logical) is already set above and untouched here.
+    this.recomputeSpread();
+    const [cx, cy] = this.restingSpot(agent);
     this.tweens.killTweensOf(agent.container);
     if (dist === 0) {
       agent.container.setPosition(cx, cy);
@@ -1511,6 +1650,71 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         }
       },
     });
+  }
+
+  /**
+   * B-1 body-spreading (RENDER-ONLY). Group the live agents by their logical
+   * tile (rounded `tilePos` — the SAME integer the sim uses; never mutated here)
+   * and, for any tile shared by ≥2 agents, assign each a small deterministic
+   * pixel offset (pure `spreadAssignments`, sorted by name) so the crowd fans out
+   * around the tile center instead of stacking into a blob. A tile with one agent
+   * gets `{0,0}`.
+   *
+   * The offset is folded into the container's RESTING position only: an idle
+   * agent whose fan-out shifted glides to its new spot (a short tween that does
+   * not fight a walk — walking agents already aim at their resting spot from
+   * `setAgentPos` and are left to finish). The offset NEVER feeds back into
+   * `tilePos`, pathfinding, or any sim/contract state.
+   */
+  private recomputeSpread(): void {
+    // Bucket agents by logical tile key. tilePos is already an integer grid
+    // coordinate, but round defensively so a fractional pos can't split a tile.
+    const byTile = new Map<string, string[]>();
+    for (const [name, a] of this.agents) {
+      const tx = Math.round(a.tilePos.x);
+      const ty = Math.round(a.tilePos.y);
+      const key = `${tx},${ty}`;
+      (byTile.get(key) ?? byTile.set(key, []).get(key)!).push(name);
+    }
+
+    for (const names of byTile.values()) {
+      const offsets =
+        names.length >= 2
+          ? spreadAssignments(names, SPREAD_RADIUS)
+          : null; // single occupant → no offset
+      for (const name of names) {
+        const a = this.agents.get(name);
+        if (!a) continue;
+        const next = offsets?.get(name) ?? { dx: 0, dy: 0 };
+        if (next.dx === a.spread.dx && next.dy === a.spread.dy) continue;
+        a.spread = next;
+        // Re-settle the agent's resting spot. A walking agent (active tween) is
+        // left alone — it already targets its resting spot and will land
+        // correctly; yanking it mid-stride would fight the walk. An idle agent
+        // glides to the new fan-out spot.
+        if (!this.tweens.isTweening(a.container)) {
+          const [rx, ry] = this.restingSpot(a);
+          this.tweens.killTweensOf(a.container);
+          this.tweens.add({
+            targets: a.container,
+            x: rx,
+            y: ry,
+            duration: 180,
+            ease: "Sine.easeInOut",
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * The pixel position an agent rests at: the logical tile center plus its
+   * RENDER-ONLY spread offset. The walk tween and idle re-settle both aim here,
+   * so the visual fan-out never desyncs from the logical tile.
+   */
+  private restingSpot(agent: AgentSprite): [number, number] {
+    const [cx, cy] = this.tileCenter(agent.tilePos);
+    return [cx + agent.spread.dx, cy + agent.spread.dy];
   }
 
   /**
@@ -1564,11 +1768,39 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     );
     bubble.setDepth(DEPTH_BUBBLE);
     agent.speech = bubble;
+    // B-4 bubble cap: record this speaker's recency, then evict any bubbles the
+    // pure policy says shouldn't render (selected + ≤2 most-recent ambient).
+    this.speakingAt.set(name, ++this.speakSeq);
     agent.speechTimer = this.time.delayedCall(SPEECH_DURATION_MS, () => {
       bubble.destroy();
       if (agent.speech === bubble) agent.speech = null;
       agent.speechTimer = null;
+      this.speakingAt.delete(name);
     });
+    this.enforceBubbleCap();
+  }
+
+  /**
+   * B-4 speech-bubble cap: keep only the bubbles the PURE policy
+   * (visibleBubbleAgents) allows — the HUD-selected agent (always, if speaking)
+   * plus the most-recent ≤2 ambient speakers. Every other currently-shown
+   * bubble is destroyed so a tavern crowd can't stack into text soup. The
+   * policy is the single source of the rule (unit-tested); WorldScene only
+   * applies the result to the live Phaser bubbles.
+   */
+  private enforceBubbleCap(): void {
+    const speaking = [...this.speakingAt.entries()].map(([name, t]) => ({ name, t }));
+    const selected = (this.registry.get(REG_SELECTED) as string | null | undefined) ?? null;
+    const keep = new Set(visibleBubbleAgents(speaking, selected, 3));
+    for (const [name, a] of this.agents) {
+      if (!a.speech) continue;
+      if (keep.has(name)) continue;
+      a.speechTimer?.remove();
+      a.speechTimer = null;
+      a.speech.destroy();
+      a.speech = null;
+      this.speakingAt.delete(name);
+    }
   }
 
   /**

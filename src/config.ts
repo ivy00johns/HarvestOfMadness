@@ -6,6 +6,7 @@
  * @contracts/types — re-exported here for convenience.
  */
 import type { Emotion, Phase, TileType } from "@contracts/types";
+import { appBg } from "./obs/theme";
 
 export {
   MAP_WIDTH,
@@ -70,9 +71,10 @@ export const CAMERA_PAN_SPEED = 1100;
 /** Camera follow lerp (per-axis) when tracking a clicked agent. */
 export const CAMERA_FOLLOW_LERP = 0.12;
 
-/** Page / letterbox background — a soft slate (not pure black) so the HUD
- *  chrome reads as a calm dark-UI surface rather than a harsh terminal void. */
-export const BACKGROUND_COLOR = "#181b22";
+/** Page / letterbox background — the SpaceCon app surface (`appBg`, the navy
+ *  app bg). Sourced from the design-token module so the palette is single-source;
+ *  TILE_COLORS/CROP_COLORS/etc. below are WORLD rendering and stay untouched. */
+export const BACKGROUND_COLOR = appBg.hex;
 
 /** Placeholder tile colors (zero-asset fallback rendering). */
 export const TILE_COLORS: Record<TileType, number> = {

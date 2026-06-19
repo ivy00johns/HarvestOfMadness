@@ -236,18 +236,15 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 
 **A1–A3 shipped together** as the minimal green skeleton (roads can't move without the buildings that anchor the road-first/reachability gates). Town is now a real 140×100 civic-hub + 4-corner-hamlet layout. **Phase A is COMPLETE** (A0–A6): 140×100 world, roads, civic hub, 12 homesteads, camera fit, 14 reserve lots, bigger homes + interiors, east park/pond, natural decor, and functional home storage. Next: **Phase B (SpaceCon HUD)** — built against this finished world.
 
-**Phase B — UI overhaul (SpaceCon HUD)** — _design finalized in [`docs/design_handoff_sim_hud/`](./design_handoff_sim_hud/); builds on the 140×100 world_
-- [ ] B1. **Gathering legibility (world side only):** spread agent **bodies**
-      across tiles/seats when they converge so sprites don't pile on one tile.
-      _(Font + bubble-cap are already solved by the design: DS fonts +
-      selected-agent-only bubbles.)_
-- [ ] B2. **Command bar** — wordmark, transport, speed, **Mock↔Live toggle**, clock, telemetry chips (in-flight/latency/tokens/cost).
-- [ ] B3. **KPI band** (agents · conversations · energy · economy · decisions).
-- [ ] B4. **Map viewport overlays** — context chip, follow chip, capped speech bubbles, selected-agent pulse ring.
-- [ ] B5. **Agent cards** (swatch/state-badge/energy bar/action/thought), horizontal scroller, click-to-inspect.
-- [ ] B6. **Right rail DEFAULT** — Active-conversation card (focused gathering) **+ multi-thread conversation feed** (all active chats) + Event log.
-- [ ] B7. **Right rail INSPECTOR** — decision trace + memory stream + model/cost strip (reads the **real** model-runner + cost accounting, not a visual toggle).
-- [ ] B8. **Wire SpaceCon tokens** (Space Grotesk / IBM Plex / Lucide) as the single source of color/type; record them in `CLAUDE.md` so future UI + artifacts match.
+**Phase B — UI overhaul (SpaceCon HUD)** — **COMPLETE** on `feat/phase-b-spacecon-hud` (8 slices, each contract→implement→adversarial-verify→commit; visually confirmed). _Design from [`docs/design_handoff_sim_hud/`](./design_handoff_sim_hud/); built against the 140×100 world._
+- [x] B1. **Gathering legibility (world side):** deterministic render-only body-spreading — converged agents fan out instead of stacking. ✓ `e566562`
+- [x] B2. **Command bar** — wordmark · transport · speed · **Mock/Live** (reads real killSwitch.state) · clock · telemetry chips (in-flight/cognition/cost; honest $0.00 mock / $— live). ✓ `3f2474d`
+- [x] B3. **KPI band** (agents · conversations · energy · economy · decisions) — all real data, honest empties. ✓ `a9404c4`
+- [x] B4. **Map viewport overlays** — context chip, follow chip, selected-agent pulse ring + camera-follow, capped speech bubbles (selected + 2 ambient). ✓ `e408889`
+- [x] B5. **Agent cards** (swatch/state-badge/energy bar/verb-colored action/thought), horizontal scroller, click-to-inspect; single-source energy color. ✓ `7384928`
+- [x] B6. **Right rail DEFAULT** — Active-conversation card + Event log. _(Sim tracks one conversation, so the "multi-thread feed" is honestly the cross-agent event log — no invented concurrent threads.)_ ✓ `c964f63`
+- [x] B7. **Right rail INSPECTOR** — decision-trace timeline + memory stream (new `memoryStream` seam) + model strip; reads the **real** model-runner state (cost untracked → shown honestly, not faked). ✓ `0abeeb7`
+- [x] B8. **SpaceCon tokens** (Space Grotesk / IBM Plex) as the single source of color/type — `src/obs/theme.ts`, mutation-pinned. ✓ `4efc12a` _(Lucide icons + recording tokens in `CLAUDE.md` remain deferred per §7; unicode glyphs used for now.)_
 
 **Phase C — Deeper "alive" (toward full Smallville)** — _backlog_
 - [ ] **Distance-weighted attendance** (deferred from A6): far hamlets attend big

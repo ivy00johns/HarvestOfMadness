@@ -6,8 +6,9 @@
  * TimeSystem directly. SimControls is the narrow structural surface the HUD
  * needs; AgentManager satisfies it as-is, and tests can stub it cheaply.
  */
-import type { DiaryEntry, EventBus, ProposalTally } from "@contracts/types";
+import type { DiaryEntry, EventBus, MemoryEntry, ProposalTally } from "@contracts/types";
 import { getAgentManager } from "../agents/AgentManager";
+import type { CognitionSystem } from "../agents/Cognition";
 import { getEventBus } from "../agents/events";
 import { getTimeSystem } from "../world/instance";
 import type { Speed } from "../world/TimeSystem";
@@ -39,6 +40,27 @@ export interface SimControls {
   diaryEntries?(agentName: string): DiaryEntry[];
   /** Diary — an agent's newest journal entry, or null when absent. */
   latestDiary?(agentName: string): DiaryEntry | null;
+  /**
+   * B-7 — the agent's real memory stream (the cognition memory store, as
+   * stored). [] when the agent has none or when cognition is absent/mock. The
+   * HUD caps/orders; this seam only EXPOSES the existing store (no mutation,
+   * no fabrication).
+   */
+  memoryStream?(agentName: string): MemoryEntry[];
+}
+
+/**
+ * Read one agent's memory stream off the cognition system (additive seam).
+ * Pure + defensive: returns the store's entries as-stored, or [] when
+ * cognition is absent (mock / server down) — never fabricates. Exposes the
+ * EXISTING `CognitionSystem.memory.all()` data; touches no store internals.
+ * Extracted so the seam is unit-testable without the live singletons.
+ */
+export function readMemoryStream(
+  cognition: CognitionSystem | null,
+  agentName: string,
+): MemoryEntry[] {
+  return cognition?.memory.all(agentName) ?? [];
 }
 
 export interface ObsConnection {
@@ -91,6 +113,9 @@ export function connectObservability(): ObsConnection {
     },
     latestDiary(agentName: string): DiaryEntry | null {
       return manager.cognition()?.diary.latest(agentName) ?? null;
+    },
+    memoryStream(agentName: string): MemoryEntry[] {
+      return readMemoryStream(manager.cognition(), agentName);
     },
   });
 
