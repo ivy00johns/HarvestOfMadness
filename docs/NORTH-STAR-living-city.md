@@ -260,7 +260,17 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
       homesteads (reserve lots) or non-central gatherings exist. A
       `Cognition→mockRouter` boundary test pins the wiring (an earlier cut had
       `normalizeObservation` silently drop the field, leaving the gate inert).
-- [ ] Conversations & gossip at Smallville fidelity on the free LLM proxy.
+- [~] Conversations & gossip at Smallville fidelity on the free LLM proxy.
+      _Foundation shipped_ ✓ `87aa4a1` — **memory-grounded conversation topics**:
+      replies now retrieve what an agent remembers/heard about the other
+      (Smallville `retrieve(focal=other) → summarize_ideas → utterance`), so the
+      already-diffusing-but-invisible **gossip becomes audible** (a heard rumor
+      surfaces as a real reply line), and conversations finally render as a
+      readable thread in the feed. Built on the existing (green) multi-turn +
+      multi-hop-gossip pipe; strictly additive (absent recall ⇒ byte-identical),
+      deterministic in mock, richer on live. **Remaining (follow-on slices):**
+      conversation-summary memory → sentiment-driven affinity → structured
+      GossipBoard (subject/claim) + rumor distortion.
 - [ ] Per-hamlet visual identity (roof palette per hamlet).
 - [ ] Terrain transition tiles (grass↔dirt↔path edges), second pond.
 - [ ] Activate reserve lots into live hamlets as the population grows.

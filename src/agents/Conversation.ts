@@ -26,7 +26,13 @@
  * touch affinity — onTalk already calls recordInteraction once per side (+2),
  * and the multi-turn exchange must NOT multiply that.
  */
-import type { ConversationTurn, EventBus, GameStamp, Router } from "@contracts/types";
+import type {
+  ConversationTurn,
+  EventBus,
+  GameStamp,
+  MemoryEntry,
+  Router,
+} from "@contracts/types";
 import { getRenderApi } from "../world/render";
 import { buildReplyPrompt } from "../llm/prompts";
 import { chebyshev } from "./Observation";
@@ -142,6 +148,141 @@ export function mockReply(
   ]);
 }
 
+/**
+ * Deterministic persona-flavored reply that WEAVES a recalled-memory `ideas`
+ * gist about the other agent into a short utterance — Smallville's
+ * `new_retrieve(focal=other) → summarize_ideas → utterance` made audible.
+ *
+ * Purity: a total function of `(bPersona, aName, ideas, turnIndex)`. No RNG, no
+ * Date — the variant is `turnIndex % variants.length`, so two runs are
+ * byte-identical. The `ideas` text is inserted verbatim (already a deterministic
+ * render of retrieved memory) so callers can assert the topic surfaced.
+ *
+ * INVARIANT: when `ideas` is empty/blank, returns BYTE-IDENTICAL output to
+ * `mockReply(bPersona, aName, "", turnIndex)` — so `_oneTurn` only needs to
+ * branch to this helper when there is actually something to talk about, and a
+ * caller that always uses it degrades cleanly to the generic template.
+ */
+export function mockTopicalReply(
+  bPersona: string,
+  aName: string,
+  ideas: string,
+  turnIndex = 0,
+): string {
+  const gist = ideas.trim();
+  // Empty ideas ⇒ generic template, byte-identical to mockReply.
+  if (!gist) return mockReply(bPersona, aName, "", turnIndex);
+
+  const p = bPersona.toLowerCase();
+  const pick = (variants: string[]): string =>
+    variants[((turnIndex % variants.length) + variants.length) % variants.length];
+
+  // Social / chatty — warm, leans in on the topic.
+  if (p.includes("social") || p.includes("chatty") || p.includes("warm")) {
+    return pick([
+      `Oh ${aName}, I keep thinking — ${gist}!`,
+      `Speaking of which, ${aName} — ${gist}, no?`,
+      `We should talk more about ${gist}, ${aName}!`,
+    ]);
+  }
+
+  // Grumbling / gruff / stern — curt about the topic.
+  if (
+    p.includes("grumbling") ||
+    p.includes("gruff") ||
+    p.includes("stern") ||
+    p.includes("salty")
+  ) {
+    return pick([
+      `Hmph. Heard ${gist}.`,
+      `So it's true then — ${gist}.`,
+      `${gist}, eh? Figures.`,
+    ]);
+  }
+
+  // Frugal / thrifty — ties the topic to value.
+  if (p.includes("frugal") || p.includes("thrift") || p.includes("bargain")) {
+    return pick([
+      `They say ${gist}, ${aName} — costly business.`,
+      `${gist}? Worth keeping an eye on, ${aName}.`,
+      `A fair word: ${gist}, ${aName}.`,
+    ]);
+  }
+
+  // Reckless / impulsive / breezy.
+  if (p.includes("reckless") || p.includes("impulsive") || p.includes("wild")) {
+    return pick([
+      `Ha! Word is ${gist}, ${aName}!`,
+      `${gist}? Let's chase that, ${aName}!`,
+      `Heard ${gist} — wild, ${aName}!`,
+    ]);
+  }
+
+  // Dreamy / moonstruck / whimsical.
+  if (
+    p.includes("dreamy") ||
+    p.includes("moonstruck") ||
+    p.includes("wander") ||
+    p.includes("stargazer")
+  ) {
+    return pick([
+      `The fields whisper that ${gist}, ${aName}…`,
+      `I dreamt of it — ${gist}, ${aName}.`,
+      `Such tidings: ${gist}, ${aName}.`,
+    ]);
+  }
+
+  // Nervous / meticulous.
+  if (p.includes("nervous") || p.includes("meticulous") || p.includes("fretful")) {
+    return pick([
+      `Oh — I heard ${gist}, ${aName}! Is that right?`,
+      `${gist}? Goodness, ${aName}, I'll be careful.`,
+      `They told me ${gist}, ${aName} — quite a thing.`,
+    ]);
+  }
+
+  // Default — neutral, surfaces the topic.
+  return pick([
+    `I heard ${gist}, ${aName}.`,
+    `Is it true that ${gist}, ${aName}?`,
+    `Word has it ${gist}, ${aName}.`,
+  ]);
+}
+
+/**
+ * Render a short deterministic "ideas" gist from retrieved memories — what the
+ * responder knows/heard about the other agent. Pure: takes the top entries (by
+ * the store's own deterministic ranking) and renders the highest-importance
+ * line's text, lightly normalized (leading "I "/quotes stripped, clipped). No
+ * RNG/Date. Returns "" when there is nothing worth surfacing.
+ */
+export function renderIdeas(memories: { text: string; importance: number }[]): string {
+  if (!Array.isArray(memories) || memories.length === 0) return "";
+  // Most poignant first; stable tie-break by text so the render is deterministic.
+  const best = [...memories].sort(
+    (a, b) => b.importance - a.importance || a.text.localeCompare(b.text),
+  )[0];
+  if (!best) return "";
+  // Normalize a first-person hearsay preamble ("I heard that …", "I told …",
+  // "X replied: …") down to the bare claim so the topical templates can frame it
+  // without doubling verbs. Pure string ops — no RNG/Date.
+  const gist = best.text
+    .replace(/^\s*I\s+(?:heard|learned|gathered)\s+(?:that\s+)?/i, "")
+    .replace(/^\s*I\s+/i, "")
+    // Third-person hearsay preambles — "<name> told me about …", "<name> said: …",
+    // "<name> replied: …", "<name> mentioned (heard from …): …" — strip down to the
+    // bare claim so a topical reply doesn't double the hearsay verb ("Heard X told
+    // me about …"). The bounded `.{0,40}?` prefix admits a two-word agent name
+    // without risking a runaway strip. Pure string ops — no RNG/Date.
+    .replace(/^.{0,40}?\btold me about\s+/i, "")
+    .replace(/^.{0,40}?\b(?:said|replied|mentioned)\b[^:]*:\s*/i, "")
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 80);
+  return gist;
+}
+
 // ---------------------------------------------------------------------------
 // ConversationSystem
 // ---------------------------------------------------------------------------
@@ -155,6 +296,14 @@ export interface ConversationOpts {
   affinityText?: (bName: string, aName: string) => string;
   /** Memory write helper (fire-and-forget). */
   writeMemory: (agentName: string, text: string, importance: number) => void;
+  /**
+   * OPTIONAL memory recall — Smallville's `new_retrieve(focal=other)`. When
+   * present, the responder's top memories about `query` (the other agent's
+   * name) ground the reply in a topic. When ABSENT, conversation output is
+   * BYTE-IDENTICAL to today (every existing test omits this). Never trusted to
+   * throw: the call-site wraps it and degrades to the generic reply.
+   */
+  recall?: (agentName: string, query: string) => Promise<MemoryEntry[]>;
 }
 
 export class ConversationSystem {
@@ -164,6 +313,7 @@ export class ConversationSystem {
   private readonly router: ConversationOpts["router"];
   private readonly affinityText: NonNullable<ConversationOpts["affinityText"]>;
   private readonly writeMemory: ConversationOpts["writeMemory"];
+  private readonly recall: ConversationOpts["recall"];
 
   constructor(opts: ConversationOpts) {
     this.bus = opts.bus;
@@ -172,6 +322,7 @@ export class ConversationSystem {
     this.router = opts.router;
     this.affinityText = opts.affinityText ?? (() => "");
     this.writeMemory = opts.writeMemory;
+    this.recall = opts.recall;
   }
 
   /**
@@ -255,11 +406,18 @@ export class ConversationSystem {
     turns: ConversationTurn[],
     turnIndex: number,
   ): Promise<string> {
+    // Ground the reply in what `responder` knows/heard about `other`. When no
+    // recall dep is wired (every frozen test), `ideas` is "" and BOTH branches
+    // below are byte-identical to today.
+    const ideas = await this._recallIdeas(responder, other);
+
     let reply: string;
     try {
       reply = this.live()
-        ? await this._liveReply(responder, other, turns, turnIndex)
-        : mockReply(responder.persona.description, other.name, lastText(turns), turnIndex);
+        ? await this._liveReply(responder, other, turns, turnIndex, ideas)
+        : ideas
+          ? mockTopicalReply(responder.persona.description, other.name, ideas, turnIndex)
+          : mockReply(responder.persona.description, other.name, lastText(turns), turnIndex);
     } catch {
       reply = mockReply(responder.persona.description, other.name, lastText(turns), turnIndex);
     }
@@ -273,11 +431,29 @@ export class ConversationSystem {
     return reply;
   }
 
+  /**
+   * Smallville `new_retrieve(focal=other)`: pull `responder`'s top memories
+   * about `other` and render a short deterministic ideas gist. Fire-and-forget
+   * never-throw: on a missing dep, a recall throw, or an empty result, returns
+   * "" so `_oneTurn` degrades to the generic reply (additive). READS only — no
+   * new memories are written this slice.
+   */
+  private async _recallIdeas(responder: Agent, other: Agent): Promise<string> {
+    if (!this.recall) return "";
+    try {
+      const mems = await this.recall(responder.name, other.name);
+      return renderIdeas(mems ?? []);
+    } catch {
+      return "";
+    }
+  }
+
   private async _liveReply(
     responder: Agent,
     other: Agent,
     turns: ConversationTurn[],
     turnIndex: number,
+    ideas = "",
   ): Promise<string> {
     try {
       const affinity = this.affinityText(responder.name, other.name);
@@ -287,6 +463,7 @@ export class ConversationSystem {
         otherName: other.name,
         affinitySummary: affinity,
         transcriptTail: turns.slice(-TRANSCRIPT_TAIL),
+        ideas,
       });
 
       const res = await this.router({

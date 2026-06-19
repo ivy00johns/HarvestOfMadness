@@ -424,9 +424,13 @@ describe("CognitionSystem governance diffusion (onTalk)", () => {
     cog.onTalk(alice, bob, "Hey!");
     cog.onTalk(alice, bob, "Again!");
     await flush();
+    // Anchor at the start: Phase C·S2 conversation topic-recall may QUOTE this
+    // diffusion line inside a reply memory on the second onTalk. That echo is a
+    // conversation memory, not a second diffusion memory — exactly ONE memory
+    // STARTS with the diffusion preamble (the dedup invariant still holds).
     const diffuseMems = cog.memory
       .all("Bob")
-      .filter((m) => m.text.includes("Alice told me about the proposed town rule"));
+      .filter((m) => m.text.startsWith("Alice told me about the proposed town rule"));
     expect(diffuseMems).toHaveLength(1);
   });
 });

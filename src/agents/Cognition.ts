@@ -58,6 +58,8 @@ import { Governance } from "./Governance";
 export const MEMORY_TEXT_MAX_CHARS = 200;
 /** Retrieval query when the agent has no current plan step. */
 export const DEFAULT_RETRIEVAL_QUERY = "what should I do now";
+/** K for Smallville new_retrieve(focal=other) conversation topic grounding. */
+export const CONVERSATION_RECALL_K = 3;
 /** Importance pinned for gifts, both sides (spec rule 9). */
 export const GIFT_IMPORTANCE = 7;
 
@@ -355,6 +357,12 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       writeMemory: (agentName, text, importance) => {
         this.writeObservation(agentName, text, importance);
       },
+      // Smallville new_retrieve(focal=other): the deterministic store retrieve
+      // (proven by retrieval-determinism.test.ts) grounds reply topics in what
+      // the responder knows/heard about the other agent. Small K. READ-only —
+      // no new memories this slice. The store retrieve never throws into us, and
+      // the ConversationSystem wraps this regardless.
+      recall: (name, query) => this.memory.retrieve(name, query, CONVERSATION_RECALL_K),
     });
   }
 

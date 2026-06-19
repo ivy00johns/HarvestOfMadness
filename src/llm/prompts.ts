@@ -263,9 +263,17 @@ export function buildReplyPrompt(opts: {
   otherName: string;
   affinitySummary: string;
   transcriptTail: { speaker: string; text: string }[];
+  /**
+   * OPTIONAL recalled gist of what the speaker knows/heard about `otherName`
+   * (Smallville topic grounding). GATED: when absent/empty, the produced
+   * {system,user} is BYTE-IDENTICAL to before — the section is inserted only
+   * when there is something to talk about.
+   */
+  ideas?: string;
 }): { system: string; user: string } {
   const { selfPersona, selfName, otherName, affinitySummary, transcriptTail } =
     opts;
+  const ideas = opts.ideas?.trim() ?? "";
 
   const system = `You are ${selfName}, a farmer. Your persona: ${selfPersona}
 
@@ -279,6 +287,8 @@ You are talking with ${otherName}. Continue with ONE short in-character sentence
   const user = `Conversation so far:
 ${convo}${
     affinitySummary ? `\n\nYour relationship with ${otherName}: ${affinitySummary}` : ""
+  }${
+    ideas ? `\n\nWhat's on your mind about ${otherName} (draw on it if it fits): ${ideas}` : ""
   }
 
 Your one-sentence reply as ${selfName} (plain text, no quotes):`;
