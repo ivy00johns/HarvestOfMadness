@@ -27,6 +27,13 @@ import {
   HUD_H,
   HUD_TOP_H,
   HUD_W,
+  KPI_BAND_H,
+  KPI_TILE_COUNT,
+  KPI_TILE_GAP,
+  FONT_SIZE_KPI_LABEL,
+  FONT_SIZE_KPI_VALUE,
+  formatEconomy,
+  formatPercent,
   LOG_H,
   LOG_LINES,
   LOG_LINE_H,
@@ -58,6 +65,9 @@ describe("contract rule 14 — readable text", () => {
     expect(FONT_SIZE_SMALL).toBeGreaterThanOrEqual(12);
     expect(FONT_SIZE_BASE).toBeGreaterThanOrEqual(12);
     expect(FONT_SIZE_TITLE).toBeGreaterThanOrEqual(12);
+    // B-3: the KPI band's label + (larger) value fonts are also ≥ 12 (rule 14).
+    expect(FONT_SIZE_KPI_LABEL).toBeGreaterThanOrEqual(12);
+    expect(FONT_SIZE_KPI_VALUE).toBeGreaterThanOrEqual(12);
   });
 
   it("feed line height fits the smallest font without clipping", () => {
@@ -67,6 +77,7 @@ describe("contract rule 14 — readable text", () => {
   it("all layout constants are integers (integer pixel positions)", () => {
     const values = [
       HUD_W, HUD_H, CMDBAR_H, TOPBAR_H, BADGE_ROW_H, BADGE_ROW_Y, HUD_TOP_H,
+      KPI_BAND_H, KPI_TILE_COUNT, KPI_TILE_GAP,
       CARD_X, CARD_W, CARD_TOP, CARD_GAP,
       LOG_X, LOG_Y, LOG_W, LOG_H, LOG_LINE_H,
       PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
@@ -116,11 +127,15 @@ describe("B-2 — single SpaceCon command bar (top region)", () => {
     expect(hud.rightTop).toBe(CMDBAR_H);
   });
 
-  it("the map top docks exactly at topH (= CMDBAR_H), no badge-row gap", () => {
+  it("the map top docks at topH + KPI_BAND_H (B-3: map shifts below the KPI band)", () => {
     const hud = computeHud(VW, VH);
-    expect(hud.mapY).toBe(hud.topH);
-    expect(hud.mapY).toBe(CMDBAR_H);
-    expect(hud.mapRect.y).toBe(CMDBAR_H);
+    // B-3 structural change: the KPI band sits between the command bar and the
+    // map, so the map now starts KPI_BAND_H below topH (not at topH).
+    expect(hud.mapY).toBe(hud.topH + KPI_BAND_H);
+    expect(hud.mapY).toBe(CMDBAR_H + KPI_BAND_H);
+    expect(hud.mapRect.y).toBe(CMDBAR_H + KPI_BAND_H);
+    // the map no longer starts at topH — the band occupies that row now
+    expect(hud.mapY).toBeGreaterThan(hud.topH);
   });
 
   it("isPointOverHud treats the whole command bar as HUD chrome", () => {
@@ -129,8 +144,115 @@ describe("B-2 — single SpaceCon command bar (top region)", () => {
     expect(isPointOverHud(hud, 200, 0)).toBe(true);
     expect(isPointOverHud(hud, 200, Math.floor(CMDBAR_H / 2))).toBe(true);
     expect(isPointOverHud(hud, 200, CMDBAR_H)).toBe(true);
-    // one pixel below the bar, over the open map, is NOT HUD
-    expect(isPointOverHud(hud, Math.round(hud.mapRect.x + hud.mapRect.w / 2), CMDBAR_H + 1)).toBe(false);
+    // B-3: one pixel below the bar now lands on the KPI band — still HUD chrome
+    expect(isPointOverHud(hud, Math.round(hud.mapRect.x + hud.mapRect.w / 2), CMDBAR_H + 1)).toBe(true);
+    // the open map proper (below the band) is NOT HUD
+    expect(isPointOverHud(hud, Math.round(hud.mapRect.x + hud.mapRect.w / 2), hud.mapY + 1)).toBe(false);
+  });
+});
+
+describe("B-3 — KPI band (left column, below the command bar, above the map)", () => {
+  it("KPI_BAND_H is an integer in the design band (58–64px)", () => {
+    expect(Number.isInteger(KPI_BAND_H)).toBe(true);
+    expect(KPI_BAND_H).toBeGreaterThanOrEqual(58);
+    expect(KPI_BAND_H).toBeLessThanOrEqual(64);
+  });
+
+  it("the band sits directly below the command bar (y === topH) at full band height", () => {
+    const hud = computeHud(VW, VH);
+    expect(hud.kpiBandRect.y).toBe(hud.topH);
+    expect(hud.kpiY).toBe(hud.topH);
+    expect(hud.kpiBandRect.h).toBe(KPI_BAND_H);
+    expect(hud.kpiH).toBe(KPI_BAND_H);
+    // the band ends exactly where the map begins (no gap, no overlap)
+    expect(hud.kpiBandRect.y + hud.kpiBandRect.h).toBe(hud.mapY);
+  });
+
+  it("the band spans the LEFT column (x:0 .. rightX), left of the right panel", () => {
+    const hud = computeHud(VW, VH);
+    expect(hud.kpiBandRect.x).toBe(0);
+    expect(hud.kpiW).toBe(hud.rightX);
+    expect(hud.kpiBandRect.x + hud.kpiBandRect.w).toBe(hud.rightX);
+    // the band matches the map's width (both are the left column)
+    expect(hud.kpiBandRect.w).toBe(hud.mapRect.w);
+  });
+
+  it("there are exactly five equal, non-overlapping tiles inside the band", () => {
+    const hud = computeHud(VW, VH);
+    expect(KPI_TILE_COUNT).toBe(5);
+    const rects = [];
+    for (let i = 0; i < KPI_TILE_COUNT; i++) rects.push(hud.kpiTileRect(i));
+    // every tile is inside the band
+    for (const r of rects) {
+      expect(r.x).toBeGreaterThanOrEqual(hud.kpiBandRect.x);
+      expect(r.x + r.w).toBeLessThanOrEqual(hud.kpiBandRect.x + hud.kpiBandRect.w);
+      expect(r.y).toBeGreaterThanOrEqual(hud.kpiBandRect.y);
+      expect(r.y + r.h).toBeLessThanOrEqual(hud.kpiBandRect.y + hud.kpiBandRect.h);
+      expect(r.w).toBeGreaterThan(0);
+      expect(r.h).toBeGreaterThan(0);
+    }
+    // tiles share the same row (same y, same height)
+    for (const r of rects) {
+      expect(r.y).toBe(rects[0].y);
+      expect(r.h).toBeGreaterThanOrEqual(rects[0].h - 1);
+      expect(r.h).toBeLessThanOrEqual(rects[0].h + 1);
+    }
+    // left→right, non-overlapping with a >= gap-1 separation between neighbours
+    for (let i = 1; i < KPI_TILE_COUNT; i++) {
+      expect(rects[i].x).toBeGreaterThan(rects[i - 1].x);
+      const gap = rects[i].x - (rects[i - 1].x + rects[i - 1].w);
+      expect(gap).toBeGreaterThanOrEqual(KPI_TILE_GAP - 1);
+      expect(gap).toBeLessThanOrEqual(KPI_TILE_GAP + 1);
+    }
+    // tiles are near-equal width (integer flooring leaves ≤1px slack)
+    const widths = rects.map((r) => r.w);
+    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(1);
+  });
+
+  it("every tile rect lands on integer pixels", () => {
+    const hud = computeHud(VW, VH);
+    for (let i = 0; i < KPI_TILE_COUNT; i++) {
+      const r = hud.kpiTileRect(i);
+      for (const v of [r.x, r.y, r.w, r.h]) expect(Number.isInteger(v)).toBe(true);
+    }
+  });
+
+  it("the map keeps a usable height after the band shift on the design viewport", () => {
+    const hud = computeHud(VW, VH);
+    // the band ate KPI_BAND_H off the top of the map, but the map is still tall
+    expect(hud.mapRect.h).toBeGreaterThanOrEqual(200);
+    // and the band did not push the map past the bottom strip
+    expect(hud.mapRect.y + hud.mapRect.h).toBeLessThanOrEqual(hud.stripY);
+  });
+
+  it("isPointOverHud guards the KPI band as opaque chrome", () => {
+    const hud = computeHud(VW, VH);
+    const t = hud.kpiTileRect(0);
+    // a point inside the band (left column, below the bar, above the map) is HUD
+    expect(isPointOverHud(hud, t.x + 5, hud.kpiY + 5)).toBe(true);
+    // the open map below the band is NOT HUD
+    expect(isPointOverHud(hud, t.x + 5, hud.mapY + 5)).toBe(false);
+  });
+});
+
+describe("B-3 — KPI value formatters", () => {
+  it("formatEconomy adds thousands separators and a g suffix", () => {
+    expect(formatEconomy(0)).toBe("0g");
+    expect(formatEconomy(284)).toBe("284g");
+    expect(formatEconomy(2400)).toBe("2,400g");
+    expect(formatEconomy(1234567)).toBe("1,234,567g");
+    // rounds + clamps non-finite/negative to an honest 0g (never fabricated)
+    expect(formatEconomy(2400.7)).toBe("2,401g");
+    expect(formatEconomy(-5)).toBe("0g");
+    expect(formatEconomy(Number.NaN)).toBe("0g");
+  });
+
+  it("formatPercent rounds a mean to a whole percent", () => {
+    expect(formatPercent(71)).toBe("71%");
+    expect(formatPercent(71.4)).toBe("71%");
+    expect(formatPercent(71.6)).toBe("72%");
+    expect(formatPercent(0)).toBe("0%");
+    expect(formatPercent(Number.NaN)).toBe("0%");
   });
 });
 
@@ -160,7 +282,8 @@ describe("v4 — three docked regions (right panel / bottom strip / map)", () =>
   it("the map fills the center-left area between chrome, panel and strip", () => {
     const hud = computeHud(VW, VH);
     expect(hud.mapRect.x).toBe(0);
-    expect(hud.mapRect.y).toBe(HUD_TOP_H);
+    // B-3: the map starts below the KPI band, not at topH
+    expect(hud.mapRect.y).toBe(HUD_TOP_H + KPI_BAND_H);
     // left of the right panel
     expect(hud.mapRect.x + hud.mapRect.w).toBeLessThanOrEqual(hud.rightX);
     // above the bottom strip

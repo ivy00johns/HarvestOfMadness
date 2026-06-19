@@ -36,13 +36,18 @@ import {
 } from "../obs/Inspector";
 import {
   FONT_SIZE_BASE,
+  FONT_SIZE_KPI_LABEL,
+  FONT_SIZE_KPI_VALUE,
   FONT_SIZE_SMALL,
   FONT_SIZE_TITLE,
   HUD_FONT,
   HUD_FONT_BODY,
+  KPI_TILE_COUNT,
   MONO_FONT,
   REG_HUD,
   computeHud,
+  formatEconomy,
+  formatPercent,
   pointInRect,
   unionRect,
   type HudLayout,
@@ -80,6 +85,8 @@ import { getTimeSystem } from "../world/instance";
 const PX_SMALL = `${FONT_SIZE_SMALL}px`;
 const PX_BASE = `${FONT_SIZE_BASE}px`;
 const PX_TITLE = `${FONT_SIZE_TITLE}px`;
+const PX_KPI_VALUE = `${FONT_SIZE_KPI_VALUE}px`;
+const PX_KPI_LABEL = `${FONT_SIZE_KPI_LABEL}px`;
 
 // SpaceCon palette (cool-navy mission-control): these constants keep their
 // names so every existing usage picks up the navy palette, but their VALUES are
@@ -203,6 +210,13 @@ export class UIScene extends Phaser.Scene {
   /** BUDGET REACHED indicator, folded into the bar (driven by budgetReached). */
   private budgetBadge!: Phaser.GameObjects.Text;
 
+  // B-3 — KPI band: five run-level number tiles in the left column, directly
+  // below the command bar and above the map. Each tile: a backing rect, a mono
+  // uppercase label, and a display-700 value. Values read REAL sim data.
+  private kpiBg: Phaser.GameObjects.Rectangle[] = [];
+  private kpiLabels: Phaser.GameObjects.Text[] = [];
+  private kpiValues: Phaser.GameObjects.Text[] = [];
+
   // v3 — live party showcase strip (top-left, over the trace-panel band)
   private partyBg: Phaser.GameObjects.Rectangle | null = null;
   private partyTitle: Phaser.GameObjects.Text | null = null;
@@ -271,6 +285,7 @@ export class UIScene extends Phaser.Scene {
     this.hud = computeHud(this.scale.width, this.scale.height);
     this.buildCommandBar();
     this.buildSectionHeaders();
+    this.buildKpiBand();
     this.buildFeedChrome();
     this.buildPartyChrome();
     this.buildGovernanceChrome();
@@ -341,6 +356,11 @@ export class UIScene extends Phaser.Scene {
     this.transcriptRows = [];
     this.transcriptVisible = false;
     this.agentsHeader = null;
+    // removeAll(true) destroyed the KPI band objects too — drop stale refs;
+    // buildKpiBand() recreates them (the values are re-derived from sim data).
+    this.kpiBg = [];
+    this.kpiLabels = [];
+    this.kpiValues = [];
     // removeAll(true) destroyed the command-bar children — drop stale refs in
     // the segment maps so buildCommandBar() repopulates them cleanly.
     this.speedBtns.clear();
@@ -349,6 +369,7 @@ export class UIScene extends Phaser.Scene {
     this.modeBtnBgs.clear();
     this.buildCommandBar();
     this.buildSectionHeaders();
+    this.buildKpiBand();
     this.buildFeedChrome();
     this.buildPartyChrome();
     this.buildGovernanceChrome();
@@ -500,6 +521,7 @@ export class UIScene extends Phaser.Scene {
   private refreshAll(): void {
     if (this.destroyed) return;
     this.renderCommandBar();
+    this.renderKpiBand();
     this.renderFeed();
     this.renderCards();
     this.renderParty();
@@ -990,6 +1012,104 @@ export class UIScene extends Phaser.Scene {
         line.setText("");
       }
     }
+  }
+
+  // -- KPI band (B-3, design README §2) -------------------------------------------
+
+  /**
+   * Build the five-tile KPI band chrome in the LEFT column, directly below the
+   * command bar and above the map (hud.kpiBandRect). Each tile gets a `card`
+   * backing rect with a `borderCard` border, a mono uppercase label (ink400)
+   * and a display-700 value. Values are filled (with REAL sim data) by
+   * renderKpiBand(); the labels are static. No nested containers.
+   */
+  private buildKpiBand(): void {
+    // Static tile labels (design README §2). Order = tile index 0..4.
+    const labels = [
+      "AGENTS LIVE",
+      "CONVERSATIONS",
+      "AVG ENERGY",
+      "ECONOMY",
+      "DECISIONS",
+    ];
+    // Per-tile value color (design README §2): white · cyan300 · positive500 ·
+    // white · white. All from theme tokens (single source).
+    const valueColors = [
+      COLOR_TEXT, // agents live — white
+      COLOR_GOAL, // conversations — cyan300
+      COLOR_OK, // avg energy — positive500
+      COLOR_TEXT, // economy — white
+      COLOR_TEXT, // decisions — white
+    ];
+    for (let i = 0; i < KPI_TILE_COUNT; i++) {
+      const t = this.hud.kpiTileRect(i);
+      this.kpiBg.push(
+        this.add
+          .rectangle(t.x, t.y, t.w, t.h, COLOR_CARD_BG, 1)
+          .setOrigin(0, 0)
+          .setStrokeStyle(1, COLOR_BORDER, 1)
+          .setDepth(DEPTH_HUD),
+      );
+      // Mono uppercase label near the top of the tile (padding ~12×12).
+      this.kpiLabels.push(
+        this.add
+          .text(t.x + 12, t.y + 8, labels[i], {
+            fontFamily: MONO_FONT,
+            fontSize: PX_KPI_LABEL,
+            color: COLOR_HEADER, // ink400 (labels)
+          })
+          .setDepth(DEPTH_HUD_TEXT),
+      );
+      // Display-700 value below the label. Filled by renderKpiBand().
+      this.kpiValues.push(
+        this.add
+          .text(t.x + 12, t.y + 24, "—", {
+            fontFamily: HUD_FONT,
+            fontSize: PX_KPI_VALUE,
+            fontStyle: "bold",
+            color: valueColors[i],
+          })
+          .setDepth(DEPTH_HUD_TEXT),
+      );
+    }
+  }
+
+  /**
+   * Render the five KPI values from REAL sim data (no fabricated numbers):
+   *   0 AGENTS LIVE   — living agents (a.alive !== false) count.
+   *   1 CONVERSATIONS — active-conversation count from the SAME source the
+   *                     transcript reads (latestConversation): 1 when one is
+   *                     live, else 0. Honest — the HUD tracks one at a time.
+   *   2 AVG ENERGY    — mean of agents' energy, as NN%. "—" when no agents.
+   *   3 ECONOMY       — sum of agents' gold, "N,NNNg". (Design §2 wants a faint
+   *                     trailing g; the 2-object split is deferred to a polish pass.)
+   *   4 DECISIONS     — sum of agents' decisionsTotal.
+   * Empty sources show an honest "0"/"—", never a fabricated number.
+   * Event-driven via the markDirty()→refreshAll() throttle — not per-frame.
+   */
+  private renderKpiBand(): void {
+    if (this.destroyed || this.kpiValues.length === 0) return;
+    const agents = this.conn?.controls.agents() ?? [];
+    // AGENTS LIVE — the real alive flag (undefined → counted as live).
+    const live = agents.filter((a) => (a as { alive?: boolean }).alive !== false);
+    // AVG ENERGY — mean over agents; "—" when there are none (honest empty).
+    const energySum = agents.reduce((s, a) => s + (a.energy ?? 0), 0);
+    const avgEnergy =
+      agents.length > 0 ? formatPercent(energySum / agents.length) : "—";
+    // ECONOMY — total gold across agents (rendered white; faint-g deferred).
+    const goldSum = agents.reduce((s, a) => s + (a.gold ?? 0), 0);
+    // DECISIONS — total decisions across agents.
+    const decisionsSum = agents.reduce((s, a) => s + (a.decisionsTotal ?? 0), 0);
+    // CONVERSATIONS — same source the transcript reads (latestConversation):
+    // 1 when one is currently shown, else 0. The HUD tracks one at a time, so
+    // this is the honest live count from that source (never invented).
+    const conversations = this.latestConversation ? 1 : 0;
+
+    this.kpiValues[0]?.setText(String(live.length));
+    this.kpiValues[1]?.setText(String(conversations));
+    this.kpiValues[2]?.setText(avgEnergy);
+    this.kpiValues[3]?.setText(formatEconomy(goldSum));
+    this.kpiValues[4]?.setText(String(decisionsSum));
   }
 
   // -- live party showcase strip --------------------------------------------------

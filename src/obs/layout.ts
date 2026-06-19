@@ -59,6 +59,27 @@ export interface Rect {
   h: number;
 }
 
+// -- KPI value formatters (pure — testable headlessly) -----------------------
+/**
+ * Economy KPI value: a non-negative integer gold total with thousands
+ * separators and a trailing `g` (e.g. 2400 → "2,400g", 0 → "0g"). The caller
+ * renders the `g` faint (ink400). Non-finite / negative inputs clamp to "0g"
+ * (honest empty — never a fabricated number).
+ */
+export function formatEconomy(gold: number): string {
+  const n = Number.isFinite(gold) ? Math.max(0, Math.round(gold)) : 0;
+  return `${n.toLocaleString("en-US")}g`;
+}
+
+/**
+ * Average-energy KPI value: a mean 0..100 rounded to a whole percent
+ * (e.g. 71.4 → "71%"). Non-finite input (no agents) clamps to "0%".
+ */
+export function formatPercent(mean: number): string {
+  const n = Number.isFinite(mean) ? Math.max(0, Math.round(mean)) : 0;
+  return `${n}%`;
+}
+
 export function pointInRect(px: number, py: number, r: Rect): boolean {
   return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 }
@@ -90,6 +111,24 @@ export const TOPBAR_H = CMDBAR_H;
 export const BADGE_ROW_H = 0;
 /** Total height of the top chrome — now a single command bar. */
 export const HUD_TOP_H = CMDBAR_H;
+
+// -- KPI band (B-3, design README §2) ----------------------------------------
+// A horizontal row of FIVE equal KPI tiles in the LEFT column, directly below
+// the command bar and ABOVE the map. The map shifts down by KPI_BAND_H. The
+// right panel + bottom strip are UNCHANGED (the band is left-column only; the
+// right rail still starts at topH). Integer; the band is tall enough for a
+// 10.5px mono label over a 24px display value plus ~12px top/bottom padding.
+export const KPI_BAND_H = 60;
+/** Number of KPI tiles in the band (design README §2: five run-level numbers). */
+export const KPI_TILE_COUNT = 5;
+/** Gap between KPI tiles (design README §2: flex row, gap ~12px). */
+export const KPI_TILE_GAP = 12;
+/** Outer inset of the KPI band from the left/right edges of the left column. */
+export const KPI_BAND_PAD = 4;
+/** Value font for the KPI tiles — a NEW larger display size (≥12, rule 14). */
+export const FONT_SIZE_KPI_VALUE = 24;
+/** Mono label font for the KPI tiles (≥12, rule 14). */
+export const FONT_SIZE_KPI_LABEL = 12;
 
 // -- RIGHT panel (conversation + events) ------------------------------------
 /** Preferred width of the fixed right-side panel that holds the conversation
@@ -153,6 +192,18 @@ export interface HudLayout {
   rightW: number;
   rightTop: number;
   rightRect: Rect;
+
+  // -- KPI band (left column, below the command bar, above the map) ---------
+  /** Top edge of the KPI band (== topH). */
+  kpiY: number;
+  /** Height of the KPI band (== KPI_BAND_H). */
+  kpiH: number;
+  /** Left-column width the band spans (== rightX / the map's width). */
+  kpiW: number;
+  /** Full KPI band rect (x:0, y:topH, w:kpiW, h:KPI_BAND_H). */
+  kpiBandRect: Rect;
+  /** Per-tile rect (i: 0..4) — five equal tiles with KPI_TILE_GAP between. */
+  kpiTileRect(i: number): Rect;
 
   // -- map viewport (center-left) -------------------------------------------
   mapX: number;
@@ -240,9 +291,34 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   const rightH = Math.max(80, h - rightTop);
   const rightRect: Rect = { x: rightX, y: rightTop, w: rightW, h: rightH };
 
-  // -- MAP viewport: center-left, between top chrome / right panel / strip.
+  // -- KPI band: a row of five equal tiles in the LEFT column, directly below
+  //    the command bar and above the map. Spans the map's width (x:0..rightX).
+  const kpiY = HUD_TOP_H;
+  const kpiH = KPI_BAND_H;
+  const kpiW = rightX;
+  const kpiBandRect: Rect = { x: 0, y: kpiY, w: kpiW, h: kpiH };
+  // Five equal tiles inside the band (after the outer pad), separated by
+  // KPI_TILE_GAP. Integer pixels — widths/offsets are floored, with the tile's
+  // own width derived from its start so rounding never overflows the band.
+  const kpiInnerX = KPI_BAND_PAD;
+  const kpiInnerW = Math.max(
+    KPI_TILE_COUNT, // never collapse below 1px/tile
+    kpiW - 2 * KPI_BAND_PAD,
+  );
+  const kpiTileTop = kpiY + KPI_BAND_PAD;
+  const kpiTileH = Math.max(1, kpiH - 2 * KPI_BAND_PAD);
+  const kpiSpan = kpiInnerW - (KPI_TILE_COUNT - 1) * KPI_TILE_GAP;
+  const kpiTileRect = (i: number): Rect => {
+    const idx = Math.max(0, Math.min(KPI_TILE_COUNT - 1, i));
+    const x0 = kpiInnerX + Math.floor((kpiSpan * idx) / KPI_TILE_COUNT) + idx * KPI_TILE_GAP;
+    const x1 = kpiInnerX + Math.floor((kpiSpan * (idx + 1)) / KPI_TILE_COUNT) + idx * KPI_TILE_GAP;
+    return { x: x0, y: kpiTileTop, w: Math.max(1, x1 - x0), h: kpiTileH };
+  };
+
+  // -- MAP viewport: center-left, between the KPI band / right panel / strip.
+  //    The map shifts DOWN by KPI_BAND_H (B-3): its top is topH + KPI_BAND_H.
   const mapX = 0;
-  const mapY = HUD_TOP_H;
+  const mapY = HUD_TOP_H + KPI_BAND_H;
   const mapW = Math.max(MIN_WORLD_W, rightX);
   const mapH = Math.max(MIN_WORLD_H, stripY - mapY);
   const mapRect: Rect = { x: mapX, y: mapY, w: mapW, h: mapH };
@@ -363,6 +439,11 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     rightW,
     rightTop,
     rightRect,
+    kpiY,
+    kpiH,
+    kpiW,
+    kpiBandRect,
+    kpiTileRect,
     mapX,
     mapY,
     mapW,
@@ -423,6 +504,10 @@ export function isPointOverHud(hud: HudLayout, px: number, py: number): boolean 
   if (py <= hud.topH) return true; // command bar, full width
   if (px >= hud.rightX) return true; // right-side conversation/events panel
   if (py >= hud.stripY) return true; // bottom agent strip
+  // B-3: the KPI band is opaque chrome in the LEFT column directly below the
+  // command bar (x < rightX, y in [topH, topH+KPI_BAND_H)). Guard it so world
+  // clicks on the band don't fall through to the map beneath it.
+  if (py < hud.mapY && px < hud.rightX) return true; // KPI band
   return false;
 }
 
