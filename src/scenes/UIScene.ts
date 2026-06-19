@@ -2018,7 +2018,7 @@ export class UIScene extends Phaser.Scene {
     const w = this.hud.panelW;
     const padX = UIScene.INSP_PAD_X;
     const card = buildAgentCard(agent);
-    const textW = w - 2 * padX - 18; // 18px gutter for node dots / chips
+    const textW = Math.max(40, w - 2 * padX - 18); // 18px gutter for node dots / chips
     let y = this.panelContentTop;
 
     const push = (
@@ -2131,7 +2131,10 @@ export class UIScene extends Phaser.Scene {
       const chipW = 52;
       const memTextX = chipX + chipW + 8;
       const impW = 22;
-      const memTextW = w - padX - memTextX - impW - 6;
+      // memTextW is a panel-RELATIVE width: from the chip+gap to the inner
+      // right edge, minus the importance column. (memTextX is an ABSOLUTE x,
+      // so it must NOT be subtracted from the panel width `w`.)
+      const memTextW = Math.max(40, w - 2 * padX - chipW - 8 - impW - 6);
       for (const m of memories) {
         const chip = memoryTagChip(m.type);
         const bodyText = this.add
