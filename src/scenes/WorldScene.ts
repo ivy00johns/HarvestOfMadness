@@ -848,8 +848,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   // -- static dressing (assets mode, drawn once) -----------------------------
 
   /**
-   * Brick facades over all 14 building footprints from map.ts (12 homesteads +
-   * shop + tavern). Each entry in BUILDINGS carries its own doorX and kind, so
+   * Brick facades over all 20 building footprints from map.ts (15 homesteads +
+   * 5 civic rooms). Each entry in BUILDINGS carries its own doorX and kind, so
    * we never drift from the generated map. Shop/tavern get the light-wood door
    * (DOOR_B) and market crates; houses get the dark-wood door (DOOR_A).
    * Each kind gets a distinct roof/wall tint and a sign emoji (via buildingStyle)

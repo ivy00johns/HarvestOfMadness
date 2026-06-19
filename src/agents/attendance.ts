@@ -30,13 +30,14 @@
  * that "as far as an agent can still get there in a phase" maps to a coin-flip,
  * which is what fixes 200 rather than tuning-to-pass.
  *
- * Measured context (140×100 home→tavern A* lengths for all 12 party-emergence
- * personas, spanning 79–99 tiles): the dominant ~91-tile band gives
- * `attendanceProbability(91) = 1 - 91/200 = 0.545`. Across the 12 personas the
- * host (Social Sage) always attends and 6 travelers' deterministic coins clear
- * their distance-weighted probability, so 7 converge within Chebyshev ≤ 1 of the
- * tavern — comfortably above the ≥3 floor (margin ~4) — while the other 5 skip,
- * keeping attendance a strict subset ("occasionally"), not unconditional.
+ * Measured context (140×100 home→tavern A* lengths): the 12 corner-hamlet homes
+ * span 79–99 tiles (dominant ~91-tile band → `attendanceProbability(91) =
+ * 1 - 91/200 = 0.545`), and the 3 central "Greenhollow" homes (C6) sit at 45–61
+ * tiles → 0.695–0.775, so the gradient now genuinely differentiates near from far.
+ * The host (Social Sage) always attends and the travelers whose deterministic
+ * coins clear their distance-weighted probability converge within Chebyshev ≤ 1
+ * of the tavern — comfortably above the ≥3 floor — while the rest skip, keeping
+ * attendance a strict subset ("occasionally"), not unconditional.
  */
 export const ATTEND_DECAY = 200;
 

@@ -119,8 +119,10 @@ interface HomesteadSpec {
 }
 
 /**
- * TWELVE big, multi-room homesteads in four corner HAMLETS (3 homes each) around
- * the central civic hub (Option C 140×100 re-lay). Each is a large 8×8 / 9×8 home
+ * FIFTEEN multi-room homesteads: TWELVE big corner-hamlet homes (four HAMLETS,
+ * 3 each) around the central civic hub, PLUS the three 5×5 central "Greenhollow"
+ * homes (juno/pim/odo) activated from reserve lots in C6 (appended at the tail —
+ * HOMESTEADS[0] must stay brix). Each corner home is a large 8×8 / 9×8 home
  * (NOT the old 5×6/5×7 cottage) with a vertical interior divider + doorway gap
  * (see stampHomestead) splitting it into TWO rooms, a door facing a residential
  * road (north y=20 / south y=80), and a soil plot beside the door. The bigger
@@ -132,7 +134,7 @@ interface HomesteadSpec {
  * (north y=20 / south y=80) so each door's exterior neighbour is a path tile. Side
  * plots sit within OBSERVATION_RADIUS (Chebyshev 4) of the door. Every door stays
  * within the ≤100 A* tavern-reachability floor. One bed + one house landmark per
- * home → the 12-bed / 12-house landmark contract. brix is HOMESTEADS[0] → its plot
+ * home → the 15-bed / 15-house landmark contract. brix is HOMESTEADS[0] → its plot
  * is FIELD_RECT; it extends DOWN to y=19 so a soil cell at y=19 borders the north
  * road y=20 (the executor TILL-rejects-road fixture).
  *
@@ -156,6 +158,15 @@ export const HOMESTEADS: HomesteadSpec[] = [
   { id: "rusty", house: { x: 130, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 132, y: 85 }, door: { x: 132, y: 81 }, doorSide: "N", plot: { x0: 128, y0: 81, x1: 128, y1: 85 } },
   { id: "moss",  house: { x: 118, y: 81 }, size: { w: 8, h: 8 }, bed: { x: 124, y: 85 }, door: { x: 124, y: 81 }, doorSide: "N", plot: { x0: 126, y0: 81, x1: 126, y1: 84 } },
   { id: "zola",  house: { x: 127, y: 72 }, size: { w: 9, h: 8 }, bed: { x: 129, y: 74 }, door: { x: 129, y: 79 }, doorSide: "S", plot: { x0: 126, y0: 75, x1: 126, y1: 78 } },
+  // -- central "Greenhollow" hamlet (C6: activated reserve lots lot_n4/n5/n6) --
+  // The town's first growth INWARD, on the north road (y=20) terrace between the
+  // center (x=70) and east (x=116) trunks. 5×5 footprints (door side S onto y=20),
+  // so the town now spans THREE house sizes (5×5 / 8×8 / 9×8). These doors sit
+  // ~45–61 A* tiles from the central tavern (vs the 12 corner homes' 79–99), so
+  // the shipped distance-weighted attendance gradient finally differentiates.
+  { id: "juno", house: { x: 76, y: 15 }, size: { w: 5, h: 5 }, bed: { x: 78, y: 17 }, door: { x: 78, y: 19 }, doorSide: "S", plot: { x0: 81, y0: 16, x1: 83, y1: 19 } },
+  { id: "pim",  house: { x: 84, y: 15 }, size: { w: 5, h: 5 }, bed: { x: 86, y: 17 }, door: { x: 86, y: 19 }, doorSide: "S", plot: { x0: 89, y0: 16, x1: 91, y1: 19 } },
+  { id: "odo",  house: { x: 92, y: 15 }, size: { w: 5, h: 5 }, bed: { x: 94, y: 17 }, door: { x: 94, y: 19 }, doorSide: "S", plot: { x0: 97, y0: 16, x1: 99, y1: 19 } },
 ];
 
 /** persona id -> start (door) tile, consumed by src/agents/personas.ts. */
@@ -168,7 +179,8 @@ export const HOMESTEAD_DOORS: Record<string, Vec2> = Object.fromEntries(
  * tiles, adds no landmark, binds no persona — pure capacity the agents layer
  * can later activate (add a persona + promote to HOMESTEADS) with no re-survey.
  *
- * FOURTEEN such lots are reserved here as future-hamlet ground: visible room to
+ * ELEVEN such lots are reserved here as future-hamlet ground (was 14; C6
+ * activated lot_n4/n5/n6 into the central Greenhollow hamlet): visible room to
  * grow that the agents layer can activate later (add a persona + promote to
  * HOMESTEADS) with no re-survey. They line the countryside ring and the
  * center-trunk corridor — the open road stretches between the four occupied
@@ -192,9 +204,9 @@ export const RESERVE_LOTS: ReserveLot[] = [
   { id: "lot_n1", house: { x0: 26,  y0: 15, x1: 30,  y1: 19 }, bed: { x: 28,  y: 17 }, door: { x: 28,  y: 19 }, doorSide: "S", plot: { x0: 31,  y0: 16, x1: 33,  y1: 19 } },
   { id: "lot_n2", house: { x0: 34,  y0: 15, x1: 38,  y1: 19 }, bed: { x: 36,  y: 17 }, door: { x: 36,  y: 19 }, doorSide: "S", plot: { x0: 39,  y0: 16, x1: 41,  y1: 19 } },
   { id: "lot_n3", house: { x0: 42,  y0: 15, x1: 46,  y1: 19 }, bed: { x: 44,  y: 17 }, door: { x: 44,  y: 19 }, doorSide: "S", plot: { x0: 47,  y0: 16, x1: 49,  y1: 19 } },
-  { id: "lot_n4", house: { x0: 76,  y0: 15, x1: 80,  y1: 19 }, bed: { x: 78,  y: 17 }, door: { x: 78,  y: 19 }, doorSide: "S", plot: { x0: 81,  y0: 16, x1: 83,  y1: 19 } },
-  { id: "lot_n5", house: { x0: 84,  y0: 15, x1: 88,  y1: 19 }, bed: { x: 86,  y: 17 }, door: { x: 86,  y: 19 }, doorSide: "S", plot: { x0: 89,  y0: 16, x1: 91,  y1: 19 } },
-  { id: "lot_n6", house: { x0: 92,  y0: 15, x1: 96,  y1: 19 }, bed: { x: 94,  y: 17 }, door: { x: 94,  y: 19 }, doorSide: "S", plot: { x0: 97,  y0: 16, x1: 99,  y1: 19 } },
+  // lot_n4 / lot_n5 / lot_n6 ({76,15} / {84,15} / {92,15}) ACTIVATED in C6 —
+  // promoted to live HOMESTEADS (juno/pim/odo, the central Greenhollow hamlet);
+  // activation consumes reserve capacity by design, so they are gone from here.
   { id: "lot_n7", house: { x0: 100, y0: 15, x1: 104, y1: 19 }, bed: { x: 102, y: 17 }, door: { x: 102, y: 19 }, doorSide: "S", plot: { x0: 105, y0: 16, x1: 107, y1: 19 } },
   // NORTH road, homes BELOW it (door side N at y=21, exterior y=20 = road)
   { id: "lot_n8", house: { x0: 30,  y0: 21, x1: 34,  y1: 25 }, bed: { x: 32,  y: 23 }, door: { x: 32,  y: 21 }, doorSide: "N", plot: { x0: 35,  y0: 22, x1: 37,  y1: 25 } },
@@ -342,7 +354,7 @@ export const WATER_POS: Vec2 = { x: POND.x0, y: POND.y0 };
 export const FIELD_RECT = { ...HOMESTEADS[0].plot }; // first homestead's plot
 
 /**
- * Building footprints (the 12 homestead rooms + the 5 civic rooms = 17) for the
+ * Building footprints (the 15 homestead rooms + the 5 civic rooms = 20) for the
  * renderer's facade/interior dressing. `doorX` is the entrance column (always
  * within [x0,x1]). The map's renderer reads this so it can never drift from the
  * generated map (see tests/world/map.test.ts).
