@@ -50,6 +50,7 @@ import {
 import { computeHud, FONT_SIZE_SMALL, isPointOverHud, pointInRect, REG_HUD, REG_SELECTED } from "../obs/layout";
 import type { Rect } from "../obs/layout";
 import { visibleBubbleAgents } from "../obs/bubblePolicy";
+import { spreadAssignments } from "../obs/spread";
 import { brand400 } from "../obs/theme";
 import { getTimeSystem, getWorld } from "../world/instance";
 import {
@@ -148,6 +149,13 @@ const DEPTH_TINT = 9_000;
 const DEPTH_OVERHEAD = 10_000;
 const DEPTH_BUBBLE = 20_000;
 
+/**
+ * B-1 body-spreading radius (px): how far co-located agents fan out from the
+ * tile center. Kept to a fraction of a tile (~0.34·TILE) so a crowd reads as
+ * distinct bodies while every agent stays clearly ON its own tile. RENDER-ONLY.
+ */
+const SPREAD_RADIUS = TILE_SIZE * 0.34;
+
 type Dir = "up" | "down" | "left" | "right";
 
 interface AgentSprite {
@@ -164,6 +172,12 @@ interface AgentSprite {
   charKey: string | null;
   facing: Dir;
   tilePos: Vec2;
+  /**
+   * B-1 body-spreading: render-only pixel nudge from the tile center so
+   * co-located agents fan out instead of stacking. NEVER feeds back into
+   * `tilePos`/sim — it is folded into the container's resting position only.
+   */
+  spread: { dx: number; dy: number };
   speech: Phaser.GameObjects.Container | null;
   speechTimer: Phaser.Time.TimerEvent | null;
 }
@@ -1484,12 +1498,15 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   registerAgentSprite(name: string, color: number, pos: Vec2): void {
     const existing = this.agents.get(name);
     if (existing) {
-      existing.container.setPosition(...this.tileCenter(pos));
       existing.tilePos = { ...pos };
+      // Snap to the (current) spread resting spot; recomputeSpread below
+      // refreshes the fan-out for the possibly-changed co-located set.
+      existing.container.setPosition(...this.restingSpot(existing));
       if (existing.circle) {
         existing.circle.clear();
         this.paintAgentCircle(existing.circle, color);
       }
+      this.recomputeSpread();
       return;
     }
 
@@ -1570,11 +1587,14 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       charKey: null,
       facing: "down",
       tilePos: { ...pos },
+      spread: { dx: 0, dy: 0 },
       speech: null,
       speechTimer: null,
     });
     this.agentNames.push(name);
     this.rebindAgentVisuals();
+    // Fan out the (possibly newly-shared) tile now that this agent exists.
+    this.recomputeSpread();
   }
 
   /**
@@ -1585,11 +1605,16 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
   setAgentPos(name: string, pos: Vec2): void {
     const agent = this.agents.get(name);
     if (!agent) return;
-    const [cx, cy] = this.tileCenter(pos);
     const dx = pos.x - agent.tilePos.x;
     const dy = pos.y - agent.tilePos.y;
     const dist = Math.abs(dx) + Math.abs(dy);
     agent.tilePos = { ...pos };
+    // B-1: the co-located set changed (this agent moved on/off a tile), so
+    // refresh every affected tile's fan-out FIRST. This also updates this
+    // agent's own `spread`, which the resting-spot target below folds in.
+    // RENDER-ONLY — `tilePos` (logical) is already set above and untouched here.
+    this.recomputeSpread();
+    const [cx, cy] = this.restingSpot(agent);
     this.tweens.killTweensOf(agent.container);
     if (dist === 0) {
       agent.container.setPosition(cx, cy);
@@ -1625,6 +1650,71 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
         }
       },
     });
+  }
+
+  /**
+   * B-1 body-spreading (RENDER-ONLY). Group the live agents by their logical
+   * tile (rounded `tilePos` — the SAME integer the sim uses; never mutated here)
+   * and, for any tile shared by ≥2 agents, assign each a small deterministic
+   * pixel offset (pure `spreadAssignments`, sorted by name) so the crowd fans out
+   * around the tile center instead of stacking into a blob. A tile with one agent
+   * gets `{0,0}`.
+   *
+   * The offset is folded into the container's RESTING position only: an idle
+   * agent whose fan-out shifted glides to its new spot (a short tween that does
+   * not fight a walk — walking agents already aim at their resting spot from
+   * `setAgentPos` and are left to finish). The offset NEVER feeds back into
+   * `tilePos`, pathfinding, or any sim/contract state.
+   */
+  private recomputeSpread(): void {
+    // Bucket agents by logical tile key. tilePos is already an integer grid
+    // coordinate, but round defensively so a fractional pos can't split a tile.
+    const byTile = new Map<string, string[]>();
+    for (const [name, a] of this.agents) {
+      const tx = Math.round(a.tilePos.x);
+      const ty = Math.round(a.tilePos.y);
+      const key = `${tx},${ty}`;
+      (byTile.get(key) ?? byTile.set(key, []).get(key)!).push(name);
+    }
+
+    for (const names of byTile.values()) {
+      const offsets =
+        names.length >= 2
+          ? spreadAssignments(names, SPREAD_RADIUS)
+          : null; // single occupant → no offset
+      for (const name of names) {
+        const a = this.agents.get(name);
+        if (!a) continue;
+        const next = offsets?.get(name) ?? { dx: 0, dy: 0 };
+        if (next.dx === a.spread.dx && next.dy === a.spread.dy) continue;
+        a.spread = next;
+        // Re-settle the agent's resting spot. A walking agent (active tween) is
+        // left alone — it already targets its resting spot and will land
+        // correctly; yanking it mid-stride would fight the walk. An idle agent
+        // glides to the new fan-out spot.
+        if (!this.tweens.isTweening(a.container)) {
+          const [rx, ry] = this.restingSpot(a);
+          this.tweens.killTweensOf(a.container);
+          this.tweens.add({
+            targets: a.container,
+            x: rx,
+            y: ry,
+            duration: 180,
+            ease: "Sine.easeInOut",
+          });
+        }
+      }
+    }
+  }
+
+  /**
+   * The pixel position an agent rests at: the logical tile center plus its
+   * RENDER-ONLY spread offset. The walk tween and idle re-settle both aim here,
+   * so the visual fan-out never desyncs from the logical tile.
+   */
+  private restingSpot(agent: AgentSprite): [number, number] {
+    const [cx, cy] = this.tileCenter(agent.tilePos);
+    return [cx + agent.spread.dx, cy + agent.spread.dy];
   }
 
   /**
