@@ -349,6 +349,37 @@ export function formatFeedItem(item: FeedItem, maxChars = 68): FeedLineView {
         agentName: e.agentName,
       };
     }
+    case "conversation": {
+      // Make the back-and-forth legible: render the turns[] transcript as a
+      // readable A ⇄ B line, not the legacy two-liner. Falls back to the legacy
+      // say/reply fields if turns[] is missing.
+      const turns = Array.isArray(p.turns)
+        ? (p.turns as unknown[]).filter(
+            (t): t is { speaker: unknown; text: unknown } =>
+              typeof t === "object" && t !== null,
+          )
+        : [];
+      const pair = [str(p.speaker), str(p.listener)].filter((n): n is string => !!n);
+      const head = pair.length === 2 ? `${pair[0]} ⇄ ${pair[1]}` : (e.agentName ?? "?");
+      const quoted =
+        turns.length > 0
+          ? turns
+              .map((t) => str(t.text))
+              .filter((x): x is string => !!x)
+              .map((x) => `“${x}”`)
+              .join(" · ")
+          : [str(p.say), str(p.reply)]
+              .filter((x): x is string => !!x)
+              .map((x) => `“${x}”`)
+              .join(" · ");
+      const body = quoted || e.text;
+      return {
+        text: clipLine(`${stamp} 💬 ${head}: ${body}`, maxChars),
+        color: SPEECH_COLOR,
+        emphasis: true,
+        agentName: str(p.speaker) ?? e.agentName,
+      };
+    }
     case "llm_offline":
       return {
         text: clipLine(`${stamp} ⚠ LLM OFFLINE — ${e.text}`, maxChars),

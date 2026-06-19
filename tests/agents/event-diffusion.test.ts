@@ -247,11 +247,19 @@ describe("CognitionSystem onTalk diffusion", () => {
     cog.onTalk(alice, bob, "Remember, gathering tonight!");
 
     await new Promise((r) => setTimeout(r, 10));
+    // Count only the DIFFUSION memory (anchored at the start). Phase C·S2 wires
+    // conversation topic-recall: the second onTalk recalls Bob's memories about
+    // Alice (focal=other) and may QUOTE this diffusion line inside a reply
+    // memory (`I told Alice: "Hmph. Heard Alice told me about …"`). That echo is
+    // a conversation memory, not a second diffusion memory — the diffusion
+    // dedup invariant still holds: exactly ONE memory STARTS with the diffusion
+    // preamble. Anchoring with startsWith excludes the quoted echo.
     const bobMems = cog.memory
       .all("Bob")
       .filter(
         (m) =>
-          m.text.includes("Alice told me about") && m.text.includes("gathering at the tavern"),
+          m.text.startsWith("Alice told me about") &&
+          m.text.includes("gathering at the tavern"),
       );
     // Only one memory for this event — not duplicated
     expect(bobMems).toHaveLength(1);
