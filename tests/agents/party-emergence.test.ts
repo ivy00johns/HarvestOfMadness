@@ -14,7 +14,7 @@
  *   and a reachability floor of 100 tiles (sized for the 140x100 canvas, where a
  *   corner hamlet sits ~95 A* tiles from a central tavern).
  *
- * Harness: a DIRECT synchronous-ish sim loop over all 6 PERSONAS using the
+ * Harness: a DIRECT synchronous-ish sim loop over all 12 PERSONAS using the
  * real CognitionSystem (mock mode), real World / TimeSystem, real
  * buildObservation + enrichObservation, and the real mockRouter + executeAction
  * via runDecisionCycle (msPerTile: 0 → instant walking, no timers needed).
@@ -27,7 +27,7 @@
  * Day 2 morning+afternoon give extra spreading before convergence fires at evening.
  *
  * Assertions:
- *   1. Diffusion: knowerCount("party-d2") ≥ 4 of 6 by end of day-2 afternoon.
+ *   1. Diffusion: knowerCount("party-d2") ≥ 4 of 12 by end of day-2 afternoon.
  *   2. Convergence: ≥ 3 distinct agents within Chebyshev ≤ 1 of tavern during day-2 evening.
  *   3. Feed narration: ≥1 event_seeded, ≥1 event_heard, ≥1 event_arrived emitted.
  *   4. Kill-switch (separate it): WITHOUT seeding, < 2 agents cluster at the
@@ -48,6 +48,7 @@ import { HOMESTEADS, generateMap } from "../../src/world/map";
 import { CognitionSystem } from "../../src/agents/Cognition";
 import { runDecisionCycle } from "../../src/agents/AgentRuntime";
 import { mockRouter } from "../../src/llm/mock";
+import { REACH_BUDGET_TILES } from "../../src/agents/attendance";
 
 // ---------------------------------------------------------------------------
 // Chebyshev distance (mirrors Observation.ts)
@@ -83,7 +84,7 @@ async function runPartySim(
   const busEvents: WorldEvent[] = [];
   bus.on((e) => busEvents.push(e));
 
-  // Build agents from real PERSONAS (all 6).
+  // Build agents from real PERSONAS (all 12).
   const agents = PERSONAS.map((p) => new Agent(p));
 
   // Wire up a real CognitionSystem in mock mode ($0).
@@ -190,7 +191,7 @@ afterEach(() => {
 
 describe("party-emergence proof", () => {
   it(
-    "positive: seed → diffuse (≥4 knowers) → converge (≥3 at tavern) with narration feed",
+    "positive: seed → diffuse (≥4 of 12 knowers) → converge (≥3 at tavern, ~7 with margin) with narration feed",
     async () => {
       const { cognition, busEvents, agents } = await runPartySim(true);
 
@@ -198,7 +199,7 @@ describe("party-emergence proof", () => {
       const finalKnowerCount = cognition.events.knowerCount(EVENT_ID);
       expect(
         finalKnowerCount,
-        `Expected ≥ 4 of 6 agents to know party-d2, got ${finalKnowerCount}`,
+        `Expected ≥ 4 of 12 agents to know party-d2, got ${finalKnowerCount}`,
       ).toBeGreaterThanOrEqual(4);
 
       // -- 2. Convergence -----------------------------------------------------
@@ -261,7 +262,8 @@ describe("party-emergence proof", () => {
     // instant-walk harness above into a tested guarantee using the real map + A*.
     //
     // 140x100: corner hamlet ~95 A* tiles from a central tavern; 40 was tuned for 96x64. This is a reachability floor, not an attendance threshold.
-    const MAX_DOOR_TO_TAVERN_TILES = 100;
+    // Single source of the reach budget (promoted from this test-local const).
+    const MAX_DOOR_TO_TAVERN_TILES = REACH_BUDGET_TILES;
     const world = getWorld();
     // phaseTiles = floor(PHASE_DURATION_MS / WALK_MS_PER_TILE) = floor(8000/200) = 40.
     // Kept for context: this is the per-phase walk budget at speed 1, but the

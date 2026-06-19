@@ -39,6 +39,14 @@ export class Agent {
   role: DerivedRole = "farmer";
   readonly color: number;
 
+  /**
+   * Phase C · Slice 1 — the homestead door anchor (`Persona.start`), retained so
+   * distance-weighted attendance can measure the real home→event A* path. Today
+   * `start` was only copied into `pos` then discarded; this keeps the origin.
+   * Additive + harmless (every Agent already has a `start`).
+   */
+  readonly home: Vec2;
+
   pos: Vec2;
   energy: number = ENERGY_START;
   gold: number = STARTING_GOLD;
@@ -96,6 +104,7 @@ export class Agent {
     this.name = p.name;
     this.persona = { id: p.id, description: p.description };
     this.color = p.color;
+    this.home = { ...p.start };
     this.pos = { ...p.start };
   }
 

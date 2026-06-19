@@ -246,9 +246,20 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
 - [x] B7. **Right rail INSPECTOR** — decision-trace timeline + memory stream (new `memoryStream` seam) + model strip; reads the **real** model-runner state (cost untracked → shown honestly, not faked). ✓ `0abeeb7`
 - [x] B8. **SpaceCon tokens** (Space Grotesk / IBM Plex) as the single source of color/type — `src/obs/theme.ts`, mutation-pinned. ✓ `4efc12a` _(Lucide icons + recording tokens in `CLAUDE.md` remain deferred per §7; unicode glyphs used for now.)_
 
-**Phase C — Deeper "alive" (toward full Smallville)** — _backlog_
-- [ ] **Distance-weighted attendance** (deferred from A6): far hamlets attend big
-      gatherings occasionally, not always — behind the mock/live split.
+**Phase C — Deeper "alive" (toward full Smallville)** — _in progress_
+- [x] **Distance-weighted attendance** (deferred from A6): far hamlets attend big
+      gatherings occasionally, not always — behind the mock/live split. ✓ `cbde99e`
+      — new pure `src/agents/attendance.ts` (`attendanceProbability` clamp formula +
+      deterministic djb2 coin `willAttend`); `Cognition` threads the memoized
+      home→event A* length through an additive Observation field; the mock ATTEND
+      branch gates the traveler move-to (host + already-arrived always attend).
+      1217 green, 3 adversarial critics. _Honest caveat:_ on today's symmetric
+      corner-hamlet map all homes are 89–99 tiles from the central tavern, so
+      distance barely differentiates — the coin selects attendees; the near/far
+      gradient is real in the formula (unit-test-proven) but only bites once nearer
+      homesteads (reserve lots) or non-central gatherings exist. A
+      `Cognition→mockRouter` boundary test pins the wiring (an earlier cut had
+      `normalizeObservation` silently drop the field, leaving the gate inert).
 - [ ] Conversations & gossip at Smallville fidelity on the free LLM proxy.
 - [ ] Per-hamlet visual identity (roof palette per hamlet).
 - [ ] Terrain transition tiles (grass↔dirt↔path edges), second pond.
