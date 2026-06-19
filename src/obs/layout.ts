@@ -5,8 +5,8 @@
  * v4 — RESTRUCTURE for readability. The HUD now docks to the live viewport in
  * three regions docked to the window edges:
  *
- *   ┌──────────────────────────────── top chrome (full width) ───────────────┐
- *   │ controls + clock                                                        │
+ *   ┌──────────────────────── SpaceCon command bar (full width) ─────────────┐
+ *   │ wordmark · transport · speed · mock/live    →    clock · telemetry chips│
  *   ├──────────────────────────────────────────────┬─────────────────────────┤
  *   │                                              │  CONVERSATION (top)      │
  *   │                MAP (center-left, wide)        │  ─ right panel ─         │
@@ -77,12 +77,19 @@ export function unionRect(a: Rect, b: Rect): Rect {
 }
 
 // -- fixed design metrics (independent of viewport size) ---------------------
-// Readability polish: chrome rows and cards gained vertical room to match the
-// larger type scale (above) and a touch more line spacing.
-export const TOPBAR_H = 30;
-export const BADGE_ROW_H = 26;
-/** Total height of the two-row top chrome. */
-export const HUD_TOP_H = TOPBAR_H + BADGE_ROW_H; // 56
+// B-2: the old two-row top chrome (TOPBAR_H + BADGE_ROW_H) collapses into a
+// SINGLE SpaceCon command bar (design README §1). CMDBAR_H is the bar height;
+// it is the single top-region anchor every other region (map / right panel /
+// strip) and isPointOverHud key off via `topH`.
+export const CMDBAR_H = 46;
+/** Single command-bar height. The badge row is gone — the kill-switch + paused
+ *  + budget indicators fold into the bar. Retained name = CMDBAR_H. */
+export const TOPBAR_H = CMDBAR_H;
+/** The badge row collapsed into the command bar — zero height, anchored at the
+ *  bar's bottom edge (kept so readers of these fields still resolve). */
+export const BADGE_ROW_H = 0;
+/** Total height of the top chrome — now a single command bar. */
+export const HUD_TOP_H = CMDBAR_H;
 
 // -- RIGHT panel (conversation + events) ------------------------------------
 /** Preferred width of the fixed right-side panel that holds the conversation
@@ -345,9 +352,11 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   return {
     w,
     h,
-    topbarH: TOPBAR_H,
-    badgeRowY: TOPBAR_H,
-    badgeRowH: BADGE_ROW_H,
+    topbarH: CMDBAR_H,
+    // Badge row collapsed into the command bar: zero height, anchored at the
+    // bar's bottom edge. `topH` stays the single top-region anchor.
+    badgeRowY: CMDBAR_H,
+    badgeRowH: 0,
     topH: HUD_TOP_H,
     statusX: w - 6,
     rightX,
@@ -411,7 +420,7 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
  * transient) via the REG_HUD_PANEL registry rect.
  */
 export function isPointOverHud(hud: HudLayout, px: number, py: number): boolean {
-  if (py <= hud.topH) return true; // top bar + badge row, full width
+  if (py <= hud.topH) return true; // command bar, full width
   if (px >= hud.rightX) return true; // right-side conversation/events panel
   if (py >= hud.stripY) return true; // bottom agent strip
   return false;

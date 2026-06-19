@@ -22,11 +22,7 @@ import {
   formatFeedItem,
   type FeedItem,
 } from "../obs/Feed";
-import {
-  KillSwitchModel,
-  killSwitchLabel,
-  killSwitchStyle,
-} from "../obs/KillSwitch";
+import { KillSwitchModel } from "../obs/KillSwitch";
 import { toCssColor } from "../obs/EventLog";
 import {
   buildAgentCard,
@@ -53,9 +49,14 @@ import {
 } from "../obs/layout";
 import {
   borderCard,
+  borderControl,
   brand400,
+  brand600,
   card as cardSurface,
+  cmdGradTop,
+  control,
   cyan300,
+  cyan500,
   ink300,
   ink400,
   ink500,
@@ -96,6 +97,19 @@ const COLOR_CHROME = cardSurface.num; // chrome → card surface
 const COLOR_CARD_BG = cardSurface.num; // card background → card surface
 const COLOR_BORDER = borderCard.num; // separator → card border
 const COLOR_HEADER = ink400.hex; // mono section-header labels → ink400
+
+// -- SpaceCon command bar (design README §1) — token-sourced, no new hex ------
+const CMD_BAR_BG = cmdGradTop.num; // flat navy fill (gradient impractical in Phaser)
+const CMD_BORDER = borderControl.num; // bar bottom border + segment borders
+const CMD_CONTROL_BG = control.num; // rounded transport / speed / mode containers
+const CMD_ACTIVE_BG = brand600.num; // selected / active button fill
+const CMD_ACTIVE_FG = white.hex; // selected button label
+const CMD_IDLE_FG = ink300.hex; // idle button label
+const CMD_LABEL = ink400.hex; // mono uppercase labels (clock prefix)
+const CMD_WORDMARK_DOT = cyan500.num; // wordmark dot
+const CMD_PHASE_GLYPH = p2.hex; // clock phase glyph (amber)
+const CMD_COST_OK = positive500.hex; // $0.00 (mock) cost chip color
+const CMD_INFLIGHT = cyan300.hex; // in-flight ⟳ chip accent
 
 const FSM_COLORS: Record<string, string> = {
   IDLE: ink400.hex,
@@ -161,15 +175,33 @@ export class UIScene extends Phaser.Scene {
   private budgetReached = false;
   private refreshPending = false;
 
-  // top bar + badge row
-  private statusText!: Phaser.GameObjects.Text;
-  private killBadge!: Phaser.GameObjects.Text;
-  private pausedBadge!: Phaser.GameObjects.Text;
-  private budgetBadge!: Phaser.GameObjects.Text;
+  // -- SpaceCon command bar (single full-width top bar, design README §1) -----
+  // Left group: wordmark · transport (play/pause + step) · speed · mock/live.
+  // Right group: clock · telemetry chips (in-flight, cognition tally, cost) +
+  // the BUDGET REACHED indicator. Background rects + interactive Text buttons,
+  // all absolute-positioned (no nested containers — Phaser 4.1 gotcha).
+  private cmdBar!: Phaser.GameObjects.Rectangle;
+  /** Play/Pause toggle — ACTIVE (paused) fills brand600; idle transparent. */
   private pauseBtn!: Phaser.GameObjects.Text;
+  /** background rect behind the pause button (the active fill). */
+  private pauseBtnBg!: Phaser.GameObjects.Rectangle;
   private speedBtns = new Map<number, Phaser.GameObjects.Text>();
-  /** v3 — cognition-cost tally, right-aligned in the badge row */
-  private cogMeter!: Phaser.GameObjects.Text;
+  private speedBtnBgs = new Map<number, Phaser.GameObjects.Rectangle>();
+  /** Mock/Live segment buttons + their active-fill backgrounds. */
+  private modeBtns = new Map<"mock" | "live", Phaser.GameObjects.Text>();
+  private modeBtnBgs = new Map<"mock" | "live", Phaser.GameObjects.Rectangle>();
+  /** Clock label "DAY n" + phase name (display, white), right-origin. */
+  private clockText!: Phaser.GameObjects.Text;
+  /** Clock phase glyph (☀/☼/☾/✦) in amber (p2), sits left of clockText. */
+  private clockGlyph!: Phaser.GameObjects.Text;
+  /** in-flight chip: count of agents currently THINKING (real). */
+  private inflightChip!: Phaser.GameObjects.Text;
+  /** cognition tally chip — the real metric the old cogMeter showed. */
+  private cogChip!: Phaser.GameObjects.Text;
+  /** cost chip — $0.00 in mock (positive), honest $— placeholder in live. */
+  private costChip!: Phaser.GameObjects.Text;
+  /** BUDGET REACHED indicator, folded into the bar (driven by budgetReached). */
+  private budgetBadge!: Phaser.GameObjects.Text;
 
   // v3 — live party showcase strip (top-left, over the trace-panel band)
   private partyBg: Phaser.GameObjects.Rectangle | null = null;
@@ -237,8 +269,7 @@ export class UIScene extends Phaser.Scene {
   create(): void {
     this.scene.bringToTop();
     this.hud = computeHud(this.scale.width, this.scale.height);
-    this.buildTopBar();
-    this.buildBadgeRow();
+    this.buildCommandBar();
     this.buildSectionHeaders();
     this.buildFeedChrome();
     this.buildPartyChrome();
@@ -310,8 +341,13 @@ export class UIScene extends Phaser.Scene {
     this.transcriptRows = [];
     this.transcriptVisible = false;
     this.agentsHeader = null;
-    this.buildTopBar();
-    this.buildBadgeRow();
+    // removeAll(true) destroyed the command-bar children — drop stale refs in
+    // the segment maps so buildCommandBar() repopulates them cleanly.
+    this.speedBtns.clear();
+    this.speedBtnBgs.clear();
+    this.modeBtns.clear();
+    this.modeBtnBgs.clear();
+    this.buildCommandBar();
     this.buildSectionHeaders();
     this.buildFeedChrome();
     this.buildPartyChrome();
@@ -412,7 +448,7 @@ export class UIScene extends Phaser.Scene {
       this.killSwitch.apply(e.kind);
       this.accumulateArrival(e);
     }
-    this.unsubscribers.push(getTimeSystem().onChange(() => this.refreshTopBar()));
+    this.unsubscribers.push(getTimeSystem().onChange(() => this.refreshClock()));
     this.time.addEvent({
       delay: LIVE_TIMER_MS,
       loop: true,
@@ -423,7 +459,7 @@ export class UIScene extends Phaser.Scene {
 
   private onBusEvent(e: WorldEvent): void {
     if (e.kind === "budget_reached") this.budgetReached = true;
-    if (this.killSwitch.apply(e.kind)) this.renderBadgeRow();
+    if (this.killSwitch.apply(e.kind)) this.renderModeSegment();
     this.accumulateArrival(e);
     if (e.kind === "conversation") {
       const conv = conversationFromEvent(e);
@@ -463,9 +499,7 @@ export class UIScene extends Phaser.Scene {
 
   private refreshAll(): void {
     if (this.destroyed) return;
-    this.refreshTopBar();
-    this.renderBadgeRow();
-    this.renderCogMeter();
+    this.renderCommandBar();
     this.renderFeed();
     this.renderCards();
     this.renderParty();
@@ -477,8 +511,8 @@ export class UIScene extends Phaser.Scene {
   /** 500ms live tick: clock, energy bars, FSM chips — no full text rebuilds. */
   private refreshLive(): void {
     if (this.destroyed) return;
-    this.refreshTopBar();
-    this.renderCogMeter();
+    this.refreshClock();
+    this.renderTelemetry();
     const agents = this.conn?.controls.agents() ?? [];
     for (const agent of agents) {
       const ui = this.cards.get(agent.name);
@@ -527,159 +561,241 @@ export class UIScene extends Phaser.Scene {
     }
   }
 
-  // -- top bar: controls + status ----------------------------------------------
+  // -- SpaceCon command bar (single full-width top bar, design README §1) ------
 
-  private buildTopBar(): void {
-    this.add
-      .rectangle(0, 0, this.hud.w, this.hud.topbarH, COLOR_CHROME, 0.94)
+  /**
+   * Build the single SpaceCon command bar (replaces buildTopBar + buildBadgeRow):
+   * a navy bar with a bottom border, a LEFT group (wordmark · transport · speed ·
+   * mock/live) and a RIGHT group (clock · telemetry chips + BUDGET indicator).
+   * All children are flat absolute-positioned rects + interactive Text (no
+   * nested containers — Phaser 4.1 gotcha). The segment maps are repopulated.
+   */
+  private buildCommandBar(): void {
+    const barH = this.hud.topbarH;
+    const midY = Math.round(barH / 2);
+    // Flat navy fill (a gradient is impractical in Phaser canvas; the README
+    // permits a flat cmdGradTop fill) + a bottom border in borderControl.
+    this.cmdBar = this.add
+      .rectangle(0, 0, this.hud.w, barH, CMD_BAR_BG, 1)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
-    // subtle separator under the top bar instead of a hard edge
     this.add
-      .rectangle(0, this.hud.topbarH - 1, this.hud.w, 1, COLOR_BORDER, 0.7)
+      .rectangle(0, barH - 1, this.hud.w, 1, CMD_BORDER, 1)
       .setOrigin(0, 0)
       .setDepth(DEPTH_HUD);
 
-    let x = 6;
-    const btnY = Math.round((this.hud.topbarH - (FONT_SIZE_BASE + 8)) / 2);
-    const place = (label: string, onClick: () => void): Phaser.GameObjects.Text => {
-      const btn = this.makeButton(x, btnY, label, onClick);
-      x = Math.round(btn.x + btn.width + 6);
-      return btn;
-    };
+    // -- LEFT group: wordmark → transport → speed → mock/live ----------------
+    const padL = 14;
+    let x = padL;
 
-    this.pauseBtn = place("⏸", () => this.togglePause());
-    place("⏭", () => {
-      this.conn?.controls.step();
-      this.refreshTopBar();
-    });
-    for (const speed of SPEEDS) {
-      const label = speed === 0.5 ? "½" : `${speed}x`;
-      this.speedBtns.set(
-        speed,
-        place(label, () => {
-          this.conn?.controls.setSpeed(speed);
-          this.refreshTopBar();
-        }),
+    // Wordmark: a small cyan dot + MADOW VALLEY in display 700 white.
+    const dotR = 4;
+    this.add
+      .circle(x + dotR, midY, dotR, CMD_WORDMARK_DOT, 1)
+      .setDepth(DEPTH_HUD_TEXT);
+    const wordmark = this.add
+      .text(x + dotR * 2 + 7, midY, "MADOW VALLEY", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        color: COLOR_TEXT,
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH_HUD_TEXT);
+    x = Math.round(wordmark.x + wordmark.width + 16);
+
+    // Transport segment: a rounded control container holding play/pause + step.
+    {
+      const seg = this.beginSegment(x, midY);
+      const pause = this.makeSegButton(
+        seg.x,
+        midY,
+        "⏸",
+        PX_BASE,
+        () => this.togglePause(),
       );
+      this.pauseBtn = pause.label;
+      this.pauseBtnBg = pause.bg;
+      seg.advance(pause.w);
+      const step = this.makeSegButton(seg.x, midY, "⏭", PX_BASE, () => {
+        this.conn?.controls.step();
+        this.renderTransportSegment();
+      });
+      seg.advance(step.w);
+      x = this.endSegment(seg, midY);
+    }
+    x += 8;
+
+    // Speed segment: ½ / 1× / 2× / 4×, mono ~12px; selected fills brand600.
+    this.speedBtns.clear();
+    this.speedBtnBgs.clear();
+    {
+      const seg = this.beginSegment(x, midY);
+      for (const speed of SPEEDS) {
+        const label = speed === 0.5 ? "½" : `${speed}×`;
+        const b = this.makeSegButton(seg.x, midY, label, PX_SMALL, () => {
+          this.conn?.controls.setSpeed(speed);
+          this.renderSpeedSegment();
+        }, MONO_FONT);
+        this.speedBtns.set(speed, b.label);
+        this.speedBtnBgs.set(speed, b.bg);
+        seg.advance(b.w);
+      }
+      x = this.endSegment(seg, midY);
+    }
+    x += 8;
+
+    // Mock / Live segment: two buttons reflecting the REAL killSwitch.state().
+    this.modeBtns.clear();
+    this.modeBtnBgs.clear();
+    {
+      const seg = this.beginSegment(x, midY);
+      for (const mode of ["mock", "live"] as const) {
+        const b = this.makeSegButton(
+          seg.x,
+          midY,
+          mode.toUpperCase(),
+          PX_SMALL,
+          // Mock is env-gated/terminal; the runner mode is NOT toggled from the
+          // HUD (no fabricated mock→live flip). Clicking re-asserts the segment.
+          () => this.renderModeSegment(),
+          MONO_FONT,
+        );
+        this.modeBtns.set(mode, b.label);
+        this.modeBtnBgs.set(mode, b.bg);
+        seg.advance(b.w);
+      }
+      x = this.endSegment(seg, midY);
     }
 
-    this.statusText = this.add
-      .text(this.hud.statusX, Math.round((this.hud.topbarH - FONT_SIZE_BASE) / 2) - 1, "", {
+    // -- RIGHT group: clock + telemetry chips + BUDGET indicator -------------
+    // Built from the right edge inward; renderCommandBar() positions the chips
+    // because their widths depend on live text.
+    // Clock: an amber phase glyph + the white "DAY n  PHASE" label. Two Text
+    // objects so the glyph carries p2/amber per README without inline markup.
+    this.clockGlyph = this.add
+      .text(0, midY, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        color: CMD_PHASE_GLYPH,
+      })
+      .setOrigin(1, 0.5)
+      .setDepth(DEPTH_HUD_TEXT);
+    this.clockText = this.add
+      .text(0, midY, "", {
         fontFamily: HUD_FONT,
         fontSize: PX_BASE,
         color: COLOR_TEXT,
       })
-      .setOrigin(1, 0)
+      .setOrigin(0, 0.5)
       .setDepth(DEPTH_HUD_TEXT);
 
-    this.refreshTopBar();
-  }
-
-  /** Badge row under the top bar: kill-switch pinned left, state badges beside. */
-  private buildBadgeRow(): void {
-    this.add
-      .rectangle(0, this.hud.badgeRowY, this.hud.w, this.hud.badgeRowH, COLOR_CHROME, 0.94)
-      .setOrigin(0, 0)
-      .setDepth(DEPTH_HUD);
-    // subtle separator under the badge row
-    this.add
-      .rectangle(0, this.hud.badgeRowY + this.hud.badgeRowH - 1, this.hud.w, 1, COLOR_BORDER, 0.7)
-      .setOrigin(0, 0)
-      .setDepth(DEPTH_HUD);
-    const badgeY = this.hud.badgeRowY + Math.round((this.hud.badgeRowH - (FONT_SIZE_SMALL + 8)) / 2);
-    this.killBadge = this.add
-      .text(6, badgeY, "", {
-        fontFamily: HUD_FONT,
-        fontSize: PX_SMALL,
-        fontStyle: "bold",
-        padding: { x: 9, y: 4 },
-      })
-      .setOrigin(0, 0)
-      .setDepth(DEPTH_BADGE);
-    this.pausedBadge = this.add
-      .text(0, badgeY, "PAUSED", {
-        fontFamily: HUD_FONT,
-        fontSize: PX_SMALL,
-        fontStyle: "bold",
-        color: "#ff7a7a",
-        backgroundColor: "#3a1c20",
-        padding: { x: 8, y: 4 },
-      })
-      .setOrigin(0, 0)
-      .setDepth(DEPTH_BADGE)
-      .setVisible(false);
+    const chip = (color: string): Phaser.GameObjects.Text =>
+      this.add
+        .text(0, midY, "", {
+          fontFamily: MONO_FONT,
+          fontSize: PX_SMALL,
+          color,
+          backgroundColor: `#${CMD_CONTROL_BG.toString(16).padStart(6, "0")}`,
+          padding: { x: 8, y: 3 },
+        })
+        .setOrigin(1, 0.5)
+        .setDepth(DEPTH_HUD_TEXT);
+    this.inflightChip = chip(CMD_INFLIGHT);
+    this.cogChip = chip(COLOR_DIM);
+    this.costChip = chip(CMD_COST_OK);
+    // BUDGET REACHED indicator folded into the bar (driven by budgetReached).
     this.budgetBadge = this.add
-      .text(0, badgeY, "BUDGET REACHED", {
-        fontFamily: HUD_FONT,
-        fontSize: PX_SMALL,
-        fontStyle: "bold",
-        color: "#f2c560",
-        backgroundColor: "#3a2e18",
-        padding: { x: 8, y: 4 },
-      })
-      .setOrigin(0, 0)
-      .setDepth(DEPTH_BADGE)
-      .setVisible(false);
-    // v3 — cognition-cost tally, right-aligned in the badge row, distinct from
-    // the decision-layer model/latency/tokens shown on agent cards.
-    this.cogMeter = this.add
-      .text(this.hud.w - 6, this.hud.badgeRowY + Math.round((this.hud.badgeRowH - FONT_SIZE_SMALL) / 2), "", {
+      .text(0, midY, "● BUDGET REACHED", {
         fontFamily: MONO_FONT,
         fontSize: PX_SMALL,
-        color: COLOR_DIM,
+        fontStyle: "bold",
+        color: p2.hex,
+        padding: { x: 8, y: 3 },
       })
-      .setOrigin(1, 0)
-      .setDepth(DEPTH_BADGE);
-    this.renderBadgeRow();
-    this.renderCogMeter();
+      .setOrigin(1, 0.5)
+      .setDepth(DEPTH_BADGE)
+      .setVisible(false);
+
+    this.renderCommandBar();
   }
 
-  /** Cognition LLM spend tally (badge row, right-aligned). Mock → zeroed. */
-  private renderCogMeter(): void {
-    if (this.destroyed || !this.cogMeter) return;
-    const metrics = this.conn?.controls.cognitionMetrics?.() ?? null;
-    this.cogMeter.setText(formatCognitionMeter(metrics).text);
+  // -- segment helpers (rounded control container of seg buttons) -------------
+
+  /** Begin a rounded SpaceCon control segment at left edge `x`. Buttons are
+   *  placed left→right; endSegment() draws the container chrome behind them. */
+  private beginSegment(x: number, _midY: number): {
+    x: number;
+    start: number;
+    advance(w: number): void;
+  } {
+    const pad = 3;
+    const inner = x + pad;
+    return {
+      x: inner,
+      start: x,
+      advance(w: number) {
+        this.x = Math.round(this.x + w + 2);
+      },
+    };
   }
 
-  /** Kill-switch pinned top-left (rule 13); PAUSED + BUDGET badges follow it. */
-  private renderBadgeRow(): void {
-    if (this.destroyed || !this.killBadge) return;
-    const state = this.killSwitch.state();
-    const style = killSwitchStyle(state);
-    this.killBadge
-      .setText(killSwitchLabel(state))
-      .setStyle({ color: style.fg, backgroundColor: style.bg });
-    const left = 4;
-    this.killBadge.setX(left);
-    // PAUSED + BUDGET sit to the right of the kill badge.
-    const afterKill = Math.round(left + this.killBadge.width + 8);
-    const paused = this.conn?.controls.isPaused() ?? false;
-    this.pausedBadge.setVisible(paused).setX(afterKill);
-    const afterPaused = paused
-      ? Math.round(afterKill + this.pausedBadge.width + 8)
-      : afterKill;
-    this.budgetBadge.setVisible(this.budgetReached).setX(afterPaused);
+  /** Draw the rounded container chrome behind a built segment; returns the
+   *  segment's right edge (for placing the next segment). */
+  private endSegment(
+    seg: { x: number; start: number },
+    midY: number,
+  ): number {
+    const pad = 3;
+    const right = seg.x - 2 + pad; // trim the trailing inter-button gap
+    const w = right - seg.start;
+    const h = FONT_SIZE_BASE + 12;
+    const bg = this.add
+      .rectangle(seg.start, midY, w, h, CMD_CONTROL_BG, 1)
+      .setOrigin(0, 0.5)
+      .setStrokeStyle(1, CMD_BORDER, 1)
+      .setDepth(DEPTH_HUD);
+    bg.setData("isSegmentChrome", true);
+    // The container chrome sits BEHIND the buttons (which are at DEPTH_HUD_TEXT).
+    return right;
   }
 
-  private makeButton(
+  /** A single segment button: an active-fill background rect (hidden until
+   *  selected) under a label Text. Returns refs + the button's drawn width. */
+  private makeSegButton(
     x: number,
-    y: number,
+    midY: number,
     label: string,
+    size: string,
     onClick: () => void,
-  ): Phaser.GameObjects.Text {
-    const btn = this.add
-      .text(x, y, label, {
-        fontFamily: HUD_FONT,
-        fontSize: PX_BASE,
-        color: COLOR_TEXT,
-        backgroundColor: "#2c333f",
-        padding: { x: 8, y: 4 },
+    fontFamily: string = HUD_FONT,
+  ): {
+    label: Phaser.GameObjects.Text;
+    bg: Phaser.GameObjects.Rectangle;
+    w: number;
+  } {
+    const padX = 8;
+    const text = this.add
+      .text(x + padX, midY, label, {
+        fontFamily,
+        fontSize: size,
+        color: CMD_IDLE_FG,
       })
+      .setOrigin(0, 0.5)
       .setDepth(DEPTH_HUD_TEXT)
       .setInteractive({ useHandCursor: true });
-    btn.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, onClick);
-    return btn;
+    const w = Math.round(text.width + padX * 2);
+    const h = FONT_SIZE_BASE + 8;
+    // The active-fill sits ABOVE the segment container chrome (DEPTH_HUD) but
+    // BELOW the label text (DEPTH_HUD_TEXT), so a selected button reads as a
+    // filled pill behind its label.
+    const bg = this.add
+      .rectangle(x, midY, w, h, CMD_ACTIVE_BG, 1)
+      .setOrigin(0, 0.5)
+      .setDepth(DEPTH_HUD + 0.5)
+      .setVisible(false);
+    text.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, onClick);
+    return { label: text, bg, w };
   }
 
   private togglePause(): void {
@@ -687,29 +803,138 @@ export class UIScene extends Phaser.Scene {
     if (!controls) return;
     if (controls.isPaused()) controls.resume();
     else controls.pause();
-    this.refreshTopBar();
-    this.renderBadgeRow();
+    this.renderTransportSegment();
   }
 
-  private refreshTopBar(): void {
-    if (this.destroyed) return;
-    const time = getTimeSystem();
-    const t = time.state();
-    const speed = time.getSpeed();
-    const icon = PHASE_ICON[t.phase] ?? "";
-    this.statusText.setText(`Day ${t.day} ${icon} ${t.phase} · x${speed}`);
+  /** Re-render the whole command bar (transport, speed, mode, clock, telemetry,
+   *  budget). Called by refreshAll() and on build. */
+  private renderCommandBar(): void {
+    if (this.destroyed || !this.cmdBar) return;
+    this.renderTransportSegment();
+    this.renderSpeedSegment();
+    this.renderModeSegment();
+    this.refreshClock();
+    this.renderTelemetry();
+  }
 
-    const paused = this.conn?.controls.isPaused() ?? time.isPaused();
+  /** Play/Pause toggle: the active (paused) fill — folds in the old PAUSED
+   *  badge. The button shows ▶ to resume, ⏸ to pause. */
+  private renderTransportSegment(): void {
+    if (this.destroyed || !this.pauseBtn) return;
+    const paused = this.conn?.controls.isPaused() ?? getTimeSystem().isPaused();
     this.pauseBtn.setText(paused ? "▶" : "⏸");
-    if (this.pausedBadge) this.pausedBadge.setVisible(paused);
+    // ACTIVE (paused) fills brand600 + white label; idle transparent ink300.
+    this.pauseBtnBg.setVisible(paused);
+    this.pauseBtn.setColor(paused ? CMD_ACTIVE_FG : CMD_IDLE_FG);
+  }
 
+  /** Speed segment: the selected multiplier fills brand600 white bold. */
+  private renderSpeedSegment(): void {
+    if (this.destroyed || this.speedBtns.size === 0) return;
+    const speed = getTimeSystem().getSpeed();
     for (const [s, btn] of this.speedBtns) {
       const active = s === speed;
-      btn.setStyle({
-        backgroundColor: active ? COLOR_GOAL : "#2c333f",
-        color: active ? "#10141a" : COLOR_TEXT,
-      });
+      this.speedBtnBgs.get(s)?.setVisible(active);
+      btn.setColor(active ? CMD_ACTIVE_FG : CMD_IDLE_FG);
+      btn.setFontStyle(active ? "bold" : "normal");
     }
+  }
+
+  /** Mock/Live segment — reflects the REAL runner mode from killSwitch.state().
+   *  "mock" is terminal (env-gated) so MOCK renders selected when mock; in
+   *  live/offline the LIVE button is selected. This is NOT a cosmetic toggle —
+   *  kill-switch bus events (llm_offline/llm_recovered) re-render it. */
+  private renderModeSegment(): void {
+    if (this.destroyed || this.modeBtns.size === 0) return;
+    const state = this.killSwitch.state();
+    const live = state === "live" || state === "offline";
+    const selected: "mock" | "live" = live ? "live" : "mock";
+    for (const mode of ["mock", "live"] as const) {
+      const active = mode === selected;
+      this.modeBtnBgs.get(mode)?.setVisible(active);
+      const btn = this.modeBtns.get(mode);
+      if (!btn) continue;
+      btn.setColor(active ? CMD_ACTIVE_FG : CMD_IDLE_FG);
+      btn.setFontStyle(active ? "bold" : "normal");
+    }
+    // When live but the LLM dropped (offline), tint the LIVE label amber so the
+    // kill-switch state is visible in the bar (rule 13 — the demo's thesis).
+    if (state === "offline") this.modeBtns.get("live")?.setColor(p2.hex);
+  }
+
+  /** Clock: mono uppercase label + display day/phase (white) + phase glyph in
+   *  amber. Reuses the time source feeding the old statusText. */
+  private refreshClock(): void {
+    if (this.destroyed || !this.clockText) return;
+    const t = getTimeSystem().state();
+    const icon = PHASE_ICON[t.phase] ?? "";
+    // "☀ DAY 2 · MORNING" — amber glyph leads; the day/phase is white display.
+    this.clockGlyph.setText(icon);
+    this.clockText.setText(`DAY ${t.day} · ${t.phase.toUpperCase()}`);
+    this.positionClock();
+  }
+
+  /** Position the clock block flush-right at the X left of the chip cluster.
+   *  Called after the chips re-lay out (their widths shift the clock). */
+  private positionClock(): void {
+    if (!this.clockText) return;
+    const clockRight = this.layoutRightGroup();
+    const textX = Math.round(clockRight - this.clockText.width);
+    this.clockText.setX(textX);
+    this.clockGlyph.setX(Math.round(textX - 6));
+  }
+
+  /**
+   * Telemetry chips — REAL data only:
+   *  - in-flight: count of agents whose fsm === "THINKING".
+   *  - cognition tally: the real metric the old cogMeter showed.
+   *  - cost: $0.00 in mock (positive); in live, real cost is not tracked yet →
+   *    honest "$—" placeholder (never a fabricated dollar figure).
+   * Plus the BUDGET REACHED indicator. Re-lays the right group after updating.
+   */
+  private renderTelemetry(): void {
+    if (this.destroyed || !this.inflightChip) return;
+    const controls = this.conn?.controls;
+    const agents = controls?.agents() ?? [];
+    const thinking = agents.filter((a) => a.fsm === "THINKING").length;
+    this.inflightChip.setText(`⟳ ${thinking}`);
+
+    const metrics = controls?.cognitionMetrics?.() ?? null;
+    this.cogChip.setText(formatCognitionMeter(metrics).text);
+
+    // Cost: $0.00 in mock per README; in live, cost is NOT tracked yet → "$—".
+    const mock = this.killSwitch.state() === "mock";
+    this.costChip.setText(mock ? "$0.00" : "$—");
+    this.costChip.setColor(mock ? CMD_COST_OK : CMD_LABEL);
+
+    this.budgetBadge.setVisible(this.budgetReached);
+    // chip widths just changed → re-place the clock left of the cluster.
+    this.positionClock();
+  }
+
+  /**
+   * Lay out the right group from the right edge inward: BUDGET (if shown) ·
+   * cost · cognition · in-flight chips, then return the X where the clock's
+   * right edge should sit (its left of the chip cluster). Integer pixels.
+   */
+  private layoutRightGroup(): number {
+    const padR = 14;
+    const gap = 8;
+    let right = this.hud.w - padR;
+    const place = (
+      obj: Phaser.GameObjects.Text | undefined,
+      visible: boolean,
+    ): void => {
+      if (!obj || !visible) return;
+      obj.setX(Math.round(right));
+      right = Math.round(right - obj.width - gap);
+    };
+    place(this.budgetBadge, this.budgetReached);
+    place(this.costChip, true);
+    place(this.cogChip, true);
+    place(this.inflightChip, true);
+    // The clock block ends just left of the chip cluster.
+    return Math.round(right - 6);
   }
 
   // -- event feed ----------------------------------------------------------------

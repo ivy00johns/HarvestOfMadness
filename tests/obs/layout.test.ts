@@ -5,15 +5,22 @@
  * v4 — RESTRUCTURE: the conversation transcript + events feed dock to a
  * fixed-width RIGHT panel; the agent cards lay out horizontally along the
  * BOTTOM strip; the map fills the wider center-left area between them.
+ *
+ * B-2 — the two-row top chrome (top bar + badge row) collapses into a SINGLE
+ * SpaceCon command bar of height CMDBAR_H. `topH === CMDBAR_H` is now the only
+ * top-region anchor every other region (map / right panel / strip) and
+ * isPointOverHud key off; the badge row is gone (BADGE_ROW_H === 0).
  * Pure module — no Phaser needed.
  */
 import { describe, expect, it } from "vitest";
 import {
+  BADGE_ROW_H,
   BADGE_ROW_Y,
   CARD_GAP,
   CARD_TOP,
   CARD_W,
   CARD_X,
+  CMDBAR_H,
   FONT_SIZE_BASE,
   FONT_SIZE_SMALL,
   FONT_SIZE_TITLE,
@@ -59,7 +66,7 @@ describe("contract rule 14 — readable text", () => {
 
   it("all layout constants are integers (integer pixel positions)", () => {
     const values = [
-      HUD_W, HUD_H, TOPBAR_H, BADGE_ROW_Y, HUD_TOP_H,
+      HUD_W, HUD_H, CMDBAR_H, TOPBAR_H, BADGE_ROW_H, BADGE_ROW_Y, HUD_TOP_H,
       CARD_X, CARD_W, CARD_TOP, CARD_GAP,
       LOG_X, LOG_Y, LOG_W, LOG_H, LOG_LINE_H,
       PANEL_X, PANEL_Y, PANEL_W, PANEL_H,
@@ -77,6 +84,53 @@ describe("contract rule 14 — readable text", () => {
         expect(Number.isInteger(r.h)).toBe(true);
       }
     }
+  });
+});
+
+describe("B-2 — single SpaceCon command bar (top region)", () => {
+  it("the top region is ONE command bar of height CMDBAR_H", () => {
+    // topH — the single anchor every region keys off — equals the command-bar
+    // height. There is no second (badge) row: BADGE_ROW_H is zero.
+    expect(HUD_TOP_H).toBe(CMDBAR_H);
+    expect(TOPBAR_H).toBe(CMDBAR_H);
+    expect(BADGE_ROW_H).toBe(0);
+    const hud = computeHud(VW, VH);
+    expect(hud.topH).toBe(CMDBAR_H);
+    expect(hud.topbarH).toBe(CMDBAR_H);
+    expect(hud.badgeRowH).toBe(0);
+    // the (collapsed) badge row anchors at the bar's bottom edge
+    expect(hud.badgeRowY).toBe(CMDBAR_H);
+  });
+
+  it("CMDBAR_H is an integer in the design band (44–48px)", () => {
+    expect(Number.isInteger(CMDBAR_H)).toBe(true);
+    expect(CMDBAR_H).toBeGreaterThanOrEqual(44);
+    expect(CMDBAR_H).toBeLessThanOrEqual(48);
+  });
+
+  it("the command bar spans the full viewport width", () => {
+    const hud = computeHud(VW, VH);
+    // the bar occupies x∈[0,w); the map / right panel / strip all dock BELOW it
+    expect(hud.w).toBe(VW);
+    expect(hud.mapX).toBe(0);
+    expect(hud.rightTop).toBe(CMDBAR_H);
+  });
+
+  it("the map top docks exactly at topH (= CMDBAR_H), no badge-row gap", () => {
+    const hud = computeHud(VW, VH);
+    expect(hud.mapY).toBe(hud.topH);
+    expect(hud.mapY).toBe(CMDBAR_H);
+    expect(hud.mapRect.y).toBe(CMDBAR_H);
+  });
+
+  it("isPointOverHud treats the whole command bar as HUD chrome", () => {
+    const hud = computeHud(VW, VH);
+    // anywhere inside the bar (top edge, mid-height, bottom edge) is HUD
+    expect(isPointOverHud(hud, 200, 0)).toBe(true);
+    expect(isPointOverHud(hud, 200, Math.floor(CMDBAR_H / 2))).toBe(true);
+    expect(isPointOverHud(hud, 200, CMDBAR_H)).toBe(true);
+    // one pixel below the bar, over the open map, is NOT HUD
+    expect(isPointOverHud(hud, Math.round(hud.mapRect.x + hud.mapRect.w / 2), CMDBAR_H + 1)).toBe(false);
   });
 });
 
