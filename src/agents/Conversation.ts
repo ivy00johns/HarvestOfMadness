@@ -284,6 +284,75 @@ export function renderIdeas(memories: { text: string; importance: number }[]): s
 }
 
 // ---------------------------------------------------------------------------
+// Conversation-summary memory (Smallville `summarize_conversation`)
+// ---------------------------------------------------------------------------
+
+/**
+ * Importance for the per-participant conversation summary memory.
+ *
+ * Pinned to 4 — STRICTLY BELOW the gossip first-hand candidate gate in
+ * `Cognition.onTalk` (`if (m.importance < 5) continue;`). The full gate is
+ * `type === "observation" && origin === undefined && importance >= 5`, so a
+ * summary (a first-hand observation at importance 4) is structurally excluded
+ * from the gossip candidate set: it can never be relayed and the frozen
+ * gossip.test.ts stays green UNCHANGED. Summaries are richer focal memories for
+ * recall + reflection, NOT rumors.
+ */
+export const SUMMARY_IMPORTANCE = 4;
+
+/**
+ * Deterministic one-line conversation summary from `selfName`'s POV — the mock
+ * stand-in for Smallville's `summarize_conversation`. Distills the exchange's
+ * gist into `Chatted with ${otherName} about ${gist}`.
+ *
+ * PURITY: a total function of `(selfName, otherName, turns)`. No RNG, no Date —
+ * the gist is the longest SUBSTANTIVE (non-opener) turn's text, normalized and
+ * clipped via the same deterministic string ops as `renderIdeas`. Two runs are
+ * byte-identical.
+ *
+ * Gist source: the opener (turn 0) is small-talk; the substance lives in the
+ * REPLIES (turns ≥ 1). The longest reply is the most informative line; ties
+ * break on text (localeCompare) for stability. The preamble is normalized so the
+ * summary reads cleanly and — critically — does NOT begin with the foundation
+ * slice's diffusion-dedup `startsWith` preambles ("X told me about" / "X said:").
+ * It always begins with the safe literal "Chatted with ".
+ *
+ * Returns "" when there is no substance (no reply / empty turns) so the caller
+ * skips the write entirely (mirrors the no-reply → no legacy-pair discipline).
+ */
+export function summarizeConversation(
+  selfName: string,
+  otherName: string,
+  turns: ConversationTurn[],
+): string {
+  if (!Array.isArray(turns) || turns.length < 2) return "";
+  // Substance = the replies (turns >= 1); the opener is small-talk.
+  const replies = turns
+    .slice(1)
+    .map((t) => (t?.text ?? "").trim())
+    .filter((t) => t.length > 0);
+  if (replies.length === 0) return "";
+  // The longest reply is the most informative; stable tie-break by text so the
+  // render is deterministic. Pure — no RNG/Date.
+  const best = [...replies].sort(
+    (a, b) => b.length - a.length || a.localeCompare(b),
+  )[0];
+  // Reuse renderIdeas' deterministic normalization (strip hearsay preambles +
+  // quotes, collapse whitespace, clip) to derive a clean gist, then drop a
+  // trailing direct-address ("…, Alice." / "…, Bob!") naming EITHER participant
+  // so a reply that addresses someone doesn't leave that name dangling inside a
+  // third party's private summary. Pure string ops — no RNG/Date.
+  let gist = renderIdeas([{ text: best, importance: 1 }]);
+  for (const name of [selfName, otherName]) {
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    gist = gist.replace(new RegExp(`[,\\s]+${esc}\\s*[.!?]*\\s*$`, "i"), "");
+  }
+  gist = gist.trim();
+  if (!gist) return "";
+  return `Chatted with ${otherName} about ${gist}`;
+}
+
+// ---------------------------------------------------------------------------
 // ConversationSystem
 // ---------------------------------------------------------------------------
 
@@ -502,6 +571,19 @@ export class ConversationSystem {
       try {
         this.writeMemory(bName, `I told ${aName}: "${reply}"`, 5);
         this.writeMemory(aName, `${bName} replied: "${reply}"`, 5);
+      } catch {/* defensive */}
+
+      // 1b. Conversation summary: ONE per participant (NOT per turn) — the gist
+      //     of the whole exchange, a richer focal memory than the quoted line.
+      //     Written at SUMMARY_IMPORTANCE (4), BELOW the gossip first-hand gate
+      //     (the gossip first-hand gate `importance < 5`), so summaries are gossip-inert —
+      //     they ground recall + reflection but never become rumors. Fire-and-
+      //     forget: a summarize/write failure must never throw into the loop.
+      try {
+        const sumA = summarizeConversation(aName, bName, turns);
+        const sumB = summarizeConversation(bName, aName, turns);
+        if (sumA) this.writeMemory(aName, sumA, SUMMARY_IMPORTANCE);
+        if (sumB) this.writeMemory(bName, sumB, SUMMARY_IMPORTANCE);
       } catch {/* defensive */}
     }
 
