@@ -278,7 +278,16 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
       slices):** sentiment-driven affinity (replaces the flat +2/talk — high risk,
       touches the frozen affinity assertions) → structured GossipBoard
       (subject/claim) + rumor distortion → live-LLM summarization + call metering.
-- [ ] Per-hamlet visual identity (roof palette per hamlet).
+- [x] **Per-hamlet visual identity** (C4): each of the five hamlets (NW/NE/SW/SE +
+      central Greenhollow) gets a distinct color so neighbourhoods read at a glance.
+      ✓ `38556ff` — new pure `src/obs/hamletStyle.ts` (`hamletOf` position classifier
+      + `HAMLET_ROOF_TINTS`); render-only, deterministic. WorldScene precomputes a
+      per-tile `houseTileTint` map from HOMESTEADS and tints both the cutaway wall
+      ring AND the interior floor per hamlet (civic stays neutral — not in
+      HOMESTEADS). _Visual-verify loop:_ a wall-ring-only wash read too subtly, so
+      (per user) it also washes the large floor area with a bolder palette — now
+      reads at a glance, tasteful, civic neutral. 1259 green, 2 critics + live
+      screenshot verification.
 - [ ] Terrain transition tiles (grass↔dirt↔path edges), second pond.
 - [x] **Activate reserve lots into live hamlets** (C6): promoted three central
       reserve lots (lot_n4/n5/n6) into a live "Greenhollow" hamlet + three newcomers
