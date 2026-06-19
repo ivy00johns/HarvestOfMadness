@@ -22,6 +22,8 @@ import {
   brand400,
   brand500,
   brand600,
+  bubbleGuest,
+  bubbleHost,
   card,
   cardSelected,
   cmdGradBot,
@@ -68,6 +70,9 @@ const COLOR_CASES: ReadonlyArray<[string, ColorToken, number, string]> = [
   ["ink300", ink300, 0xa7b0c0, "#A7B0C0"],
   ["ink400", ink400, 0x76839b, "#76839B"],
   ["ink500", ink500, 0x51607c, "#51607C"],
+  // Chat bubble tints (Active-conversation card, README §5)
+  ["bubbleHost", bubbleHost, 0x16243c, "#16243C"],
+  ["bubbleGuest", bubbleGuest, 0x1d2336, "#1D2336"],
   // Brand / accents
   ["brand600", brand600, 0x1e50c8, "#1E50C8"],
   ["brand500", brand500, 0x2a63e0, "#2A63E0"],

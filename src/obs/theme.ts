@@ -49,6 +49,12 @@ export const ink300 = tok(0xa7b0c0); // body
 export const ink400 = tok(0x76839b); // labels
 export const ink500 = tok(0x51607c); // faint
 
+// -- Chat bubble tints (right rail Active-conversation card, README §5) -------
+/** Host (left-aligned) chat bubble fill. */
+export const bubbleHost = tok(0x16243c);
+/** Other-speaker (right-aligned) chat bubble fill. */
+export const bubbleGuest = tok(0x1d2336);
+
 // -- Brand / accents ----------------------------------------------------------
 export const brand600 = tok(0x1e50c8); // active fills
 export const brand500 = tok(0x2a63e0); // selected border

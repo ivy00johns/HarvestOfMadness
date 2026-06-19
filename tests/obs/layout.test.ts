@@ -306,40 +306,44 @@ describe("v4 — three docked regions (right panel / bottom strip / map)", () =>
   });
 });
 
-describe("v4 — conversation (top) + events (bottom) inside the right panel", () => {
-  it("the conversation transcript docks in the right panel, above the feed", () => {
+describe("B-6 — Active-conversation card (top) + events (bottom) in the right panel", () => {
+  it("the Active-conversation card fills the right panel's conversation region, above the feed", () => {
     const hud = computeHud(VW, VH);
     // inside the right panel horizontally
-    expect(hud.transcriptX).toBeGreaterThanOrEqual(hud.rightX);
-    expect(hud.transcriptX + hud.transcriptW).toBeLessThanOrEqual(hud.rightX + hud.rightW);
+    expect(hud.activeConvX).toBeGreaterThanOrEqual(hud.rightX);
+    expect(hud.activeConvX + hud.activeConvW).toBeLessThanOrEqual(hud.rightX + hud.rightW);
+    // below the persistent CONVERSATION header (top chrome)
+    expect(hud.activeConvY).toBeGreaterThan(HUD_TOP_H);
     // above the events feed (does not overlap it)
-    expect(hud.transcriptY + hud.transcriptH).toBeLessThanOrEqual(hud.logY);
+    expect(hud.activeConvY + hud.activeConvH).toBeLessThanOrEqual(hud.logY);
+    // a usable card, not a slim band — it owns the WHOLE conversation region now
+    expect(hud.activeConvH).toBeGreaterThan(0);
   });
 
-  it("the events feed docks at the bottom of the right panel", () => {
+  it("the events feed docks at the bottom of the right panel, below the card", () => {
     const hud = computeHud(VW, VH);
     expect(hud.logX).toBeGreaterThanOrEqual(hud.rightX);
     expect(hud.logX + hud.logW).toBeLessThanOrEqual(hud.rightX + hud.rightW);
-    // the feed is BELOW the conversation (events beneath chat)
-    expect(hud.logY).toBeGreaterThanOrEqual(hud.transcriptY);
+    // the feed is BELOW the Active-conversation card (events beneath chat)
+    expect(hud.logY).toBeGreaterThanOrEqual(hud.activeConvY);
     expect(hud.logY + hud.logH).toBeLessThanOrEqual(VH);
   });
 
-  it("transcript rect uses integer pixel positions and matches its fields", () => {
+  it("the Active-conversation card uses integer pixels and matches its fields", () => {
     const hud = computeHud(VW, VH);
-    for (const v of [hud.transcriptX, hud.transcriptY, hud.transcriptW, hud.transcriptH]) {
+    for (const v of [hud.activeConvX, hud.activeConvY, hud.activeConvW, hud.activeConvH]) {
       expect(Number.isInteger(v)).toBe(true);
     }
-    expect(hud.transcriptRect).toEqual({
-      x: hud.transcriptX,
-      y: hud.transcriptY,
-      w: hud.transcriptW,
-      h: hud.transcriptH,
+    expect(hud.activeConvRect).toEqual({
+      x: hud.activeConvX,
+      y: hud.activeConvY,
+      w: hud.activeConvW,
+      h: hud.activeConvH,
     });
   });
 });
 
-describe("v4 — trace panel + showcase strip overlay the conversation region", () => {
+describe("B-6 — trace panel overlays the Active-conversation card region", () => {
   it("the trace panel sits inside the right panel, above the feed", () => {
     const hud = computeHud(VW, VH);
     expect(hud.panelX).toBeGreaterThanOrEqual(hud.rightX);
@@ -356,16 +360,11 @@ describe("v4 — trace panel + showcase strip overlay the conversation region", 
     );
   });
 
-  it("the party/governance strip is a slim banner stacked above the transcript", () => {
+  it("the trace panel exactly overlays the Active-conversation card (INSPECTOR swaps DEFAULT→trace in place)", () => {
     const hud = computeHud(VW, VH);
-    expect(hud.partyX).toBe(hud.transcriptX);
-    expect(hud.partyW).toBe(hud.transcriptW);
-    // the strip sits at the TOP of the conversation region; the transcript
-    // starts BELOW it (they never overlap)
-    expect(hud.partyY).toBeLessThan(hud.transcriptY);
-    expect(hud.transcriptY).toBeGreaterThanOrEqual(hud.partyY + hud.partyH);
-    // a slim banner — never taller than the transcript region beneath it
-    expect(hud.partyH).toBeLessThanOrEqual(hud.transcriptH);
+    // The DEFAULT Active-conversation card and the INSPECTOR trace panel occupy
+    // the SAME region — selecting an agent swaps the card for the panel in place.
+    expect(hud.panelRect).toEqual(hud.activeConvRect);
   });
 });
 
@@ -436,10 +435,11 @@ describe("v4 (Wave 2) — unionRect", () => {
     expect(u.y + u.h).toBe(50); // max(30, 50)
   });
 
-  it("the union of the showcase strip and the transcript covers both", () => {
+  it("the union of the Active-conversation card and the events feed covers both", () => {
     const hud = computeHud(VW, VH);
-    const u = unionRect(hud.partyRect, hud.transcriptRect);
-    for (const r of [hud.partyRect, hud.transcriptRect]) {
+    const feedRect = { x: hud.logX, y: hud.logY, w: hud.logW, h: hud.logH };
+    const u = unionRect(hud.activeConvRect, feedRect);
+    for (const r of [hud.activeConvRect, feedRect]) {
       expect(u.x).toBeLessThanOrEqual(r.x);
       expect(u.y).toBeLessThanOrEqual(r.y);
       expect(u.x + u.w).toBeGreaterThanOrEqual(r.x + r.w);

@@ -246,19 +246,19 @@ export interface HudLayout {
   panelHeaderH: number;
   panelVisibleTrace: number;
 
-  // -- party / governance showcase strip (overlays conversation region) -----
-  partyX: number;
-  partyY: number;
-  partyW: number;
-  partyH: number;
-  partyRect: Rect;
-
-  // -- conversation transcript (right panel, top half) ----------------------
-  transcriptX: number;
-  transcriptY: number;
-  transcriptW: number;
-  transcriptH: number;
-  transcriptRect: Rect;
+  // -- Active-conversation card (right rail DEFAULT state, README §5) --------
+  // The consolidated upper card combining the gathering stats + conversation
+  // thread. Occupies the full conversation region of the right panel (from just
+  // below the persistent header down to just above the events feed). Replaces
+  // the old partyRect + transcriptRect (the two were stacked banners; they are
+  // now ONE card whose internals — stat tiles, chat bubbles — are drawn by
+  // UIScene). Same span as panelRect (the trace panel overlays this card in the
+  // INSPECTOR state).
+  activeConvX: number;
+  activeConvY: number;
+  activeConvW: number;
+  activeConvH: number;
+  activeConvRect: Rect;
 
   cardHeight(count: number): number;
   cardRect(index: number, count: number): Rect;
@@ -345,34 +345,23 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
   // Bottom of the conversation region: just above the events feed's header.
   const convBottom = logY - RIGHT_HEADER_H - 4;
 
-  // Party / governance showcase strip: a slim banner pinned to the TOP of the
-  // conversation region. Transient — when shown it STACKS above the transcript
-  // (does not overlap it). Fixed slim height.
-  const partyX = panelInnerX;
-  const partyY = convTop;
-  const partyW = panelInnerW;
-  // Slim banner, clamped so it never eats more than ~40% of the conversation
-  // region (leaves the transcript its space even on short viewports).
-  const partyH = Math.max(68, Math.min(100, Math.floor((convBottom - convTop) * 0.4)));
-  const partyRect: Rect = { x: partyX, y: partyY, w: partyW, h: partyH };
-
-  // Conversation transcript: BELOW the showcase strip band, down to just above
-  // the events feed header. (The strip overlays its own band only; the
-  // transcript starts beneath it so the two never collide.)
-  const transcriptX = panelInnerX;
-  const transcriptY = partyY + partyH + 4;
-  const transcriptW = panelInnerW;
-  const transcriptH = Math.max(60, convBottom - transcriptY);
-  const transcriptRect: Rect = {
-    x: transcriptX,
-    y: transcriptY,
-    w: transcriptW,
-    h: transcriptH,
+  // Active-conversation card (README §5): the consolidated upper card holding
+  // the gathering stats + the conversation thread. It fills the WHOLE
+  // conversation region (the old party banner + transcript are now one card).
+  const activeConvX = panelInnerX;
+  const activeConvY = convTop;
+  const activeConvW = panelInnerW;
+  const activeConvH = Math.max(60, convBottom - activeConvY);
+  const activeConvRect: Rect = {
+    x: activeConvX,
+    y: activeConvY,
+    w: activeConvW,
+    h: activeConvH,
   };
 
   // Trace panel: overlays the FULL conversation region (from just below the
   // persistent header down to just above the events feed). Transient — opened
-  // on card/feed click; covers both the showcase strip and the transcript.
+  // on card/feed click; covers the Active-conversation card (INSPECTOR state).
   const panelX = panelInnerX;
   const panelY = convTop;
   const panelW = panelInnerW;
@@ -474,16 +463,11 @@ export function computeHud(viewW: number, viewH: number): HudLayout {
     panelCloseRect: { x: panelX + panelW - 22, y: panelY, w: 22, h: 20 },
     panelHeaderH: PANEL_HEADER_H,
     panelVisibleTrace: PANEL_VISIBLE_TRACE,
-    partyX,
-    partyY,
-    partyW,
-    partyH,
-    partyRect,
-    transcriptX,
-    transcriptY,
-    transcriptW,
-    transcriptH,
-    transcriptRect,
+    activeConvX,
+    activeConvY,
+    activeConvW,
+    activeConvH,
+    activeConvRect,
     cardHeight,
     cardRect,
     cardsPerPage,

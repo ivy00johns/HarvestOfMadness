@@ -46,7 +46,6 @@ import {
   formatEconomy,
   formatPercent,
   pointInRect,
-  unionRect,
   type HudLayout,
 } from "../obs/layout";
 import {
@@ -55,6 +54,8 @@ import {
   brand400,
   brand500,
   brand600,
+  bubbleGuest,
+  bubbleHost,
   card as cardSurface,
   cardSelected,
   cmdGradTop,
@@ -65,6 +66,7 @@ import {
   ink300,
   ink400,
   ink500,
+  insetTile,
   p1,
   p2,
   positive500,
@@ -73,8 +75,8 @@ import {
 } from "../obs/theme";
 import { actionVerbColor, energyLevelColor, stateBadge } from "../obs/cardStyle";
 import { formatCognitionMeter } from "../obs/CognitionMeter";
-import { buildPartyPanel } from "../obs/PartyPanel";
-import { buildGovernancePanel } from "../obs/GovernancePanel";
+import { buildPartyPanel, type PartyPanelView } from "../obs/PartyPanel";
+import { buildGovernancePanel, type GovernancePanelView } from "../obs/GovernancePanel";
 import { buildTranscript, conversationFromEvent } from "../obs/Transcript";
 import type { Conversation } from "@contracts/types";
 import type { ObsConnection } from "../obs/wiring";
@@ -96,6 +98,7 @@ const PX_KPI_LABEL = `${FONT_SIZE_KPI_LABEL}px`;
 // truth). Semantic mapping per contracts/phase-b-foundation.md §Retheme map.
 const COLOR_TEXT = white.hex; // body — white
 const COLOR_DIM = ink300.hex; // secondary labels — ink300 (body)
+const COLOR_DIM_NUM = ink300.num; // ink300 numeric form (feed dot default fill)
 const COLOR_FAINT = ink500.hex; // tertiary / faint meta — ink500
 const COLOR_GOAL = cyan300.hex; // the one accent → cyan300
 const COLOR_PLAN = brand400.hex; // plan → brand400
@@ -105,6 +108,10 @@ const COLOR_CHROME = cardSurface.num; // chrome → card surface
 const COLOR_CARD_BG = cardSurface.num; // card background → card surface
 const COLOR_BORDER = borderCard.num; // separator → card border
 const COLOR_HEADER = ink400.hex; // mono section-header labels → ink400
+const COLOR_INSET = insetTile.num; // inset mini-stat tiles → insetTile
+const COLOR_STAR = brand400.hex; // ★ accent (Active-conversation card title)
+const COLOR_BUBBLE_HOST = bubbleHost.num; // host (left) chat bubble fill
+const COLOR_BUBBLE_GUEST = bubbleGuest.num; // other-speaker (right) chat bubble fill
 
 // -- SpaceCon command bar (design README §1) — token-sourced, no new hex ------
 const CMD_BAR_BG = cmdGradTop.num; // flat navy fill (gradient impractical in Phaser)
@@ -217,43 +224,48 @@ export class UIScene extends Phaser.Scene {
   private kpiLabels: Phaser.GameObjects.Text[] = [];
   private kpiValues: Phaser.GameObjects.Text[] = [];
 
-  // v3 — live party showcase strip (top-left, over the trace-panel band)
-  private partyBg: Phaser.GameObjects.Rectangle | null = null;
-  private partyTitle: Phaser.GameObjects.Text | null = null;
-  private partyMeta: Phaser.GameObjects.Text | null = null;
-  private partyKnow: Phaser.GameObjects.Text | null = null;
-  private partyInvited: Phaser.GameObjects.Text | null = null;
-  private partyArrived: Phaser.GameObjects.Text | null = null;
-  /** Whether the party strip is currently shown — gates HUD click-through so
-   *  clicks on the visible strip don't pan/follow the world map underneath. */
-  private partyVisible = false;
-  /** arrivals accumulated from the bus (event_arrived), keyed by eventId.
-   *  Scene state — survives relayout(); arrivals live in Cognition, not EventBoard. */
-  private readonly arrivedByEvent = new Map<string, Set<string>>();
-
-  // Wave 4c — live governance showcase strip (shares the party band; the party
-  // event takes priority when both are present).
-  private govBg: Phaser.GameObjects.Rectangle | null = null;
-  private govTitle: Phaser.GameObjects.Text | null = null;
-  private govMeta: Phaser.GameObjects.Text | null = null;
-  private govTally: Phaser.GameObjects.Text | null = null;
-  /** Whether the governance strip is currently shown — gates HUD click-through. */
-  private govVisible = false;
-
-  // v3 (Wave 2) — conversation transcript panel (left band, below the party strip)
-  private transcriptBg: Phaser.GameObjects.Rectangle | null = null;
-  private transcriptTitle: Phaser.GameObjects.Text | null = null;
-  private transcriptRows: Phaser.GameObjects.Text[] = [];
-  /** rows the transcript panel can show (one Text per line). The right-panel
+  // B-6 — Active-conversation card (right-rail DEFAULT state, README §5): the
+  // consolidated upper card combining the gathering stats (buildPartyPanel) and
+  // the conversation thread (buildTranscript), plus a compact governance line
+  // when a town proposal is open. Replaces the old party + governance + transcript
+  // banners with ONE card drawn into hud.activeConvRect.
+  private acvBg: Phaser.GameObjects.Rectangle | null = null;
+  /** Mono uppercase card header ("ACTIVE CONVERSATION"). */
+  private acvHeader: Phaser.GameObjects.Text | null = null;
+  /** ★ glyph (brand400) + title (gathering description / conversation parties). */
+  private acvStar: Phaser.GameObjects.Text | null = null;
+  private acvTitle: Phaser.GameObjects.Text | null = null;
+  /** "host {name} · day N {phase}" sub. */
+  private acvSub: Phaser.GameObjects.Text | null = null;
+  /** Three mini-stat tiles: {bg, label, value} (Know N/M · Invited K · Arrived J). */
+  private acvTileBgs: Phaser.GameObjects.Rectangle[] = [];
+  private acvTileLabels: Phaser.GameObjects.Text[] = [];
+  private acvTileValues: Phaser.GameObjects.Text[] = [];
+  /** Compact governance proposal line (⚖ ruleText · tally), folded into this card. */
+  private acvGov: Phaser.GameObjects.Text | null = null;
+  /** Chat thread: per-line tinted bubble rect + body text (host left / other right). */
+  private acvBubbleBgs: Phaser.GameObjects.Rectangle[] = [];
+  private acvBubbleTexts: Phaser.GameObjects.Text[] = [];
+  /** Honest empty state ("No active conversation") when there is neither a
+   *  gathering nor a conversation to show. */
+  private acvEmpty: Phaser.GameObjects.Text | null = null;
+  /** Whether the Active-conversation card is currently shown (not overlaid by
+   *  the trace panel) — gates the HUD click-through guard. */
+  private acvVisible = false;
+  /** rows the chat thread can show (one bubble per line). The right-panel
    *  conversation region is tall now, so we show a deeper backlog. */
   private static readonly TRANSCRIPT_MAX_LINES = 14;
   /** latest conversation parsed off the bus, rendered when no panel overlays it */
   private latestConversation: Conversation | null = null;
-  /** Whether the transcript panel is currently shown — gates HUD click-through. */
-  private transcriptVisible = false;
+  /** arrivals accumulated from the bus (event_arrived), keyed by eventId.
+   *  Scene state — survives relayout(); arrivals live in Cognition, not EventBoard. */
+  private readonly arrivedByEvent = new Map<string, Set<string>>();
 
   // event feed
   private logTexts: Phaser.GameObjects.Text[] = [];
+  /** per-row event-kind color dot (README §5): reuses the feed line's color,
+   *  which derives from the EventLog kind→color map. */
+  private logDots: Phaser.GameObjects.Arc[] = [];
   /** feed item behind each rendered line (click → trace panel) */
   private feedLineItems: Array<FeedItem | null> = [];
 
@@ -287,9 +299,7 @@ export class UIScene extends Phaser.Scene {
     this.buildSectionHeaders();
     this.buildKpiBand();
     this.buildFeedChrome();
-    this.buildPartyChrome();
-    this.buildGovernanceChrome();
-    this.buildTranscriptChrome();
+    this.buildActiveConvChrome();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
       this.onPointerDown(p.x, p.y),
     );
@@ -330,31 +340,28 @@ export class UIScene extends Phaser.Scene {
     this.cardNames = [];
     this.cardLayoutKey = "";
     this.logTexts = [];
+    this.logDots = [];
     this.feedLineItems = [];
     this.panelObjects = [];
     this.panelEntryTexts = [];
     this.panelTraceEntries = [];
     this.selectedAgent = null;
-    // removeAll(true) destroyed the party strip objects — drop the stale refs;
-    // buildPartyChrome() recreates them. arrivedByEvent is sim state, kept.
-    this.partyBg = null;
-    this.partyTitle = null;
-    this.partyMeta = null;
-    this.partyKnow = null;
-    this.partyInvited = null;
-    this.partyArrived = null;
-    // Wave 4c — governance strip objects were destroyed too; drop stale refs.
-    this.govBg = null;
-    this.govTitle = null;
-    this.govMeta = null;
-    this.govTally = null;
-    this.govVisible = false;
-    // removeAll(true) destroyed the transcript chrome too — drop the stale refs;
-    // buildTranscriptChrome() recreates them. latestConversation is sim state, kept.
-    this.transcriptBg = null;
-    this.transcriptTitle = null;
-    this.transcriptRows = [];
-    this.transcriptVisible = false;
+    // removeAll(true) destroyed the Active-conversation card objects — drop the
+    // stale refs; buildActiveConvChrome() recreates them. arrivedByEvent +
+    // latestConversation are sim state, kept across relayout.
+    this.acvBg = null;
+    this.acvHeader = null;
+    this.acvStar = null;
+    this.acvTitle = null;
+    this.acvSub = null;
+    this.acvTileBgs = [];
+    this.acvTileLabels = [];
+    this.acvTileValues = [];
+    this.acvGov = null;
+    this.acvBubbleBgs = [];
+    this.acvBubbleTexts = [];
+    this.acvEmpty = null;
+    this.acvVisible = false;
     this.agentsHeader = null;
     // removeAll(true) destroyed the KPI band objects too — drop stale refs;
     // buildKpiBand() recreates them (the values are re-derived from sim data).
@@ -371,9 +378,7 @@ export class UIScene extends Phaser.Scene {
     this.buildSectionHeaders();
     this.buildKpiBand();
     this.buildFeedChrome();
-    this.buildPartyChrome();
-    this.buildGovernanceChrome();
-    this.buildTranscriptChrome();
+    this.buildActiveConvChrome();
     this.refreshAll();
     if (reopen) this.toggleTracePanel(reopen);
     this.publishPanelRect();
@@ -420,10 +425,9 @@ export class UIScene extends Phaser.Scene {
       fontStyle: "bold",
       color: COLOR_HEADER,
     };
-    // CONVERSATION label at the very top of the right panel.
-    this.add
-      .text(r.x + 10, r.y + 6, "CONVERSATION", headerStyle)
-      .setDepth(DEPTH_HUD_TEXT);
+    // The right rail's CONVERSATION region is headed by the Active-conversation
+    // card's own mono "ACTIVE CONVERSATION" header (buildActiveConvChrome) — no
+    // separate persistent label here (it would double up above the card).
     // AGENTS · N label above the bottom strip.
     this.agentsHeader = this.add
       .text(8, this.hud.stripHeaderY, "AGENTS", headerStyle)
@@ -431,25 +435,16 @@ export class UIScene extends Phaser.Scene {
   }
 
   /** WorldScene reads this rect to ignore camera clicks over the open panel.
-   *  Priority: an open trace panel (covers the whole band) > the visible left-band
-   *  chrome (party strip and/or transcript panel, combined via unionRect) >
-   *  nothing. Without these cases, clicks on the visible chrome fall through and
-   *  pan/follow the world map underneath. */
+   *  Priority: an open trace panel (INSPECTOR state) > the visible
+   *  Active-conversation card (DEFAULT state) > nothing. Both occupy the same
+   *  region (hud.activeConvRect === hud.panelRect). Without this, clicks on the
+   *  visible chrome fall through and pan/follow the world map underneath. */
   private publishPanelRect(): void {
     let rect = null;
     if (this.selectedAgent) {
       rect = this.hud.panelRect;
-    } else {
-      // The party strip and the governance strip share the same band
-      // (hud.partyRect); union it with the transcript rect when visible.
-      const bandVisible = this.partyVisible || this.govVisible;
-      if (bandVisible && this.transcriptVisible) {
-        rect = unionRect(this.hud.partyRect, this.hud.transcriptRect);
-      } else if (bandVisible) {
-        rect = this.hud.partyRect;
-      } else if (this.transcriptVisible) {
-        rect = this.hud.transcriptRect;
-      }
+    } else if (this.acvVisible) {
+      rect = this.hud.activeConvRect;
     }
     this.registry.set(REG_HUD, rect);
   }
@@ -524,9 +519,7 @@ export class UIScene extends Phaser.Scene {
     this.renderKpiBand();
     this.renderFeed();
     this.renderCards();
-    this.renderParty();
-    this.renderGovernance();
-    this.renderTranscript();
+    this.renderActiveConv();
     if (this.selectedAgent) this.rebuildPanelEntries();
   }
 
@@ -964,28 +957,48 @@ export class UIScene extends Phaser.Scene {
 
   // -- event feed ----------------------------------------------------------------
 
+  /** Left inset (px) of a feed line's text past its color dot (README §5). */
+  private static readonly FEED_DOT_INSET = 14;
+  private static readonly FEED_DOT_R = 3;
+
   private buildFeedChrome(): void {
     this.add
-      .rectangle(this.hud.logX, this.hud.logY, this.hud.logW, this.hud.logH, COLOR_CHROME, 0.9)
+      .rectangle(this.hud.logX, this.hud.logY, this.hud.logW, this.hud.logH, COLOR_CARD_BG, 0.96)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD);
-    // Section header in the gutter just above the feed rect — gives the eye a
-    // clear "EVENTS" region marker without eating any feed-line space.
+    // Mono uppercase "EVENTS" header in the gutter just above the feed rect
+    // (README §5) — a clear region marker without eating any feed-line space.
     this.add
       .text(this.hud.logX + this.hud.logPadX, this.hud.logY - FONT_SIZE_SMALL - 5, "EVENTS", {
-        fontFamily: HUD_FONT,
+        fontFamily: MONO_FONT,
         fontSize: PX_SMALL,
         fontStyle: "bold",
         color: COLOR_HEADER,
       })
       .setDepth(DEPTH_HUD_TEXT);
+    const inset = UIScene.FEED_DOT_INSET;
     for (let i = 0; i < this.hud.logLines; i++) {
+      const rowY = this.hud.logY + this.hud.logPadY + i * this.hud.logLineH;
+      // Per-row colored dot (event-kind, from the feed line's view.color). Sits
+      // at the row's left, vertically centered on the mono line.
+      this.logDots.push(
+        this.add
+          .circle(
+            this.hud.logX + this.hud.logPadX + UIScene.FEED_DOT_R,
+            rowY + Math.round(FONT_SIZE_SMALL / 2),
+            UIScene.FEED_DOT_R,
+            COLOR_DIM_NUM,
+            1,
+          )
+          .setDepth(DEPTH_HUD_TEXT)
+          .setVisible(false),
+      );
       this.logTexts.push(
         this.add
           .text(
-            this.hud.logX + this.hud.logPadX,
-            this.hud.logY + this.hud.logPadY + i * this.hud.logLineH,
+            this.hud.logX + this.hud.logPadX + inset,
+            rowY,
             "",
             {
               fontFamily: MONO_FONT,
@@ -1003,6 +1016,7 @@ export class UIScene extends Phaser.Scene {
     const items = this.feed.list(this.hud.logLines); // newest-first
     for (let i = 0; i < this.hud.logLines; i++) {
       const line = this.logTexts[i];
+      const dot = this.logDots[i];
       if (!line) continue;
       const item = items[i] ?? null;
       this.feedLineItems[i] = item;
@@ -1011,8 +1025,12 @@ export class UIScene extends Phaser.Scene {
         line.setText(view.text);
         line.setColor(toCssColor(view.color));
         line.setFontStyle(view.emphasis ? "bold" : "normal");
-      } else if (line.text !== "") {
-        line.setText("");
+        // Dot encodes the event kind via the SAME color the line carries (the
+        // feed's view.color derives from the EventLog kind→color map).
+        dot?.setFillStyle(view.color, 1).setVisible(true);
+      } else {
+        if (line.text !== "") line.setText("");
+        dot?.setVisible(false);
       }
     }
   }
@@ -1125,290 +1143,394 @@ export class UIScene extends Phaser.Scene {
     this.kpiValues[4]?.setText(String(decisionsSum));
   }
 
-  // -- live party showcase strip --------------------------------------------------
+  // -- Active-conversation card (right-rail DEFAULT state, README §5) -------------
+
+  /** Card inner padding (README §5: ~16×17). */
+  private static readonly ACV_PAD_X = 16;
+  private static readonly ACV_PAD_Y = 13;
 
   /**
-   * Build the standing party strip chrome (backing rect + texts) at
-   * hud.partyRect. Starts hidden; renderParty() shows it when there is a
-   * showcase event. No nested containers (Phaser 4.1 gotcha).
+   * Build the standing Active-conversation card chrome at hud.activeConvRect:
+   * a card surface + border, a mono uppercase header, a ★ + title + sub, three
+   * inset mini-stat tiles (Know / Invited / Arrived), a compact governance line,
+   * a pool of chat-thread bubbles (host left / other right), and an honest empty
+   * state. Everything starts hidden; renderActiveConv() fills + shows what real
+   * data supports. No nested containers (Phaser 4.1 gotcha).
    */
-  private buildPartyChrome(): void {
-    const r = this.hud.partyRect;
-    this.partyBg = this.add
-      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.92)
+  private buildActiveConvChrome(): void {
+    const r = this.hud.activeConvRect;
+    const padX = UIScene.ACV_PAD_X;
+    const padY = UIScene.ACV_PAD_Y;
+    this.acvBg = this.add
+      .rectangle(r.x, r.y, r.w, r.h, COLOR_CARD_BG, 0.96)
       .setOrigin(0, 0)
       .setStrokeStyle(1, COLOR_BORDER, 1)
       .setDepth(DEPTH_HUD)
       .setVisible(false);
-    const mk = (
-      dy: number,
-      style: Phaser.Types.GameObjects.Text.TextStyle,
-    ): Phaser.GameObjects.Text =>
-      this.add
-        .text(r.x + 10, r.y + dy, "", style)
-        .setDepth(DEPTH_HUD_TEXT)
-        .setVisible(false);
-
-    this.partyTitle = mk(8, {
-      fontFamily: HUD_FONT,
-      fontSize: PX_BASE,
-      fontStyle: "bold",
-      color: COLOR_GOAL,
-    });
-    this.partyMeta = mk(30, {
-      fontFamily: HUD_FONT,
-      fontSize: PX_SMALL,
-      color: COLOR_DIM,
-    });
-    this.partyKnow = mk(52, {
-      fontFamily: HUD_FONT,
-      fontSize: PX_SMALL,
-      color: COLOR_TEXT,
-    });
-    this.partyInvited = mk(74, {
-      fontFamily: HUD_FONT,
-      fontSize: PX_SMALL,
-      color: COLOR_PLAN,
-    });
-    this.partyArrived = this.add
-      .text(r.x + r.w - 10, r.y + 74, "", {
-        fontFamily: HUD_FONT,
+    // Mono uppercase card header.
+    this.acvHeader = this.add
+      .text(r.x + padX, r.y + padY, "ACTIVE CONVERSATION", {
+        fontFamily: MONO_FONT,
         fontSize: PX_SMALL,
-        color: COLOR_OK,
+        fontStyle: "bold",
+        color: COLOR_HEADER,
       })
-      .setOrigin(1, 0)
       .setDepth(DEPTH_HUD_TEXT)
       .setVisible(false);
-  }
-
-  /**
-   * Render the live party showcase. Reads the soonest non-past event via the
-   * optional wiring seams; hides the strip when there is no event (mock/absent)
-   * or while a trace panel is open (the panel overlays the same band). Event-
-   * driven via markDirty()→refreshAll() throttle — not per-frame.
-   */
-  private renderParty(): void {
-    if (this.destroyed || !this.partyBg) return;
-    const controls = this.conn?.controls;
-    const eventId = controls?.showcaseEventId?.() ?? null;
-    const snap = eventId ? controls?.attendanceSnapshot?.(eventId) : undefined;
-    // Hide while a card's trace panel is open (it occupies the same band).
-    if (!snap || this.selectedAgent) {
-      this.setPartyVisible(false);
-      return;
-    }
-    const town = controls?.agents().length ?? 0;
-    const arrived = (eventId && this.arrivedByEvent.get(eventId)) || new Set<string>();
-    const view = buildPartyPanel(snap, arrived, town);
-
-    this.partyTitle?.setText(this.clip(`★ ${view.description}`, 36));
-    this.partyMeta?.setText(
-      this.clip(
-        `host ${view.host} · day ${snap.event.day} ${snap.event.phase}`,
-        38,
-      ),
-    );
-    this.partyKnow?.setText(view.knowLine);
-    this.partyInvited?.setText(`invited: ${view.invitedCount}`);
-    this.partyArrived?.setText(`arrived: ${view.arrivedCount}`);
-    this.setPartyVisible(true);
-  }
-
-  private setPartyVisible(visible: boolean): void {
-    this.partyVisible = visible;
-    this.partyBg?.setVisible(visible);
-    this.partyTitle?.setVisible(visible);
-    this.partyMeta?.setVisible(visible);
-    this.partyKnow?.setVisible(visible);
-    this.partyInvited?.setVisible(visible);
-    this.partyArrived?.setVisible(visible);
-    // Keep the click-through guard in sync with what's actually drawn.
-    this.publishPanelRect();
-  }
-
-  // -- live governance showcase strip (Wave 4c) ----------------------------------
-
-  /**
-   * Build the standing governance strip chrome (backing rect + texts) at
-   * hud.partyRect — it shares the party band, shown only when there is no party
-   * event to display. Starts hidden; renderGovernance() shows it when there is
-   * an open town proposal. No nested containers (Phaser 4.1 gotcha).
-   */
-  private buildGovernanceChrome(): void {
-    const r = this.hud.partyRect;
-    this.govBg = this.add
-      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.92)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, COLOR_BORDER, 1)
-      .setDepth(DEPTH_HUD)
+    // ★ accent + title (gathering description / conversation participants).
+    this.acvStar = this.add
+      .text(r.x + padX, r.y + padY + 22, "★", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        color: COLOR_STAR,
+      })
+      .setDepth(DEPTH_HUD_TEXT)
       .setVisible(false);
-    const mk = (
-      dy: number,
-      style: Phaser.Types.GameObjects.Text.TextStyle,
-    ): Phaser.GameObjects.Text =>
-      this.add
-        .text(r.x + 10, r.y + dy, "", style)
-        .setDepth(DEPTH_HUD_TEXT)
-        .setVisible(false);
-    this.govTitle = mk(8, {
-      fontFamily: HUD_FONT,
-      fontSize: PX_BASE,
-      fontStyle: "bold",
-      color: COLOR_PLAN,
-    });
-    this.govMeta = mk(30, {
-      fontFamily: HUD_FONT,
-      fontSize: PX_SMALL,
-      color: COLOR_DIM,
-    });
-    this.govTally = mk(52, {
-      fontFamily: MONO_FONT,
-      fontSize: PX_SMALL,
-      color: COLOR_TEXT,
-    });
-  }
-
-  /**
-   * Render the live governance showcase. Reads the current proposal tally via
-   * the optional wiring seam. Hidden when there is no proposal, while a trace
-   * panel is open, or while the party strip occupies the band (the party event
-   * wins). Event-driven via markDirty()→refreshAll() throttle — not per-frame.
-   */
-  private renderGovernance(): void {
-    if (this.destroyed || !this.govBg) return;
-    const controls = this.conn?.controls;
-    const tally = controls?.governanceTally?.();
-    // The party strip owns the band when an event is showing; only show
-    // governance when neither the party strip nor a trace panel is up.
-    if (!tally || this.selectedAgent || this.partyVisible) {
-      this.setGovernanceVisible(false);
-      return;
-    }
-    const town = controls?.agents().length ?? 0;
-    const view = buildGovernancePanel(tally, town);
-    const verb =
-      view.status === "adopted"
-        ? "ADOPTED"
-        : view.status === "rejected"
-          ? "REJECTED"
-          : "town rule up for a vote";
-    this.govTitle?.setText(this.clip(`⚖ ${view.ruleText}`, 40));
-    this.govMeta?.setText(this.clip(`by ${view.proposer} · ${verb}`, 40));
-    this.govTally?.setText(view.tallyLine);
-    this.setGovernanceVisible(true);
-  }
-
-  private setGovernanceVisible(visible: boolean): void {
-    this.govVisible = visible;
-    this.govBg?.setVisible(visible);
-    this.govTitle?.setVisible(visible);
-    this.govMeta?.setVisible(visible);
-    this.govTally?.setVisible(visible);
-    // Keep the click-through guard in sync with what's actually drawn.
-    this.publishPanelRect();
-  }
-
-  // -- conversation transcript panel ---------------------------------------------
-
-  /**
-   * Build the standing transcript panel chrome (backing rect + bold title +
-   * fixed row of wrapped Text lines) at hud.transcriptRect. Starts hidden;
-   * renderTranscript() fills + shows it when there is a conversation to display
-   * and no trace panel overlays the band. No nested containers (Phaser 4.1).
-   */
-  private buildTranscriptChrome(): void {
-    const r = this.hud.transcriptRect;
-    this.transcriptBg = this.add
-      .rectangle(r.x, r.y, r.w, r.h, COLOR_CHROME, 0.92)
-      .setOrigin(0, 0)
-      .setStrokeStyle(1, COLOR_BORDER, 1)
-      .setDepth(DEPTH_HUD)
+    this.acvTitle = this.add
+      .text(r.x + padX + 18, r.y + padY + 22, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_BASE,
+        fontStyle: "bold",
+        color: COLOR_TEXT,
+      })
+      .setDepth(DEPTH_HUD_TEXT)
       .setVisible(false);
-    // The persistent "CONVERSATION" header (buildSectionHeaders) labels this
-    // region; a slim "now speaking" caption sits at the top of the panel body.
-    this.transcriptTitle = this.add
-      .text(r.x + 10, r.y + 6, "", {
+    // "host {name} · day N {phase}" sub.
+    this.acvSub = this.add
+      .text(r.x + padX, r.y + padY + 44, "", {
         fontFamily: HUD_FONT_BODY,
         fontSize: PX_SMALL,
-        color: COLOR_FAINT,
+        color: COLOR_DIM,
       })
       .setDepth(DEPTH_HUD_TEXT)
       .setVisible(false);
-    this.transcriptRows = [];
-    const rowTop = r.y + 28;
-    // WORD-WRAPPED rows: each utterance wraps to the panel width and the render
-    // pass reflows them by measured height, so full sentences are readable
-    // instead of clipped to "Good to se…" (Smallville keeps the full text in the
-    // side panel). renderTranscript repositions each row's Y on every refresh.
-    for (let i = 0; i < UIScene.TRANSCRIPT_MAX_LINES; i++) {
-      this.transcriptRows.push(
+    // Three inset mini-stat tiles. Geometry is set in renderActiveConv (it knows
+    // the live card width); here we just create the pool. Value colors per
+    // README §5: Know (white), Invited (brand400), Arrived (positive500).
+    const tileValueColors = [COLOR_TEXT, COLOR_PLAN, COLOR_OK];
+    for (let i = 0; i < 3; i++) {
+      this.acvTileBgs.push(
         this.add
-          .text(r.x + 10, rowTop, "", {
+          .rectangle(r.x, r.y, 10, 10, COLOR_INSET, 1)
+          .setOrigin(0, 0)
+          .setStrokeStyle(1, COLOR_BORDER, 1)
+          .setDepth(DEPTH_HUD + 0.5)
+          .setVisible(false),
+      );
+      this.acvTileLabels.push(
+        this.add
+          .text(r.x, r.y, "", {
+            fontFamily: MONO_FONT,
+            fontSize: PX_SMALL,
+            color: COLOR_HEADER,
+          })
+          .setDepth(DEPTH_HUD_TEXT)
+          .setVisible(false),
+      );
+      this.acvTileValues.push(
+        this.add
+          .text(r.x, r.y, "", {
+            fontFamily: HUD_FONT,
+            fontSize: PX_BASE,
+            fontStyle: "bold",
+            color: tileValueColors[i],
+          })
+          .setDepth(DEPTH_HUD_TEXT)
+          .setVisible(false),
+      );
+    }
+    // Compact governance proposal line (⚖ ruleText · tally), folded into the card.
+    this.acvGov = this.add
+      .text(r.x + padX, r.y, "", {
+        fontFamily: MONO_FONT,
+        fontSize: PX_SMALL,
+        color: COLOR_PLAN,
+        wordWrap: { width: r.w - 2 * padX },
+        lineSpacing: 1,
+      })
+      .setDepth(DEPTH_HUD_TEXT)
+      .setVisible(false);
+    // Chat-thread bubbles: a tinted rect + body text per line (host left / other
+    // right). Geometry is reflowed each render; here we create the pool.
+    for (let i = 0; i < UIScene.TRANSCRIPT_MAX_LINES; i++) {
+      this.acvBubbleBgs.push(
+        this.add
+          .rectangle(r.x, r.y, 10, 10, COLOR_BUBBLE_HOST, 1)
+          .setOrigin(0, 0)
+          .setDepth(DEPTH_HUD + 0.5)
+          .setVisible(false),
+      );
+      this.acvBubbleTexts.push(
+        this.add
+          .text(r.x, r.y, "", {
             fontFamily: HUD_FONT_BODY,
             fontSize: PX_SMALL,
             color: COLOR_TEXT,
-            wordWrap: { width: r.w - 20 },
+            wordWrap: { width: r.w - 2 * padX - 16 },
             lineSpacing: 2,
           })
           .setDepth(DEPTH_HUD_TEXT)
           .setVisible(false),
       );
     }
+    // Honest empty state.
+    this.acvEmpty = this.add
+      .text(r.x + padX, r.y + padY + 44, "No active conversation", {
+        fontFamily: HUD_FONT_BODY,
+        fontSize: PX_SMALL,
+        color: COLOR_FAINT,
+      })
+      .setDepth(DEPTH_HUD_TEXT)
+      .setVisible(false);
   }
 
   /**
-   * Render the latest conversation into the transcript panel. Hides the panel
-   * when there is no conversation (empty) OR while a trace panel is open (it
-   * overlays the same left band). Each line shows "[speaker]: text" with the two
-   * participants' lines in alternating colors. Event-driven via the markDirty()
-   * → refreshAll() throttle — not per-frame.
+   * Render the Active-conversation card from REAL sim data (no fabricated
+   * threads or stats — the sim tracks ONE conversation at a time):
+   *   - gathering stats from buildPartyPanel (when there is a showcase event),
+   *   - the conversation thread from buildTranscript (the latest conversation),
+   *   - a compact governance proposal line from buildGovernancePanel (when a
+   *     town rule is up for a vote).
+   * Title rule (honest): a live gathering titles the card with its description +
+   * a "host …" sub; with no gathering but a live conversation, the participants
+   * title it; with neither, a calm "No active conversation" empty state. Hidden
+   * entirely while a trace panel is open (INSPECTOR state overlays this region).
+   * Event-driven via the markDirty()→refreshAll() throttle — not per-frame.
    */
-  private renderTranscript(): void {
-    if (this.destroyed || !this.transcriptBg) return;
-    const view = buildTranscript(
-      this.latestConversation,
-      UIScene.TRANSCRIPT_MAX_LINES,
-      240, // keep near-full utterances; the row Text word-wraps to the panel
-    );
-    if (view.empty || this.selectedAgent) {
-      this.setTranscriptVisible(false);
+  private renderActiveConv(): void {
+    if (this.destroyed || !this.acvBg) return;
+    // INSPECTOR state owns this region — the trace panel overlays the card.
+    if (this.selectedAgent) {
+      this.setActiveConvVisible(false);
       return;
     }
-    const [p0, p1] = view.participants;
-    this.transcriptTitle?.setText(
-      this.clip(`${p0 ?? ""}${p1 ? ` ↔ ${p1}` : ""}`, 40),
+    const controls = this.conn?.controls;
+    const town = controls?.agents().length ?? 0;
+
+    // -- Gathering stats (real, from buildPartyPanel) -------------------------
+    const eventId = controls?.showcaseEventId?.() ?? null;
+    const snap = eventId ? controls?.attendanceSnapshot?.(eventId) : undefined;
+    const party = snap
+      ? buildPartyPanel(
+          snap,
+          (eventId && this.arrivedByEvent.get(eventId)) || new Set<string>(),
+          town,
+        )
+      : null;
+
+    // -- Conversation thread (real, from buildTranscript) ---------------------
+    const conv = buildTranscript(
+      this.latestConversation,
+      UIScene.TRANSCRIPT_MAX_LINES,
+      240,
     );
-    // Reflow word-wrapped rows top→down by their measured height; the two
-    // speakers alternate color. Rows that would spill past the panel bottom are
-    // hidden (conversations are short, so the recent turns fit).
-    const r = this.hud.transcriptRect;
-    let y = r.y + 28;
-    const bottom = r.y + r.h - 4;
-    for (let i = 0; i < this.transcriptRows.length; i++) {
-      const row = this.transcriptRows[i];
-      const line = view.lines[i];
-      if (line && y < bottom) {
-        // Full utterance (capped against a pathological single huge turn); the
-        // Text object word-wraps it to the panel width.
-        row.setText(`[${line.speaker}]: ${this.clip(line.text, 240)}`);
-        row.setColor(line.speaker === p0 ? COLOR_GOAL : COLOR_PLAN);
-        row.setY(Math.round(y));
-        row.setVisible(true);
-        y += row.height + 4;
-      } else {
-        if (row.text !== "") row.setText("");
-        row.setVisible(false);
+    const hasConv = !conv.empty;
+
+    // -- Governance proposal (real, from buildGovernancePanel) ----------------
+    const tally = controls?.governanceTally?.();
+    const gov = tally ? buildGovernancePanel(tally, town) : null;
+
+    // Neither a gathering nor a conversation → honest calm empty state.
+    if (!party && !hasConv) {
+      this.layoutActiveConvEmpty(gov);
+      return;
+    }
+
+    const r = this.hud.activeConvRect;
+    const padX = UIScene.ACV_PAD_X;
+    const padY = UIScene.ACV_PAD_Y;
+    const [p0, p1] = conv.participants;
+
+    // Title + sub: a live gathering wins the title; otherwise the conversation
+    // participants title the card (honest — no invented gathering).
+    if (party) {
+      this.acvTitle?.setText(this.clip(party.description, 32));
+      this.acvSub?.setText(
+        this.clip(
+          `host ${party.host} · day ${snap?.event.day ?? "?"} ${snap?.event.phase ?? ""}`.trim(),
+          40,
+        ),
+      );
+    } else {
+      this.acvTitle?.setText(this.clip(`${p0 ?? ""}${p1 ? ` ↔ ${p1}` : ""}`, 32));
+      this.acvSub?.setText("conversation in progress");
+    }
+    this.acvStar?.setVisible(true);
+    this.acvTitle?.setVisible(true);
+    this.acvSub?.setVisible(true);
+    this.acvEmpty?.setVisible(false);
+
+    // Mini-stat tiles: shown ONLY when there is a real gathering (the stats come
+    // from buildPartyPanel). With a bare conversation we honestly omit them
+    // rather than invent zeros.
+    let y = r.y + padY + 66;
+    if (party) {
+      y = this.layoutStatTiles(r, padX, y, party);
+    } else {
+      for (let i = 0; i < 3; i++) {
+        this.acvTileBgs[i]?.setVisible(false);
+        this.acvTileLabels[i]?.setVisible(false);
+        this.acvTileValues[i]?.setVisible(false);
       }
     }
-    this.setTranscriptVisible(true);
+
+    // Compact governance line, folded in just below the stats when a tally open.
+    y = this.layoutGovLine(r, padX, y, gov);
+
+    // Chat thread (the real conversation turns), reflowed as alternating bubbles.
+    this.layoutThread(r, padX, y, conv.lines, p0);
+
+    this.setActiveConvVisible(true);
   }
 
-  private setTranscriptVisible(visible: boolean): void {
-    this.transcriptVisible = visible;
-    this.transcriptBg?.setVisible(visible);
-    this.transcriptTitle?.setVisible(visible);
+  /** Lay out the empty/near-empty card: a calm "No active conversation" line,
+   *  plus the governance proposal line if a town rule is up for a vote (so the
+   *  governance display is never lost even with no gathering/conversation). */
+  private layoutActiveConvEmpty(gov: GovernancePanelView | null): void {
+    const r = this.hud.activeConvRect;
+    const padX = UIScene.ACV_PAD_X;
+    const padY = UIScene.ACV_PAD_Y;
+    this.acvStar?.setVisible(false);
+    this.acvTitle?.setVisible(false);
+    this.acvSub?.setVisible(false);
+    for (let i = 0; i < 3; i++) {
+      this.acvTileBgs[i]?.setVisible(false);
+      this.acvTileLabels[i]?.setVisible(false);
+      this.acvTileValues[i]?.setVisible(false);
+    }
+    for (let i = 0; i < this.acvBubbleBgs.length; i++) {
+      this.acvBubbleBgs[i]?.setVisible(false);
+      this.acvBubbleTexts[i]?.setVisible(false);
+    }
+    this.acvEmpty?.setY(r.y + padY + 22).setVisible(true);
+    this.layoutGovLine(r, padX, r.y + padY + 48, gov);
+    this.setActiveConvVisible(true);
+  }
+
+  /** Lay out the three inset mini-stat tiles (Know N/M · Invited K · Arrived J)
+   *  from the real party view; returns the y just below the tile row. */
+  private layoutStatTiles(
+    r: { x: number; y: number; w: number; h: number },
+    padX: number,
+    top: number,
+    party: PartyPanelView,
+  ): number {
+    const gap = 8;
+    const innerW = r.w - 2 * padX;
+    const tileW = Math.floor((innerW - 2 * gap) / 3);
+    const tileH = 38;
+    const labels = ["KNOW", "INVITED", "ARRIVED"];
+    const values = [
+      party.knowLine.replace(/\s*know$/i, ""), // "N/M"
+      String(party.invitedCount),
+      String(party.arrivedCount),
+    ];
+    for (let i = 0; i < 3; i++) {
+      const tx = r.x + padX + i * (tileW + gap);
+      this.acvTileBgs[i]
+        ?.setPosition(tx, top)
+        .setSize(tileW, tileH)
+        .setVisible(true);
+      this.acvTileLabels[i]
+        ?.setPosition(tx + 8, top + 6)
+        .setText(labels[i])
+        .setVisible(true);
+      this.acvTileValues[i]
+        ?.setPosition(tx + 8, top + 18)
+        .setText(values[i])
+        .setVisible(true);
+    }
+    return top + tileH + 10;
+  }
+
+  /** Lay out the compact governance proposal line (⚖ ruleText · Yes/No · aware)
+   *  when a town rule is up for a vote; returns the y below it (unchanged when
+   *  there is no proposal). PRESERVES the governance display per the contract. */
+  private layoutGovLine(
+    r: { x: number; y: number; w: number; h: number },
+    padX: number,
+    top: number,
+    gov: GovernancePanelView | null,
+  ): number {
+    if (!gov) {
+      this.acvGov?.setVisible(false);
+      return top;
+    }
+    const verb =
+      gov.status === "adopted"
+        ? "ADOPTED"
+        : gov.status === "rejected"
+          ? "REJECTED"
+          : "up for a vote";
+    this.acvGov
+      ?.setPosition(r.x + padX, top)
+      .setText(this.clip(`⚖ ${gov.ruleText} · ${gov.tallyLine} · ${verb}`, 88))
+      .setVisible(true);
+    return top + (this.acvGov?.height ?? 0) + 8;
+  }
+
+  /** Reflow the conversation turns as alternating chat bubbles: host (p0) left-
+   *  aligned bubbleHost tint, the other speaker right-aligned bubbleGuest tint,
+   *  max-width ~88%. Rows that would spill past the card bottom are hidden. */
+  private layoutThread(
+    r: { x: number; y: number; w: number; h: number },
+    padX: number,
+    top: number,
+    lines: ReadonlyArray<{ speaker: string; text: string }>,
+    host: string,
+  ): void {
+    const innerW = r.w - 2 * padX;
+    const maxBubbleW = Math.floor(innerW * 0.88);
+    const textPad = 8;
+    const bottom = r.y + r.h - 6;
+    let y = top;
+    for (let i = 0; i < this.acvBubbleTexts.length; i++) {
+      const bubble = this.acvBubbleBgs[i];
+      const txt = this.acvBubbleTexts[i];
+      const line = lines[i];
+      if (!bubble || !txt) continue;
+      if (line && y < bottom) {
+        const isHost = line.speaker === host;
+        txt.setWordWrapWidth(maxBubbleW - 2 * textPad);
+        txt.setText(this.clip(line.text, 240));
+        const bw = Math.min(maxBubbleW, Math.ceil(txt.width) + 2 * textPad);
+        const bh = Math.ceil(txt.height) + 2 * textPad;
+        const bx = isHost ? r.x + padX : r.x + r.w - padX - bw;
+        bubble
+          .setPosition(bx, Math.round(y))
+          .setSize(bw, bh)
+          .setFillStyle(isHost ? COLOR_BUBBLE_HOST : COLOR_BUBBLE_GUEST, 1)
+          .setVisible(true);
+        txt.setPosition(bx + textPad, Math.round(y) + textPad).setVisible(true);
+        y += bh + 5;
+      } else {
+        if (txt.text !== "") txt.setText("");
+        bubble.setVisible(false);
+        txt.setVisible(false);
+      }
+    }
+  }
+
+  private setActiveConvVisible(visible: boolean): void {
+    this.acvVisible = visible;
+    this.acvBg?.setVisible(visible);
+    this.acvHeader?.setVisible(visible);
     if (!visible) {
-      for (const row of this.transcriptRows) row.setVisible(false);
+      this.acvStar?.setVisible(false);
+      this.acvTitle?.setVisible(false);
+      this.acvSub?.setVisible(false);
+      this.acvEmpty?.setVisible(false);
+      this.acvGov?.setVisible(false);
+      for (let i = 0; i < 3; i++) {
+        this.acvTileBgs[i]?.setVisible(false);
+        this.acvTileLabels[i]?.setVisible(false);
+        this.acvTileValues[i]?.setVisible(false);
+      }
+      for (let i = 0; i < this.acvBubbleBgs.length; i++) {
+        this.acvBubbleBgs[i]?.setVisible(false);
+        this.acvBubbleTexts[i]?.setVisible(false);
+      }
     }
     // Keep the click-through guard in sync with what's actually drawn.
     this.publishPanelRect();
@@ -1703,8 +1825,7 @@ export class UIScene extends Phaser.Scene {
       this.expandedTurnIds.add(first.turnId);
       this.rebuildPanelEntries();
     }
-    this.renderParty(); // hide the party strip behind the open panel
-    this.renderTranscript(); // hide the transcript panel behind the open panel
+    this.renderActiveConv(); // hide the Active-conversation card behind the open panel
     this.publishPanelRect();
   }
 
@@ -1756,8 +1877,7 @@ export class UIScene extends Phaser.Scene {
     this.panelTraceEntries = [];
     for (const obj of this.panelObjects) obj.destroy();
     this.panelObjects = [];
-    this.renderParty(); // restore the party strip once the panel closes
-    this.renderTranscript(); // restore the transcript panel once the panel closes
+    this.renderActiveConv(); // restore the Active-conversation card once the panel closes
     this.publishPanelRect();
   }
 
