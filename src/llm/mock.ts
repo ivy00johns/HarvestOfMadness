@@ -48,6 +48,7 @@ import type {
 import { CROPS } from "@contracts/types";
 import { extractFirstJsonObject } from "./parse";
 import { FUNCTIONAL_STEP_TEXT, preferredLocation } from "../agents/locations";
+import { willAttend } from "../agents/attendance";
 
 const ACTION_TYPES: readonly ActionType[] = [
   "MOVE_TO",
@@ -196,7 +197,7 @@ function normalizeObservation(raw: unknown): Observation | null {
       ? (ev.phase as Phase)
       : null;
     if (typeof ev.id !== "string" || typeof ev.host !== "string" || !loc || !evPhase) return [];
-    const se: SimEvent & { isNow: boolean } = {
+    const se: SimEvent & { isNow: boolean; homePathTiles?: number } = {
       id: ev.id,
       host: ev.host,
       location: loc,
@@ -205,6 +206,13 @@ function normalizeObservation(raw: unknown): Observation | null {
       description: asString(ev.description, ""),
       isNow: Boolean(ev.isNow),
     };
+    // Phase C · Slice 1 — propagate the additive home→event A* length so the
+    // distance-weighted attendance gate in decide() is actually wired (dropping
+    // it made the gate a dead no-op: `?? 0` ⇒ probability 1 ⇒ attend always).
+    // Phase C · Slice 1 — propagate the additive home→event A* length so the
+    // distance-weighted attendance gate in decide() is actually wired (dropping
+    // it made the gate a dead no-op: `?? 0` ⇒ probability 1 ⇒ attend always).
+    if (Number.isFinite(ev.homePathTiles)) se.homePathTiles = ev.homePathTiles as number;
     return [se];
   });
 
@@ -418,7 +426,16 @@ function decide(obs: Observation): AgentAction {
       }
       return act("WAIT", "Enjoying the gathering at the tavern.", "What a lovely gathering!");
     }
-    if (can("MOVE_TO")) {
+    // Phase C · Slice 1 — distance-weighted, occasional attendance. The host
+    // never skips their own party; any agent whose Observation lacks
+    // homePathTiles defaults to pathTiles 0 ⇒ probability 1 ⇒ attend (so this is
+    // byte-identical to pre-slice behavior). Far travelers whose deterministic
+    // coin lands above the distance-weighted probability fall through to the
+    // normal (dispersive) ladder this phase — "occasionally" attend.
+    const attend =
+      nowEvent.host === self.name ||
+      willAttend(self.name, nowEvent.id, obs.time.day, nowEvent.homePathTiles ?? 0);
+    if (attend && can("MOVE_TO")) {
       return moveTo(nowEvent.location, "Heading to the gathering at the tavern.");
     }
   }

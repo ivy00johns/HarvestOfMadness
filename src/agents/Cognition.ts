@@ -30,6 +30,7 @@ import type {
   Observation,
   Router,
   SimEvent,
+  Vec2,
   WorldApi,
 } from "@contracts/types";
 import { liveRouter } from "../llm/router";
@@ -245,6 +246,12 @@ export class CognitionSystem implements ExecutorCognitionHooks {
    * origin at most once), so the relay process provably reaches a fixed point.
    */
   private readonly knownOrigins = new Map<string, Set<string>>();
+  /**
+   * Phase C · Slice 1 — memoized home→event A* path lengths, keyed by
+   * `${homeKey}->${locationKey}`. Homes + the tavern are static, so A* runs at
+   * most once per (home, location) pair (deterministic), not every decision.
+   */
+  private readonly homePathTilesCache = new Map<string, number | null>();
 
   private readonly bus: EventBus;
   private readonly router: Router;
@@ -386,6 +393,27 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     } catch {
       return [];
     }
+  }
+
+  /**
+   * Phase C · Slice 1 — memoized home→location A* path length (tiles). Returns
+   * `undefined` when no path exists (mock then defaults to attend). Static homes
+   * + tavern ⇒ the cache is tiny and deterministic. Defensive: any throw ⇒
+   * `undefined` (attendance gate stays additive).
+   */
+  private homePathTiles(home: Vec2, location: Vec2): number | undefined {
+    const key = `${home.x},${home.y}->${location.x},${location.y}`;
+    let cached = this.homePathTilesCache.get(key);
+    if (cached === undefined && !this.homePathTilesCache.has(key)) {
+      try {
+        const path = this.world().findPath(home, location);
+        cached = path ? path.length : null;
+      } catch {
+        cached = null;
+      }
+      this.homePathTilesCache.set(key, cached);
+    }
+    return cached === null || cached === undefined ? undefined : cached;
   }
 
   // -- v3 event seeding + diffusion ------------------------------------------
@@ -1182,10 +1210,17 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       const knownEvents = this.events
         .knownBy(agent.name)
         .filter((e) => !isPastEvent(e, t))
-        .map((e) => ({
-          ...e,
-          isNow: e.day === t.day && e.phase === t.phase,
-        }));
+        .map((e) => {
+          const isNow = e.day === t.day && e.phase === t.phase;
+          if (!isNow) return { ...e, isNow };
+          // Phase C · Slice 1 — attach the memoized home→event A* path length so
+          // the mock attendance gate can weight by distance. Only isNow events
+          // need it (mock reads it on nowEvent); omit when unreachable.
+          const homePathTiles = this.homePathTiles(agent.home, e.location);
+          return homePathTiles === undefined
+            ? { ...e, isNow }
+            : { ...e, isNow, homePathTiles };
+        });
       if (knownEvents.length > 0) {
         obs.self.knownEvents = knownEvents;
       }
