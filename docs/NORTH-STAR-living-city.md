@@ -257,9 +257,15 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
       surfaces as a real reply line), and conversations finally render as a
       readable thread in the feed. Built on the existing (green) multi-turn +
       multi-hop-gossip pipe; strictly additive (absent recall ⇒ byte-identical),
-      deterministic in mock, richer on live. **Remaining (follow-on slices):**
-      conversation-summary memory → sentiment-driven affinity → structured
-      GossipBoard (subject/claim) + rumor distortion.
+      deterministic in mock, richer on live. **Conversation-summary memory**
+      ✓ `190e314` — both participants now remember a one-line gist of what they
+      discussed (Smallville `summarize_conversation`), gossip-inert at importance
+      4 so it grounds recall + reflection without becoming a rumor; the
+      conversation `writeMemory` wiring now pins the exact importance (a "Chatted
+      with…" leak into gossip, found via TDD, is closed). **Remaining (follow-on
+      slices):** sentiment-driven affinity (replaces the flat +2/talk — high risk,
+      touches the frozen affinity assertions) → structured GossipBoard
+      (subject/claim) + rumor distortion → live-LLM summarization + call metering.
 - [ ] Per-hamlet visual identity (roof palette per hamlet).
 - [ ] Terrain transition tiles (grass↔dirt↔path edges), second pond.
 - [ ] Activate reserve lots into live hamlets as the population grows.
