@@ -501,6 +501,12 @@ export function isPointOverHud(hud: HudLayout, px: number, py: number): boolean 
  *  WorldScene can ignore world clicks that land on it. */
 export const REG_HUD = "hudPanelRect";
 
+/** Registry key (Phase B-4): UIScene publishes the SELECTED agent NAME (or
+ *  null) here when the inspector opens/closes. WorldScene reads it in update()
+ *  to camera-follow + pulse-ring that agent. Additive to REG_HUD — render-only,
+ *  no sim/contract change. */
+export const REG_SELECTED = "hudSelectedAgent";
+
 // ---------------------------------------------------------------------------
 // Legacy 768x576 design-space exports (retained for the pure layout unit tests
 // and any code still importing them). These mirror computeHud at design size.

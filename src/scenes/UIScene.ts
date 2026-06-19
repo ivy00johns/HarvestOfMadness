@@ -17,6 +17,7 @@
  */
 import Phaser from "phaser";
 import type { WorldEvent } from "@contracts/types";
+import { MAP_HEIGHT, MAP_WIDTH } from "@contracts/types";
 import {
   FeedModel,
   formatFeedItem,
@@ -47,6 +48,7 @@ import {
   KPI_TILE_COUNT,
   MONO_FONT,
   REG_HUD,
+  REG_SELECTED,
   computeHud,
   formatEconomy,
   formatPercent,
@@ -54,6 +56,7 @@ import {
   type HudLayout,
 } from "../obs/layout";
 import {
+  appBg as appBgTok,
   borderCard,
   borderControl,
   borderInspector,
@@ -140,6 +143,22 @@ const CMD_PHASE_GLYPH = p2.hex; // clock phase glyph (amber)
 const CMD_COST_OK = positive500.hex; // $0.00 (mock) cost chip color
 const CMD_INFLIGHT = cyan300.hex; // in-flight ⟳ chip accent
 
+
+// -- Map-viewport overlay chips (Phase B-4, design README §3) — token-sourced --
+// Context chip (top-left of the map rect): a dark semi-opaque navy fill +
+// control border. Backdrop-blur isn't feasible in Phaser canvas — a semi-opaque
+// fill is the accepted substitute (contract §2).
+const CHIP_CTX_FILL = appBgTok.num; // --ink-900 navy
+const CHIP_CTX_ALPHA = 0.6;
+const CHIP_CTX_BORDER = borderControl.num; // #24324d
+const CHIP_CTX_TEXT = ink300.hex; // mono uppercase label
+// Follow chip (top-right, only when an agent is selected): a brand-tinted
+// semi-opaque fill + brand400 border, white text (contract §3).
+const CHIP_FOLLOW_FILL = brand600.num; // #1e50c8
+const CHIP_FOLLOW_ALPHA = 0.5;
+const CHIP_FOLLOW_BORDER = brand400.num; // #5187f2
+const CHIP_FOLLOW_TEXT = white.hex;
+const CHIP_RADIUS = 7;
 
 const PHASE_ICON: Record<string, string> = {
   morning: "☀",
@@ -275,6 +294,16 @@ export class UIScene extends Phaser.Scene {
    *  Scene state — survives relayout(); arrivals live in Cognition, not EventBoard. */
   private readonly arrivedByEvent = new Map<string, Set<string>>();
 
+  // B-4 — map-viewport overlay chips (drawn over the map region by UIScene,
+  // which owns HUD chrome + knows hud.mapRect). The context chip is always
+  // visible (top-left); the follow chip shows only when an agent is selected
+  // (top-right). Graphics for rounded fills + Text labels (no nested
+  // containers — Phaser 4.1 gotcha). Repositioned on relayout.
+  private ctxChipGfx: Phaser.GameObjects.Graphics | null = null;
+  private ctxChipText: Phaser.GameObjects.Text | null = null;
+  private followChipGfx: Phaser.GameObjects.Graphics | null = null;
+  private followChipText: Phaser.GameObjects.Text | null = null;
+
   // event feed
   private logTexts: Phaser.GameObjects.Text[] = [];
   /** per-row event-kind color dot (README §5): reuses the feed line's color,
@@ -328,6 +357,7 @@ export class UIScene extends Phaser.Scene {
     this.buildKpiBand();
     this.buildFeedChrome();
     this.buildActiveConvChrome();
+    this.buildMapOverlays();
     this.input.on(Phaser.Input.Events.POINTER_DOWN, (p: Phaser.Input.Pointer) =>
       this.onPointerDown(p.x, p.y),
     );
@@ -390,6 +420,12 @@ export class UIScene extends Phaser.Scene {
     this.acvBubbleTexts = [];
     this.acvEmpty = null;
     this.acvVisible = false;
+    // removeAll(true) destroyed the map-overlay chips — drop stale refs;
+    // buildMapOverlays() recreates them against the fresh mapRect.
+    this.ctxChipGfx = null;
+    this.ctxChipText = null;
+    this.followChipGfx = null;
+    this.followChipText = null;
     this.agentsHeader = null;
     // removeAll(true) destroyed the KPI band objects too — drop stale refs;
     // buildKpiBand() recreates them (the values are re-derived from sim data).
@@ -407,9 +443,12 @@ export class UIScene extends Phaser.Scene {
     this.buildKpiBand();
     this.buildFeedChrome();
     this.buildActiveConvChrome();
+    this.buildMapOverlays();
     this.refreshAll();
+    this.renderMapOverlays();
     if (reopen) this.toggleTracePanel(reopen);
     this.publishPanelRect();
+    this.publishSelected();
   }
 
   /** Live "AGENTS · N" count label above the bottom strip (updated as agents
@@ -1050,6 +1089,130 @@ export class UIScene extends Phaser.Scene {
         if (line.text !== "") line.setText("");
         dot?.setVisible(false);
       }
+    }
+  }
+
+  // -- Map-viewport overlay chips (B-4, design README §3) -------------------------
+
+  /** Chip inner padding (README §3: ~5px×10px). */
+  private static readonly CHIP_PAD_X = 10;
+  private static readonly CHIP_PAD_Y = 5;
+  /** Inset of the chips from the map rect's corners. */
+  private static readonly CHIP_INSET = 10;
+
+  /**
+   * Build the two map-viewport overlay chips drawn OVER the map region (UIScene
+   * owns HUD chrome + knows hud.mapRect):
+   *  - a top-LEFT context chip (always shown): mono uppercase "MADOW VALLEY ·
+   *    {W}×{H}" on a dark semi-opaque navy fill + control border.
+   *  - a top-RIGHT follow chip (hidden until an agent is selected): "◎ Following
+   *    · {name}" white on a brand-tinted semi-opaque fill + brand400 border.
+   * Each chip is a Graphics (rounded fill + stroke) under a Text label. The
+   * fill geometry follows the live text width, so renderMapOverlays() draws it
+   * after measuring. No nested containers (Phaser 4.1 gotcha). Chip rects are
+   * clamped to stay within hud.mapRect.
+   */
+  private buildMapOverlays(): void {
+    this.ctxChipGfx = this.add.graphics().setDepth(DEPTH_HUD);
+    this.ctxChipText = this.add
+      .text(0, 0, "", {
+        fontFamily: MONO_FONT,
+        fontSize: PX_SMALL,
+        fontStyle: "bold",
+        color: CHIP_CTX_TEXT,
+      })
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD_TEXT);
+    this.followChipGfx = this.add.graphics().setDepth(DEPTH_HUD).setVisible(false);
+    this.followChipText = this.add
+      .text(0, 0, "", {
+        fontFamily: HUD_FONT,
+        fontSize: PX_SMALL,
+        fontStyle: "bold",
+        color: CHIP_FOLLOW_TEXT,
+      })
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD_TEXT)
+      .setVisible(false);
+    this.renderMapOverlays();
+  }
+
+  /**
+   * Draw / position the map-overlay chips. The context chip pins to the
+   * top-left of hud.mapRect with the real MAP_WIDTH×MAP_HEIGHT; the follow chip
+   * pins to the top-right and is shown only when an agent is selected. Both
+   * chips' fills are sized to the measured text and clamped to stay within
+   * hud.mapRect (defensive against the absolute-x-as-width class of bug).
+   */
+  private renderMapOverlays(): void {
+    if (this.destroyed || !this.ctxChipGfx || !this.ctxChipText) return;
+    const map = this.hud.mapRect;
+    const padX = UIScene.CHIP_PAD_X;
+    const padY = UIScene.CHIP_PAD_Y;
+    const inset = UIScene.CHIP_INSET;
+
+    // Helper: paint a rounded chip fill + border behind a measured label, and
+    // return the chip's overall width (so callers can right-align). The label's
+    // top-left is at (chipX + padX, chipY + padY). Chip width never exceeds the
+    // map rect.
+    const paintChip = (
+      gfx: Phaser.GameObjects.Graphics,
+      label: Phaser.GameObjects.Text,
+      chipX: number,
+      chipY: number,
+      fill: number,
+      fillAlpha: number,
+      border: number,
+    ): number => {
+      const w = Math.min(map.w, Math.round(label.width + padX * 2));
+      const h = Math.round(label.height + padY * 2);
+      gfx.clear();
+      gfx.fillStyle(fill, fillAlpha);
+      gfx.fillRoundedRect(chipX, chipY, w, h, CHIP_RADIUS);
+      gfx.lineStyle(1, border, 1);
+      gfx.strokeRoundedRect(chipX, chipY, w, h, CHIP_RADIUS);
+      label.setPosition(chipX + padX, chipY + padY);
+      return w;
+    };
+
+    // -- Context chip (top-left, always shown). ------------------------------
+    this.ctxChipText.setText(`MADOW VALLEY · ${MAP_WIDTH}×${MAP_HEIGHT}`);
+    const ctxX = map.x + inset;
+    const ctxY = map.y + inset;
+    paintChip(
+      this.ctxChipGfx,
+      this.ctxChipText,
+      ctxX,
+      ctxY,
+      CHIP_CTX_FILL,
+      CHIP_CTX_ALPHA,
+      CHIP_CTX_BORDER,
+    );
+
+    // -- Follow chip (top-right, only when an agent is selected). ------------
+    if (!this.followChipGfx || !this.followChipText) return;
+    if (this.selectedAgent) {
+      this.followChipText.setText(`◎ Following · ${this.selectedAgent}`).setVisible(true);
+      this.followChipGfx.setVisible(true);
+      // Provisional width to compute the right-aligned X, then paint there.
+      const w = Math.min(map.w, Math.round(this.followChipText.width + padX * 2));
+      // Right-align inside the map rect; clamp so the chip never crosses the
+      // left edge (a long name on a narrow map clamps flush-left).
+      const fX = Math.max(map.x + inset, map.x + map.w - inset - w);
+      const fY = map.y + inset;
+      paintChip(
+        this.followChipGfx,
+        this.followChipText,
+        fX,
+        fY,
+        CHIP_FOLLOW_FILL,
+        CHIP_FOLLOW_ALPHA,
+        CHIP_FOLLOW_BORDER,
+      );
+    } else {
+      this.followChipGfx.clear();
+      this.followChipGfx.setVisible(false);
+      this.followChipText.setVisible(false);
     }
   }
 
@@ -1842,6 +2005,8 @@ export class UIScene extends Phaser.Scene {
     this.rebuildPanelEntries();
     this.renderActiveConv(); // hide the Active-conversation card behind the open panel
     this.publishPanelRect();
+    this.publishSelected(); // B-4: WorldScene follows + rings the selected agent
+    this.renderMapOverlays(); // show the follow chip
   }
 
   /**
@@ -1995,6 +2160,14 @@ export class UIScene extends Phaser.Scene {
     this.panelObjects = [];
     this.renderActiveConv(); // restore the Active-conversation card once the panel closes
     this.publishPanelRect();
+    this.publishSelected(); // B-4: clear the selection → WorldScene drops follow + ring
+    this.renderMapOverlays(); // hide the follow chip
+  }
+
+  /** B-4: publish the selected agent NAME (or null) to the registry so
+   *  WorldScene can camera-follow + pulse-ring it. Additive to REG_HUD. */
+  private publishSelected(): void {
+    this.registry.set(REG_SELECTED, this.selectedAgent);
   }
 
   /**
