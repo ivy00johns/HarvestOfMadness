@@ -211,8 +211,14 @@ export interface Observation {
     currentPlanStep?: string | null;
     /** v2 — affinity snapshot for nearby/known agents, newest-first, cap 5 */
     relationships?: { name: string; affinity: number }[];
-    /** v3 — events this agent has heard about (for attend/spread behavior). */
-    knownEvents?: (SimEvent & { isNow: boolean })[];
+    /**
+     * v3 — events this agent has heard about (for attend/spread behavior).
+     * Phase C · Slice 1: `homePathTiles` is the agent's home→event A* path length
+     * (tiles), computed in Cognition.enrichObservation and read by the mock
+     * attendance gate. Optional + additive — absent on every synthetic
+     * Observation, so existing callers / wire / redact tests are unaffected.
+     */
+    knownEvents?: (SimEvent & { isNow: boolean; homePathTiles?: number })[];
     /** v3 — for an event host: town agents who have NOT yet heard about it (with positions), so the host can go invite them. */
     inviteTargets?: { name: string; pos: Vec2 }[];
     /**
