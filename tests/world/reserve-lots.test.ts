@@ -8,8 +8,8 @@ const at = (p: Vec2): TileType => map.tiles[p.y][p.x];
 const cheb = (a: Vec2, b: Vec2) => Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
 
 describe("reserve lots (future-hamlet capacity, stamp NOTHING)", () => {
-  it("reserves at least 14 drop-in lots", () => {
-    expect(RESERVE_LOTS.length).toBeGreaterThanOrEqual(14);
+  it("reserves at least 11 drop-in lots", () => {
+    expect(RESERVE_LOTS.length).toBeGreaterThanOrEqual(11);
   });
 
   it("every lot's house footprint AND plot are entirely grass (nothing stamped)", () => {

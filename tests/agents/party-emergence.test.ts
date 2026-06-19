@@ -14,7 +14,7 @@
  *   and a reachability floor of 100 tiles (sized for the 140x100 canvas, where a
  *   corner hamlet sits ~95 A* tiles from a central tavern).
  *
- * Harness: a DIRECT synchronous-ish sim loop over all 12 PERSONAS using the
+ * Harness: a DIRECT synchronous-ish sim loop over all 15 PERSONAS using the
  * real CognitionSystem (mock mode), real World / TimeSystem, real
  * buildObservation + enrichObservation, and the real mockRouter + executeAction
  * via runDecisionCycle (msPerTile: 0 → instant walking, no timers needed).
@@ -27,10 +27,10 @@
  * Day 2 morning+afternoon give extra spreading before convergence fires at evening.
  *
  * Assertions:
- *   1. Diffusion: knowerCount("party-d2") ≥ 4 of 12 by end of day-2 afternoon.
+ *   1. Diffusion: knowerCount("party-d2") ≥ 4 of 15 by end of day-2 afternoon.
  *   2. Convergence: ≥ 3 distinct agents within Chebyshev ≤ 1 of tavern during day-2 evening.
  *   3. Feed narration: ≥1 event_seeded, ≥1 event_heard, ≥1 event_arrived emitted.
- *   4. Kill-switch (separate it): WITHOUT seeding, < 2 agents cluster at the
+ *   4. Kill-switch (separate it): WITHOUT seeding, < 3 agents cluster at the
  *      tavern in the same phase, knowerCount = 0.
  *   5. Reachability (separate it): every homestead door can reach the tavern
  *      within ≤ 100 tiles via A*, so instant-walk is a valid stand-in.
@@ -191,7 +191,7 @@ afterEach(() => {
 
 describe("party-emergence proof", () => {
   it(
-    "positive: seed → diffuse (≥4 of 12 knowers) → converge (≥3 at tavern, ~7 with margin) with narration feed",
+    "positive: seed → diffuse (≥4 of 15 knowers) → converge (≥3 at tavern, ~7 with margin) with narration feed",
     async () => {
       const { cognition, busEvents, agents } = await runPartySim(true);
 
@@ -199,7 +199,7 @@ describe("party-emergence proof", () => {
       const finalKnowerCount = cognition.events.knowerCount(EVENT_ID);
       expect(
         finalKnowerCount,
-        `Expected ≥ 4 of 12 agents to know party-d2, got ${finalKnowerCount}`,
+        `Expected ≥ 4 of 15 agents to know party-d2, got ${finalKnowerCount}`,
       ).toBeGreaterThanOrEqual(4);
 
       // -- 2. Convergence -----------------------------------------------------

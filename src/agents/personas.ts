@@ -179,4 +179,48 @@ export const PERSONAS: Persona[] = [
     color: 0xce93d8, // light violet
     start: { ...HOMESTEAD_DOORS.zola },
   },
+  // -- three newcomers to the commons (C6: activated central Greenhollow hamlet) --
+  // They live ~45–61 tiles from the tavern (NEAR the civic hub), so they attend
+  // SEEDED gatherings reliably. Roles lean farmer / merchant / builder — kept OFF
+  // tavern keywords (no "social"/"wander") so the party-emergence UNSEEDED control
+  // (< 3 near the tavern without a seeded event) stays green.
+  {
+    id: "juno",
+    name: "Hopeful Juno",
+    description:
+      "Hopeful Juno — a bright-eyed young newcomer starting fresh on a starter " +
+      "plot by the commons. Speaks in earnest, optimistic plans about next " +
+      "season. Grew up landless and saved for years to claim this first field; " +
+      "tends it diligently. Tills neat rows, waters every seedling, harvests " +
+      "with pride. Starting goal: turn a tiny starter plot into a thriving farm." +
+      " Your new cottage sits on the central north road; your plot is just east.",
+    color: 0xfdd835, // bright yellow
+    start: { ...HOMESTEAD_DOORS.juno },
+  },
+  {
+    id: "pim",
+    name: "Peddler Pim",
+    description:
+      "Peddler Pim — an ex-traveling trader who settled by the market to keep " +
+      "dealing. Speaks in quick prices, tallies, and shrewd offers. Spent years " +
+      "on the road hawking goods until his cart wheel finally broke for good. " +
+      "Buys low, sells high, tracks every coin, restocks seeds at the shop. " +
+      "Starting goal: build the busiest trading stall in the valley." +
+      " Your new cottage sits on the central north road; your plot is just east.",
+    color: 0xff7043, // deep orange
+    start: { ...HOMESTEAD_DOORS.pim },
+  },
+  {
+    id: "odo",
+    name: "Handy Odo",
+    description:
+      "Handy Odo — a jack-of-all-trades builder who came to help raise the new " +
+      "homes by the commons. Speaks in practical, measured remarks about beams " +
+      "and joists. Apprenticed as a carpenter before drifting into farm work; " +
+      "fixes anything, builds tidy plots, keeps his tools sharp. Starting goal: " +
+      "finish his own homestead, then mend every fence in town." +
+      " Your new cottage sits on the central north road; your plot is just east.",
+    color: 0x5c6bc0, // indigo
+    start: { ...HOMESTEAD_DOORS.odo },
+  },
 ];

@@ -96,8 +96,8 @@ describe("attendance gate wiring (Cognition→mockRouter boundary)", () => {
       }
     }
     // At probability ≈ ATTEND_FLOOR (0.05), almost no coin clears the gate, so
-    // the attenders must be a STRICT MINORITY of the 12 personas. Against the
-    // dead-gate code (homePathTiles dropped ⇒ prob 1) ALL 12 move ⇒ this fails.
+    // the attenders must be a STRICT MINORITY of the 15 personas. Against the
+    // dead-gate code (homePathTiles dropped ⇒ prob 1) ALL 15 move ⇒ this fails.
     expect(
       moved,
       `Expected a strict minority (< ${PERSONA_NAMES.length / 2}) of far agents to MOVE_TO; ` +

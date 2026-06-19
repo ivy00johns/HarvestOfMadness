@@ -253,11 +253,12 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
       deterministic djb2 coin `willAttend`); `Cognition` threads the memoized
       home→event A* length through an additive Observation field; the mock ATTEND
       branch gates the traveler move-to (host + already-arrived always attend).
-      1217 green, 3 adversarial critics. _Honest caveat:_ on today's symmetric
-      corner-hamlet map all homes are 89–99 tiles from the central tavern, so
-      distance barely differentiates — the coin selects attendees; the near/far
-      gradient is real in the formula (unit-test-proven) but only bites once nearer
-      homesteads (reserve lots) or non-central gatherings exist. A
+      1217 green, 3 adversarial critics. _Honest caveat (resolved by C6, `5044f23`):_
+      on the original symmetric corner-hamlet map all 12 homes are 79–99 tiles from
+      the central tavern, so distance barely differentiated — the coin selected
+      attendees but the near/far gradient, real in the formula (unit-test-proven),
+      didn't bite. C6 activated three central homes at 45–61 tiles, so it now
+      genuinely differentiates (near ~0.70–0.78 vs far ~0.51–0.55 attend prob). A
       `Cognition→mockRouter` boundary test pins the wiring (an earlier cut had
       `normalizeObservation` silently drop the field, leaving the gate inert).
 - [~] Conversations & gossip at Smallville fidelity on the free LLM proxy.
@@ -279,7 +280,16 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
       (subject/claim) + rumor distortion → live-LLM summarization + call metering.
 - [ ] Per-hamlet visual identity (roof palette per hamlet).
 - [ ] Terrain transition tiles (grass↔dirt↔path edges), second pond.
-- [ ] Activate reserve lots into live hamlets as the population grows.
+- [x] **Activate reserve lots into live hamlets** (C6): promoted three central
+      reserve lots (lot_n4/n5/n6) into a live "Greenhollow" hamlet + three newcomers
+      (juno/pim/odo) — the town's first growth INWARD, toward the commons. ✓ `5044f23`
+      — pays off distance-attendance: the new homes are 45/53/61 A* tiles from the
+      tavern vs the 12 corners' 79–99, so the gradient now bites. `HOMESTEADS` 12→15
+      (appended; brix stays [0]), `RESERVE_LOTS` 14→11 (capacity consumed by design).
+      New `reserve-activation.test.ts` pins the persona↔door wiring + the strict
+      nearer-than-every-corner A* payoff; the party-emergence unseeded <3 control
+      stays green (newcomers lean farmer/merchant/builder, off tavern keywords —
+      verified at count 0). 1253 green, 3 adversarial critics + mutation-teeth.
 
 **Phase D — Living Homes (agent-owned, furnishable, growable)** — _new headline system; see §3a_
 - [ ] D1. **Agent-chosen furnishings** — agents acquire + place furniture they pick
