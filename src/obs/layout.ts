@@ -149,8 +149,8 @@ export const STRIP_H = 200;
 export const STRIP_HEADER_H = 18;
 /** Full bottom-strip card — laid out LEFT→RIGHT in a single row; the strip
  *  scrolls horizontally so every agent's card is reachable (UIScene cardScroll).
- *  Wide enough for the full intrinsic-drive needs row on its own line. */
-export const CARD_W = 246;
+ *  248px per the SpaceCon card design (handoff §4 — fixed width 248). */
+export const CARD_W = 248;
 export const CARD_H = STRIP_H - STRIP_HEADER_H - 8; // card body height inside strip
 export const CARD_GAP = 8;
 

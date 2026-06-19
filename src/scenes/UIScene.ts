@@ -26,12 +26,9 @@ import { KillSwitchModel } from "../obs/KillSwitch";
 import { toCssColor } from "../obs/EventLog";
 import {
   buildAgentCard,
-  formatAffinityRow,
-  formatNeedsRow,
   formatTraceEntry,
   formatTraceSummary,
   personaText,
-  topRelationships,
   type ObsAgentCardModel,
 } from "../obs/Inspector";
 import {
@@ -56,20 +53,25 @@ import {
   borderCard,
   borderControl,
   brand400,
+  brand500,
   brand600,
   card as cardSurface,
+  cardSelected,
   cmdGradTop,
   control,
   cyan300,
   cyan500,
+  divider,
   ink300,
   ink400,
   ink500,
   p1,
   p2,
   positive500,
+  tintIdle,
   white,
 } from "../obs/theme";
+import { actionVerbColor, energyLevelColor, stateBadge } from "../obs/cardStyle";
 import { formatCognitionMeter } from "../obs/CognitionMeter";
 import { buildPartyPanel } from "../obs/PartyPanel";
 import { buildGovernancePanel } from "../obs/GovernancePanel";
@@ -95,7 +97,6 @@ const PX_KPI_LABEL = `${FONT_SIZE_KPI_LABEL}px`;
 const COLOR_TEXT = white.hex; // body — white
 const COLOR_DIM = ink300.hex; // secondary labels — ink300 (body)
 const COLOR_FAINT = ink500.hex; // tertiary / faint meta — ink500
-const COLOR_GOLD = p2.hex; // gold → amber (P2)
 const COLOR_GOAL = cyan300.hex; // the one accent → cyan300
 const COLOR_PLAN = brand400.hex; // plan → brand400
 const COLOR_OK = positive500.hex; // ok → positive500
@@ -118,11 +119,6 @@ const CMD_PHASE_GLYPH = p2.hex; // clock phase glyph (amber)
 const CMD_COST_OK = positive500.hex; // $0.00 (mock) cost chip color
 const CMD_INFLIGHT = cyan300.hex; // in-flight ⟳ chip accent
 
-const FSM_COLORS: Record<string, string> = {
-  IDLE: ink400.hex,
-  THINKING: p2.hex,
-  EXECUTING: positive500.hex,
-};
 
 const PHASE_ICON: Record<string, string> = {
   morning: "☀",
@@ -153,21 +149,25 @@ function detectModelMode(): string | undefined {
 }
 
 interface CardUi {
+  /** which agent this card currently draws — drives the selected-card style. */
+  name: string;
   bg: Phaser.GameObjects.Rectangle;
   swatch: Phaser.GameObjects.Rectangle;
-  name: Phaser.GameObjects.Text;
-  fsm: Phaser.GameObjects.Text;
+  nameText: Phaser.GameObjects.Text;
+  /** state-badge pill (tinted fill) + its uppercase label. */
+  badgeBg: Phaser.GameObjects.Rectangle;
+  badge: Phaser.GameObjects.Text;
   gold: Phaser.GameObjects.Text;
   energyBg: Phaser.GameObjects.Rectangle;
   energyFill: Phaser.GameObjects.Rectangle;
   energyText: Phaser.GameObjects.Text;
-  plan: Phaser.GameObjects.Text;
   goal: Phaser.GameObjects.Text;
-  needs: Phaser.GameObjects.Text;
-  thought: Phaser.GameObjects.Text | null;
+  /** action verb (verb-colored) + a trailing green ✓ when it succeeded. */
   action: Phaser.GameObjects.Text;
-  relRows: Phaser.GameObjects.Text[];
-  meta: Phaser.GameObjects.Text;
+  check: Phaser.GameObjects.Text;
+  /** top divider above the thought quote. */
+  thoughtRule: Phaser.GameObjects.Rectangle;
+  thought: Phaser.GameObjects.Text;
 }
 
 export class UIScene extends Phaser.Scene {
@@ -540,7 +540,10 @@ export class UIScene extends Phaser.Scene {
       const ui = this.cards.get(agent.name);
       if (!ui) continue;
       this.updateEnergy(ui, agent.energy);
-      ui.fsm.setText(agent.fsm).setColor(FSM_COLORS[agent.fsm] ?? "#8a8f98");
+      // Keep the state badge live without a full card rebuild.
+      const b = stateBadge(agent.fsm);
+      ui.badge.setText(b.label).setColor(`#${b.color.toString(16).padStart(6, "0")}`);
+      ui.badgeBg.setFillStyle(b.tint.color, b.tint.alpha);
     }
   }
 
@@ -1108,6 +1111,16 @@ export class UIScene extends Phaser.Scene {
     this.kpiValues[0]?.setText(String(live.length));
     this.kpiValues[1]?.setText(String(conversations));
     this.kpiValues[2]?.setText(avgEnergy);
+    // AVG ENERGY tile color follows the SAME energy-color rule as the cards —
+    // the single cardStyle helper (design §4 thresholds). No agents → neutral.
+    if (agents.length > 0) {
+      const ratio = energySum / agents.length / 100;
+      this.kpiValues[2]?.setColor(
+        `#${energyLevelColor(ratio).toString(16).padStart(6, "0")}`,
+      );
+    } else {
+      this.kpiValues[2]?.setColor(COLOR_DIM);
+    }
     this.kpiValues[3]?.setText(formatEconomy(goldSum));
     this.kpiValues[4]?.setText(String(decisionsSum));
   }
@@ -1460,11 +1473,9 @@ export class UIScene extends Phaser.Scene {
   private destroyCards(): void {
     for (const ui of this.cards.values()) {
       for (const obj of Object.values(ui)) {
-        if (Array.isArray(obj)) {
-          for (const o of obj) o.destroy();
-        } else {
-          (obj as Phaser.GameObjects.GameObject | null)?.destroy();
-        }
+        // `name` is a plain string tag (not a game object) — skip it.
+        if (typeof obj === "string") continue;
+        (obj as Phaser.GameObjects.GameObject | null)?.destroy();
       }
     }
     this.cards.clear();
@@ -1482,9 +1493,8 @@ export class UIScene extends Phaser.Scene {
    */
   private createCard(x: number, y: number, cardH: number): CardUi {
     const cardW = this.hud.cardW;
-    const padX = 9;
-    const small = { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
-    const smallMono = { fontFamily: MONO_FONT, fontSize: PX_SMALL, color: COLOR_DIM };
+    const padX = 14; // design §4: padding 13×14
+    const padTop = 13;
     const text = (
       tx: number,
       ty: number,
@@ -1492,156 +1502,180 @@ export class UIScene extends Phaser.Scene {
     ): Phaser.GameObjects.Text =>
       this.add.text(tx, ty, "", style).setDepth(DEPTH_HUD_TEXT);
 
+    // Card surface — idle style by default; updateCard swaps to the selected
+    // style (cardSelected bg + brand500 border) when this card's agent is the
+    // selected one. Tokens only (theme.ts single source).
     const bg = this.add
-      .rectangle(x, y, cardW, cardH, COLOR_CARD_BG, 0.97)
+      .rectangle(x, y, cardW, cardH, cardSurface.num, 0.97)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, COLOR_BORDER, 1)
+      .setStrokeStyle(1, borderCard.num, 1)
       .setDepth(DEPTH_HUD);
 
-    // visual sprite link: swatch in the agent's sprite color
+    // -- Header row: 11px swatch + name + right-aligned state badge -----------
+    const headerY = y + padTop;
     const swatch = this.add
-      .rectangle(x + padX, y + 8, 12, 12, 0xffffff, 1)
+      .rectangle(x + padX, headerY + 2, 11, 11, white.num, 1)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, 0xffffff, 0.5)
       .setDepth(DEPTH_HUD_TEXT);
 
-    // Fixed vertical stack — 8 single-line body rows spaced by a comfortable
-    // pitch that fits the ~174px card body without collision.
-    const headerH = 22;
-    const pitch = Math.min(19, Math.max(15, Math.floor((cardH - headerH - 4) / 8)));
-    const rowY = (slot: number): number => y + headerH + slot * pitch;
+    // State-badge pill (tinted fill) pinned to the card's right edge; its label
+    // is right-aligned over it. Sized to fit the longest label ("EXECUTING").
+    const badgeW = 70;
+    const badgeH = 16;
+    const badgeRight = x + cardW - padX;
+    const badgeBg = this.add
+      .rectangle(badgeRight, headerY, badgeW, badgeH, tintIdle.color, tintIdle.alpha)
+      .setOrigin(1, 0)
+      .setDepth(DEPTH_HUD_TEXT);
+    const badge = text(badgeRight - 6, headerY + 3, {
+      fontFamily: MONO_FONT,
+      fontSize: PX_SMALL,
+      color: ink400.hex,
+      fontStyle: "bold",
+    }).setOrigin(1, 0);
 
-    const rowGold = rowY(0);
-    const rowPlan = rowY(1);
-    const rowGoal = rowY(2);
-    const rowNeeds = rowY(3); // intrinsic-drive bars on their OWN full-width row
-    const rowThought = rowY(4);
-    const rowAction = rowY(5);
-    const rowRel = rowY(6);
-    const rowMeta = rowY(7);
+    const nameText = text(x + padX + 16, headerY, {
+      fontFamily: HUD_FONT,
+      fontSize: PX_BASE,
+      color: white.hex,
+      fontStyle: "bold",
+    });
 
-    const barW = Math.round(cardW * 0.32);
-    const barX = x + cardW - barW - 34;
+    // -- Stats row: gold (amber mono) + energy bar + E{n} --------------------
+    const statsY = headerY + 27;
+    const gold = text(x + padX, statsY, {
+      fontFamily: MONO_FONT,
+      fontSize: PX_SMALL,
+      color: p2.hex,
+    });
+    // Energy bar (6px track, divider fill) sits between the gold and the E{n}
+    // readout. The E{n} label is right-aligned at the card edge.
+    const energyText = text(x + cardW - padX, statsY, {
+      fontFamily: MONO_FONT,
+      fontSize: PX_SMALL,
+      color: ink400.hex,
+    }).setOrigin(1, 0);
+    const barRight = x + cardW - padX - 36;
+    const barLeft = x + padX + 56;
+    const barW = Math.max(20, barRight - barLeft);
+    const barY = statsY + 6;
+    const energyBg = this.add
+      .rectangle(barLeft, barY, barW, 6, divider.num, 1)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD_TEXT);
+    const energyFill = this.add
+      .rectangle(barLeft, barY, barW, 6, positive500.num, 1)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD_TEXT);
+
+    // -- Goal (body copy, ink300) --------------------------------------------
+    const goalY = statsY + 22;
+    const goal = text(x + padX, goalY, {
+      fontFamily: HUD_FONT_BODY,
+      fontSize: PX_SMALL,
+      color: ink300.hex,
+      wordWrap: { width: cardW - 2 * padX },
+    });
+
+    // -- Action row: verb-colored verb + green ✓ -----------------------------
+    const actionY = goalY + 36;
+    const action = text(x + padX, actionY, {
+      fontFamily: MONO_FONT,
+      fontSize: PX_SMALL,
+      color: brand400.hex,
+    });
+    const check = text(x + cardW - padX, actionY, {
+      fontFamily: MONO_FONT,
+      fontSize: PX_SMALL,
+      color: positive500.hex,
+    }).setOrigin(1, 0);
+
+    // -- Thought quote: top divider + italic body, curly-quoted --------------
+    const ruleY = actionY + 22;
+    const thoughtRule = this.add
+      .rectangle(x + padX, ruleY, cardW - 2 * padX, 1, divider.num, 1)
+      .setOrigin(0, 0)
+      .setDepth(DEPTH_HUD_TEXT);
+    const thought = text(x + padX, ruleY + 8, {
+      fontFamily: HUD_FONT_BODY,
+      fontSize: PX_SMALL,
+      fontStyle: "italic",
+      color: ink400.hex,
+      wordWrap: { width: cardW - 2 * padX },
+    });
 
     return {
+      name: "",
       bg,
       swatch,
-      name: text(x + padX + 18, y + 5, {
-        fontFamily: HUD_FONT,
-        fontSize: PX_BASE,
-        color: "#ffffff",
-        fontStyle: "bold",
-      }),
-      fsm: text(x + cardW - padX, y + 7, { ...small }).setOrigin(1, 0),
-      gold: text(x + padX, rowGold, {
-        fontFamily: MONO_FONT,
-        fontSize: PX_SMALL,
-        color: COLOR_GOLD,
-      }),
-      energyBg: this.add
-        .rectangle(barX, rowGold + 3, barW, 9, 0x323844, 1)
-        .setOrigin(0, 0)
-        .setDepth(DEPTH_HUD_TEXT),
-      energyFill: this.add
-        .rectangle(barX, rowGold + 3, barW, 9, positive500.num, 1)
-        .setOrigin(0, 0)
-        .setDepth(DEPTH_HUD_TEXT),
-      energyText: text(x + cardW - padX, rowGold, { ...smallMono }).setOrigin(1, 0),
-      plan: text(x + padX, rowPlan, { ...small, color: COLOR_PLAN }),
-      // Prose row: the goal reads as body copy → IBM Plex Sans (FONT_BODY).
-      goal: text(x + padX, rowGoal, {
-        ...small,
-        fontFamily: HUD_FONT_BODY,
-        color: COLOR_GOAL,
-      }),
-      // Wave 3a — intrinsic-drive bars on their own left-aligned row (full width).
-      needs: text(x + padX, rowNeeds, { ...smallMono }),
-      // Prose row: the thought quote reads as body copy → IBM Plex Sans.
-      thought: text(x + padX, rowThought, {
-        ...small,
-        fontFamily: HUD_FONT_BODY,
-        color: ink300.hex,
-      }),
-      action: text(x + padX, rowAction, {
-        fontFamily: HUD_FONT,
-        fontSize: PX_SMALL,
-        color: COLOR_OK,
-      }),
-      relRows: [text(x + padX, rowRel, { ...small })],
-      meta: text(x + padX, rowMeta, { ...smallMono, color: COLOR_FAINT }),
+      nameText,
+      badgeBg,
+      badge,
+      gold,
+      energyBg,
+      energyFill,
+      energyText,
+      goal,
+      action,
+      check,
+      thoughtRule,
+      thought,
     };
   }
 
   private updateCard(ui: CardUi, card: ObsAgentCardModel): void {
+    ui.name = card.name;
     if (typeof card.color === "number") ui.swatch.setFillStyle(card.color, 1);
+
+    // Selected-card style: when this card's agent is the selected one, swap to
+    // the cardSelected surface + a brand500 ring (purely additive — clicking
+    // still toggles the trace panel). Tokens only.
+    const selected = this.selectedAgent === card.name;
+    ui.bg.setFillStyle(selected ? cardSelected.num : cardSurface.num, 0.97);
+    ui.bg.setStrokeStyle(1, selected ? brand500.num : borderCard.num, 1);
+
     // Wave 4a — append the derived role to the name only when non-default.
     const roleTag = card.role && card.role !== "farmer" ? ` · ${card.role}` : "";
-    // Clip the name short so the right-aligned FSM chip never collides with it.
-    ui.name.setText(this.clip(`${card.name}${roleTag}`, 19));
-    ui.fsm.setText(card.fsm).setColor(FSM_COLORS[card.fsm] ?? "#8a8f98");
+    // Clip the name short so the right-aligned state badge never collides.
+    ui.nameText.setText(this.clip(`${card.name}${roleTag}`, 17));
+
+    // State badge (design §4) — label + text color + tint pill, from the pure
+    // helper so the rule lives in one place.
+    const b = stateBadge(card.fsm);
+    ui.badge.setText(b.label).setColor(`#${b.color.toString(16).padStart(6, "0")}`);
+    ui.badgeBg.setFillStyle(b.tint.color, b.tint.alpha);
+
     ui.gold.setText(`${card.gold}g`);
     this.updateEnergy(ui, card.energy);
 
-    // v2: current plan step ("PLAN: water east plot") — hidden when absent.
-    // Clip lengths tuned to the ~246px strip card (≈30 chars usable).
-    ui.plan.setText(card.planStep ? this.clip(`PLAN: ${card.planStep}`, 30) : "");
-    ui.goal.setText(this.clip(`goal: ${card.goal ?? "—"}`, 30));
-    // Wave 3a — intrinsic-drive bars on their own row (empty when no needs vector)
-    ui.needs.setText(card.needs ? formatNeedsRow(card.needs) : "");
-    // single thought line in the compact card (full thought in the trace panel)
-    ui.thought?.setText(card.lastThought ? `“${this.clip(card.lastThought, 28)}”` : "…");
+    ui.goal.setText(this.clip(card.goal ?? "—", 64));
 
+    // Action row: the verb is colored BY VERB (helper); a trailing green ✓ marks
+    // a successful action (✗ + red marks a failure). The full reason text lives
+    // in the trace panel — the card face stays clean.
     if (card.lastAction) {
-      const { action, ok, reason } = card.lastAction;
-      ui.action
-        .setText(
-          this.clip(`${action} ${ok ? "✓" : "✗"}${!ok && reason ? ` ${reason}` : ""}`, 30),
-        )
-        .setColor(ok ? COLOR_OK : COLOR_BAD);
+      const { action, ok } = card.lastAction;
+      ui.action.setText(this.clip(action, 26)).setColor(
+        `#${actionVerbColor(action).toString(16).padStart(6, "0")}`,
+      );
+      ui.check.setText(ok ? "✓" : "✗").setColor(ok ? positive500.hex : p1.hex);
     } else {
-      ui.action.setText("—").setColor(COLOR_FAINT);
+      ui.action.setText("—").setColor(ink500.hex);
+      ui.check.setText("");
     }
 
-    // v2: affinity meter — top rows by |affinity|, signed bar + number
-    const rels = topRelationships(card.relationships ?? [], ui.relRows.length);
-    for (let i = 0; i < ui.relRows.length; i++) {
-      const row = ui.relRows[i];
-      const rel = rels[i];
-      if (rel) {
-        row.setText(formatAffinityRow(rel.name, rel.affinity));
-        row.setColor(
-          rel.affinity > 0 ? COLOR_OK : rel.affinity < 0 ? COLOR_BAD : COLOR_DIM,
-        );
-      } else if (row.text !== "") {
-        row.setText("");
-      }
-    }
-
-    // v2: memory/reflection stats — agent-provided counts win, the feed's
-    // event-derived counters (memory_written is feed-suppressed) back them up
-    const mem = card.memoryCount ?? this.feed.memoryCount(card.name);
-    const refl = card.reflectionCount ?? this.feed.reflectionCount(card.name);
-    const tok =
-      card.tokensIn !== null || card.tokensOut !== null
-        ? ` ${card.tokensIn ?? "?"}/${card.tokensOut ?? "?"}t`
-        : "";
-    ui.meta.setText(
-      this.clip(
-        `${card.model ?? "—"} ${card.latencyMs ?? "—"}ms${tok} d${card.decisionsToday}/${card.decisionsTotal} M:${mem} R:${refl}`,
-        32,
-      ),
-    );
+    // Thought quote — curly-quoted, italic; "…" when the agent has no last
+    // thought yet (honest empty, never fabricated).
+    ui.thought.setText(card.lastThought ? `“${this.clip(card.lastThought, 30)}”` : "…");
   }
 
   private updateEnergy(ui: CardUi, energy: number): void {
     const ratio = Phaser.Math.Clamp(energy, 0, 100) / 100;
     const fullW = ui.energyBg.width;
-    ui.energyFill.setSize(Math.max(1, Math.round(fullW * ratio)), 9);
-    // Energy color rule: >50% positive, >25% amber, else red. (Pre-existing
-    // thresholds kept; design §4 specifies >55% — aligned in the B-5 card slice.)
-    ui.energyFill.setFillStyle(
-      ratio > 0.5 ? positive500.num : ratio > 0.25 ? p2.num : p1.num,
-    );
+    ui.energyFill.setSize(Math.max(1, Math.round(fullW * ratio)), 6);
+    // The ONE energy-color source: the cardStyle helper (design §4 thresholds
+    // >55% / >25%). The KPI band + command bar read the same helper.
+    ui.energyFill.setFillStyle(energyLevelColor(ratio));
     ui.energyText.setText(`E${Math.round(energy)}`);
   }
 

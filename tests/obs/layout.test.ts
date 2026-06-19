@@ -85,6 +85,12 @@ describe("contract rule 14 — readable text", () => {
     for (const v of values) expect(Number.isInteger(v)).toBe(true);
   });
 
+  it("CARD_W is the SpaceCon card width (design §4: fixed 248px)", () => {
+    // B-5: the card width is pinned to the design's 248px. Exact assertion so a
+    // later drift away from the design constant fails loudly.
+    expect(CARD_W).toBe(248);
+  });
+
   it("card rects land on integer pixels for any sane agent count", () => {
     const hud = computeHud(VW, VH);
     for (const count of [1, 3, 6, 12, 26]) {
