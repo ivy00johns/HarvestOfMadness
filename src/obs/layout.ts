@@ -27,6 +27,7 @@
  * are retained (as thin wrappers over computeHud at the design size) so the
  * pure layout unit tests keep a stable design-size reference.
  */
+import { FONT_BODY, FONT_DISPLAY, FONT_MONO } from "./theme";
 
 // -- contract rule 14: every HUD font ≥ 12 logical px ------------------------
 // Readability polish: the whole scale is lifted ~15-25% over the old
@@ -36,15 +37,20 @@
 export const FONT_SIZE_SMALL = 13;
 export const FONT_SIZE_BASE = 15;
 export const FONT_SIZE_TITLE = 17;
+
 /**
- * Body family — a clean system sans for prose (names, labels, status) reads
- * noticeably softer than a terminal mono. Numerals/code rows (gold, energy,
- * meta, decision-trace JSON) keep MONO_FONT so columns stay aligned and the
- * clip-char math (chars × px) remains predictable.
+ * HUD font families — SpaceCon design-token stacks (single source: theme.ts).
+ *
+ *  - HUD_FONT (display, Space Grotesk) — names, numbers, titles, section headers.
+ *  - HUD_FONT_BODY (IBM Plex Sans) — prose: goals, thought/quote, persona, chat.
+ *  - MONO_FONT (IBM Plex Mono) — numeric/code rows, labels, telemetry, badges
+ *    where column alignment matters and the clip-char math (chars × px) holds.
  */
-export const HUD_FONT = "ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif";
+export const HUD_FONT = FONT_DISPLAY;
+/** Body family for prose strings (goal, thought/quote, persona, transcript). */
+export const HUD_FONT_BODY = FONT_BODY;
 /** Monospace family for numeric/code rows where column alignment matters. */
-export const MONO_FONT = "ui-monospace, Menlo, Consolas, monospace";
+export const MONO_FONT = FONT_MONO;
 
 export interface Rect {
   x: number;

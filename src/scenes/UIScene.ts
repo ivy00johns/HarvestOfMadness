@@ -43,6 +43,7 @@ import {
   FONT_SIZE_SMALL,
   FONT_SIZE_TITLE,
   HUD_FONT,
+  HUD_FONT_BODY,
   MONO_FONT,
   REG_HUD,
   computeHud,
@@ -50,6 +51,19 @@ import {
   unionRect,
   type HudLayout,
 } from "../obs/layout";
+import {
+  borderCard,
+  brand400,
+  card as cardSurface,
+  cyan300,
+  ink300,
+  ink400,
+  ink500,
+  p1,
+  p2,
+  positive500,
+  white,
+} from "../obs/theme";
 import { formatCognitionMeter } from "../obs/CognitionMeter";
 import { buildPartyPanel } from "../obs/PartyPanel";
 import { buildGovernancePanel } from "../obs/GovernancePanel";
@@ -66,27 +80,27 @@ const PX_SMALL = `${FONT_SIZE_SMALL}px`;
 const PX_BASE = `${FONT_SIZE_BASE}px`;
 const PX_TITLE = `${FONT_SIZE_TITLE}px`;
 
-// Readability palette: a calm slate/zinc dark-UI surface (not pure black),
-// higher-contrast off-white body text, and ONE restrained teal accent for the
-// primary highlight. Status greens/ambers/reds are softened a touch so they
-// read as muted UI tones rather than saturated neon-on-black.
-const COLOR_TEXT = "#eef1f6"; // near-white body — high contrast on slate
-const COLOR_DIM = "#a8b0be"; // secondary labels
-const COLOR_FAINT = "#7b8493"; // tertiary / meta
-const COLOR_GOLD = "#f2c560"; // muted amber (gold) — calmer than #ffd700
-const COLOR_GOAL = "#5ec8b8"; // restrained teal accent (the one highlight)
-const COLOR_PLAN = "#88a6e6"; // soft blue
-const COLOR_OK = "#84c878"; // muted green
-const COLOR_BAD = "#e8788c"; // muted red
-const COLOR_CHROME = 0x1c2027; // slate panel surface (not black)
-const COLOR_CARD_BG = 0x21262f; // slightly lifted card surface
-const COLOR_BORDER = 0x39414f; // subtle separator
-const COLOR_HEADER = "#9aa4b4"; // section-header label tone (AGENTS / EVENTS)
+// SpaceCon palette (cool-navy mission-control): these constants keep their
+// names so every existing usage picks up the navy palette, but their VALUES are
+// now sourced from the design-token module (src/obs/theme.ts — single source of
+// truth). Semantic mapping per contracts/phase-b-foundation.md §Retheme map.
+const COLOR_TEXT = white.hex; // body — white
+const COLOR_DIM = ink300.hex; // secondary labels — ink300 (body)
+const COLOR_FAINT = ink500.hex; // tertiary / faint meta — ink500
+const COLOR_GOLD = p2.hex; // gold → amber (P2)
+const COLOR_GOAL = cyan300.hex; // the one accent → cyan300
+const COLOR_PLAN = brand400.hex; // plan → brand400
+const COLOR_OK = positive500.hex; // ok → positive500
+const COLOR_BAD = p1.hex; // bad → red (P1)
+const COLOR_CHROME = cardSurface.num; // chrome → card surface
+const COLOR_CARD_BG = cardSurface.num; // card background → card surface
+const COLOR_BORDER = borderCard.num; // separator → card border
+const COLOR_HEADER = ink400.hex; // mono section-header labels → ink400
 
 const FSM_COLORS: Record<string, string> = {
-  IDLE: "#8a93a2",
-  THINKING: "#dcae6b",
-  EXECUTING: "#84c878",
+  IDLE: ink400.hex,
+  THINKING: p2.hex,
+  EXECUTING: positive500.hex,
 };
 
 const PHASE_ICON: Record<string, string> = {
@@ -956,7 +970,7 @@ export class UIScene extends Phaser.Scene {
     // region; a slim "now speaking" caption sits at the top of the panel body.
     this.transcriptTitle = this.add
       .text(r.x + 10, r.y + 6, "", {
-        fontFamily: HUD_FONT,
+        fontFamily: HUD_FONT_BODY,
         fontSize: PX_SMALL,
         color: COLOR_FAINT,
       })
@@ -972,7 +986,7 @@ export class UIScene extends Phaser.Scene {
       this.transcriptRows.push(
         this.add
           .text(r.x + 10, rowTop, "", {
-            fontFamily: HUD_FONT,
+            fontFamily: HUD_FONT_BODY,
             fontSize: PX_SMALL,
             color: COLOR_TEXT,
             wordWrap: { width: r.w - 20 },
@@ -1184,17 +1198,24 @@ export class UIScene extends Phaser.Scene {
         .setOrigin(0, 0)
         .setDepth(DEPTH_HUD_TEXT),
       energyFill: this.add
-        .rectangle(barX, rowGold + 3, barW, 9, 0x84c878, 1)
+        .rectangle(barX, rowGold + 3, barW, 9, positive500.num, 1)
         .setOrigin(0, 0)
         .setDepth(DEPTH_HUD_TEXT),
       energyText: text(x + cardW - padX, rowGold, { ...smallMono }).setOrigin(1, 0),
       plan: text(x + padX, rowPlan, { ...small, color: COLOR_PLAN }),
-      goal: text(x + padX, rowGoal, { ...small, color: COLOR_GOAL }),
+      // Prose row: the goal reads as body copy → IBM Plex Sans (FONT_BODY).
+      goal: text(x + padX, rowGoal, {
+        ...small,
+        fontFamily: HUD_FONT_BODY,
+        color: COLOR_GOAL,
+      }),
       // Wave 3a — intrinsic-drive bars on their own left-aligned row (full width).
       needs: text(x + padX, rowNeeds, { ...smallMono }),
+      // Prose row: the thought quote reads as body copy → IBM Plex Sans.
       thought: text(x + padX, rowThought, {
         ...small,
-        color: "#cdd3dd",
+        fontFamily: HUD_FONT_BODY,
+        color: ink300.hex,
       }),
       action: text(x + padX, rowAction, {
         fontFamily: HUD_FONT,
@@ -1271,8 +1292,10 @@ export class UIScene extends Phaser.Scene {
     const ratio = Phaser.Math.Clamp(energy, 0, 100) / 100;
     const fullW = ui.energyBg.width;
     ui.energyFill.setSize(Math.max(1, Math.round(fullW * ratio)), 9);
+    // Energy color rule: >50% positive, >25% amber, else red. (Pre-existing
+    // thresholds kept; design §4 specifies >55% — aligned in the B-5 card slice.)
     ui.energyFill.setFillStyle(
-      ratio > 0.5 ? 0x84c878 : ratio > 0.25 ? 0xdcae6b : 0xe8788c,
+      ratio > 0.5 ? positive500.num : ratio > 0.25 ? p2.num : p1.num,
     );
     ui.energyText.setText(`E${Math.round(energy)}`);
   }
@@ -1331,7 +1354,8 @@ export class UIScene extends Phaser.Scene {
           `${agent ? personaText(agent.persona) : ""} · click a row to expand · wheel scrolls`,
           70,
         ),
-        { fontFamily: HUD_FONT, fontSize: PX_SMALL, color: COLOR_FAINT },
+        // Persona prose → IBM Plex Sans (FONT_BODY).
+        { fontFamily: HUD_FONT_BODY, fontSize: PX_SMALL, color: COLOR_FAINT },
       )
       .setDepth(DEPTH_PANEL + 1);
     const close = this.add

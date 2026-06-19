@@ -20,18 +20,37 @@ import { UIScene } from "./scenes/UIScene";
 
 const SCENES: Phaser.Types.Scenes.SceneType[] = [BootScene, WorldScene, UIScene];
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: "game",
-  pixelArt: true,
-  roundPixels: true,
-  backgroundColor: BACKGROUND_COLOR,
-  scale: {
-    // Canvas tracks the window; the camera (WorldScene) frames the map.
-    mode: Phaser.Scale.RESIZE,
-    autoCenter: Phaser.Scale.NO_CENTER,
-    width: "100%",
-    height: "100%",
-  },
-  scene: SCENES,
-});
+/**
+ * Web fonts (index.html → Space Grotesk / IBM Plex Sans / IBM Plex Mono) load
+ * async. Phaser measures glyph metrics at text-creation time, so booting before
+ * the fonts arrive lays HUD text out with a fallback face and never reflows.
+ * Wait for font readiness (bounded by a 1.5s timeout so a slow CDN can't hang
+ * the boot) before constructing the game. The `document.fonts` guard keeps the
+ * node/jsdom test env — where there is no FontFaceSet — from throwing.
+ */
+async function bootGame(): Promise<void> {
+  if (typeof document !== "undefined" && (document as { fonts?: FontFaceSet }).fonts?.ready) {
+    await Promise.race([
+      (document as { fonts: FontFaceSet }).fonts.ready,
+      new Promise<void>((resolve) => setTimeout(resolve, 1500)),
+    ]);
+  }
+
+  new Phaser.Game({
+    type: Phaser.AUTO,
+    parent: "game",
+    pixelArt: true,
+    roundPixels: true,
+    backgroundColor: BACKGROUND_COLOR,
+    scale: {
+      // Canvas tracks the window; the camera (WorldScene) frames the map.
+      mode: Phaser.Scale.RESIZE,
+      autoCenter: Phaser.Scale.NO_CENTER,
+      width: "100%",
+      height: "100%",
+    },
+    scene: SCENES,
+  });
+}
+
+void bootGame();
