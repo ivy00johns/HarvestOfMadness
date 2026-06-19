@@ -1427,7 +1427,7 @@ export class UIScene extends Phaser.Scene {
         fontFamily: MONO_FONT,
         fontSize: PX_SMALL,
         color: COLOR_PLAN,
-        wordWrap: { width: r.w - 2 * padX },
+        wordWrap: { width: Math.max(20, r.w - 2 * padX) },
         lineSpacing: 1,
       })
       .setDepth(DEPTH_HUD_TEXT)
@@ -1448,7 +1448,7 @@ export class UIScene extends Phaser.Scene {
             fontFamily: HUD_FONT_BODY,
             fontSize: PX_SMALL,
             color: COLOR_TEXT,
-            wordWrap: { width: r.w - 2 * padX - 16 },
+            wordWrap: { width: Math.max(20, r.w - 2 * padX - 16) },
             lineSpacing: 2,
           })
           .setDepth(DEPTH_HUD_TEXT)
@@ -1673,7 +1673,7 @@ export class UIScene extends Phaser.Scene {
       if (!bubble || !txt) continue;
       if (line && y < bottom) {
         const isHost = line.speaker === host;
-        txt.setWordWrapWidth(maxBubbleW - 2 * textPad);
+        txt.setWordWrapWidth(Math.max(20, maxBubbleW - 2 * textPad));
         txt.setText(this.clip(line.text, 240));
         const bw = Math.min(maxBubbleW, Math.ceil(txt.width) + 2 * textPad);
         const bh = Math.ceil(txt.height) + 2 * textPad;
@@ -1877,7 +1877,7 @@ export class UIScene extends Phaser.Scene {
       fontFamily: HUD_FONT_BODY,
       fontSize: PX_SMALL,
       color: ink300.hex,
-      wordWrap: { width: cardW - 2 * padX },
+      wordWrap: { width: Math.max(20, cardW - 2 * padX) },
     });
 
     // -- Action row: verb-colored verb + green ✓ -----------------------------
@@ -1904,7 +1904,7 @@ export class UIScene extends Phaser.Scene {
       fontSize: PX_SMALL,
       fontStyle: "italic",
       color: ink400.hex,
-      wordWrap: { width: cardW - 2 * padX },
+      wordWrap: { width: Math.max(20, cardW - 2 * padX) },
     });
 
     return {
