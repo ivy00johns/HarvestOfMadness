@@ -641,6 +641,20 @@ export interface MemoryEntry {
    * GOSSIP_MAX_HOPS. Absent on non-gossip memories.
    */
   hop?: number;
+  /**
+   * Wave 4c (C2) — the rumor's SUBJECT: the first-hand author the rumor traces
+   * to, captured at hop 1 and propagated UNCHANGED through every relay hop
+   * (gossip-only, like origin). The telephone game keeps WHO the story is about.
+   * Absent on non-gossip memories.
+   */
+  subject?: string;
+  /**
+   * Wave 4c (C2) — the CANONICAL (undistorted) claim gist, captured at hop 1 and
+   * propagated UNCHANGED. The rendered `text` applies intensifyClaim(claim, hop);
+   * relays read THIS canonical claim, never the distorted text, so distortion
+   * never compounds (bounded ≤ 2 steps by GOSSIP_MAX_HOPS). Absent on non-gossip.
+   */
+  claim?: string;
 }
 
 export interface RetrievalConfig {

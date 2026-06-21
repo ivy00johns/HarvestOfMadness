@@ -275,9 +275,26 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
       4 so it grounds recall + reflection without becoming a rumor; the
       conversation `writeMemory` wiring now pins the exact importance (a "Chatted
       with…" leak into gossip, found via TDD, is closed). **Remaining (follow-on
-      slices):** structured GossipBoard (subject/claim) + rumor distortion →
-      live-LLM summarization + call metering. _(Sentiment-driven affinity shipped
-      as C1 — see below.)_
+      slices):** live-LLM summarization + call metering (C3) → a GossipBoard HUD
+      panel (UI surface for the structured rumors now on the bus). _(Sentiment-
+      driven affinity shipped as C1, structured gossip + rumor distortion as C2 —
+      see below.)_
+- [x] **Structured gossip + rumor distortion** (C2): relayed gossip now carries a
+      structured `{subject, claim}` and INTENSIFIES as it travels — Smallville's
+      telephone, where the rumor grows wilder the further it spreads. ✓ `3bcacf8` —
+      new pure `src/agents/rumor.ts` (`intensifyClaim` + a hop-2/hop-3 escalation
+      ladder); the gossip memory carries the **canonical** undistorted claim in
+      meta and propagates it unchanged (like `origin`), while the displayed text is
+      rendered `wrapper + intensifyClaim(claim, hop)`. Relays read `meta.claim`
+      (canonical), never the prior distorted text, so distortion **cannot compound**
+      and stays bounded by `GOSSIP_MAX_HOPS=3`. **Hop 1 is byte-identical** (faithful
+      first-hand share) — distortion is relay-only (hop ≥ 2) — so ZERO existing
+      gossip/event-diffusion assertions changed. Belief-framing flavor (user pick:
+      Intensify): "word is, … — and folks are talking" → "the whole town swears … —
+      it's all anyone can talk about". `{subject, claim}` also ride the `gossip` bus
+      payload for a future GossipBoard HUD panel (deferred — data layer only this
+      slice). 1279→1292, deterministic; mutation-teeth (no-compounding + intensifier)
+      + 4 adversarial critics (all ship).
 - [x] **Sentiment-driven affinity** (C1): a conversation's WARMTH now moves the
       relationship instead of a flat +2/talk. A neutral or cold chat still yields
       exactly +2 (unchanged); a genuinely warm chat earns a deterministic positive

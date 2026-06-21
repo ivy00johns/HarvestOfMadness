@@ -41,6 +41,7 @@ import { chebyshev } from "./Observation";
 import { getEventBus } from "./events";
 import { InMemoryMemoryStore } from "./memory/MemoryStore";
 import { rateImportance } from "./memory/importance";
+import { intensifyClaim } from "./rumor";
 import { ReflectionEngineImpl } from "./Reflection";
 import { DiarySystem } from "./Diary";
 import { PlannerImpl } from "./Planner";
@@ -471,7 +472,7 @@ export class CognitionSystem implements ExecutorCognitionHooks {
     text: string,
     importance: number,
     sourceIds?: string[],
-    meta?: { origin?: string; hop?: number },
+    meta?: { origin?: string; hop?: number; subject?: string; claim?: string },
   ): Promise<MemoryEntry | null> {
     try {
       const clamped = Math.min(10, Math.max(1, Math.round(importance)));
@@ -486,6 +487,8 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         // ...e so these flow through unchanged when present.
         ...(meta?.origin !== undefined ? { origin: meta.origin } : {}),
         ...(meta?.hop !== undefined ? { hop: meta.hop } : {}),
+        ...(meta?.subject !== undefined ? { subject: meta.subject } : {}),
+        ...(meta?.claim !== undefined ? { claim: meta.claim } : {}),
       });
 
       const agent = this.agents.get(agentName);
@@ -920,6 +923,10 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         origin: string;
         outHop: number;
         outImportance: number;
+        // Wave 4c (C2) — structured rumor fields, propagated UNCHANGED across
+        // hops. subject = the first-hand author; claim = the CANONICAL gist.
+        subject: string;
+        claim: string;
       };
       const candidates: GossipCandidate[] = [];
       for (const m of speakerMems) {
@@ -935,6 +942,10 @@ export class CognitionSystem implements ExecutorCognitionHooks {
             origin: m.id,
             outHop: 1,
             outImportance: GOSSIP_BASE_IMPORTANCE,
+            // First-hand: the SUBJECT is this speaker (the author), the CANONICAL
+            // claim is the gist of their own observation. Captured once here.
+            subject: speaker.name,
+            claim: gossipCore(m.text),
           });
         } else {
           // Relay: only when the held memory is below the hop cap AND its
@@ -948,6 +959,18 @@ export class CognitionSystem implements ExecutorCognitionHooks {
             origin: m.origin,
             outHop: m.hop + 1,
             outImportance: decayed,
+            // Relay: read the structured fields FROM META (propagated unchanged),
+            // NOT by parsing the distorted text — so distortion cannot compound.
+            // The `??` fallbacks are unreachable for any rumor THIS code writes
+            // (every relay write below sets subject + claim); they fire only for
+            // legacy pre-C2 rumor memories that predate these fields. Such legacy
+            // memories predate distortion entirely, so their text is undistorted —
+            // gossipCore yields a clean canonical claim (no compounding). The
+            // legacy subject is best-effort (gossipTeller is the prior teller, the
+            // origin author only at hop 1); subject is inert metadata with no
+            // downstream consumer, so the approximation is harmless.
+            subject: m.subject ?? (gossipTeller(m.text) ?? speaker.name),
+            claim: m.claim ?? gossipCore(m.text),
           });
         }
       }
@@ -971,9 +994,13 @@ export class CognitionSystem implements ExecutorCognitionHooks {
         this.markOrigin(speaker.name, best.origin);
         this.markOrigin(listener.name, best.origin);
 
-        // gossipCore strips the wrapper so the relayed gist does NOT grow hop
-        // over hop; truncate to the legacy 100-char bound.
-        const gist = truncateText(gossipCore(best.source.text), 100);
+        // The CANONICAL claim is carried in meta and propagated unchanged; the
+        // DISPLAYED gist is intensifyClaim(claim, outHop) — at hop 1 this is the
+        // claim byte-identical (faithful), at hop ≥ 2 it is amplified. Truncate
+        // the canonical claim to the legacy 100-char bound BEFORE intensifying so
+        // the stored claim and the rendered gist share the same bounded base.
+        const canonicalClaim = truncateText(best.claim, 100);
+        const gist = intensifyClaim(canonicalClaim, best.outHop);
         const text =
           best.outHop === 1
             ? `${speaker.name} mentioned: ${gist}` // BYTE-IDENTICAL legacy
@@ -987,7 +1014,12 @@ export class CognitionSystem implements ExecutorCognitionHooks {
           text,
           best.outImportance,
           [best.source.id],
-          { origin: best.origin, hop: best.outHop },
+          {
+            origin: best.origin,
+            hop: best.outHop,
+            subject: best.subject,
+            claim: canonicalClaim,
+          },
         ).catch(() => {});
 
         const t = this.now();
@@ -997,7 +1029,12 @@ export class CognitionSystem implements ExecutorCognitionHooks {
           kind: "gossip",
           agentName: speaker.name,
           text: `${speaker.name} told ${listener.name} the news`,
-          payload: { origin: best.origin, hop: best.outHop },
+          payload: {
+            origin: best.origin,
+            hop: best.outHop,
+            subject: best.subject,
+            claim: canonicalClaim,
+          },
         });
       }
     } catch {
