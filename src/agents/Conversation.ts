@@ -36,6 +36,7 @@ import type {
 import { getRenderApi } from "../world/render";
 import { buildReplyPrompt } from "../llm/prompts";
 import { chebyshev } from "./Observation";
+import { warmthBonus } from "./sentiment";
 import type { Agent } from "./Agent";
 
 // Total utterances INCLUDING A's opener (turn 0). ≤3 generated replies; ≤2/side.
@@ -373,6 +374,14 @@ export interface ConversationOpts {
    * throw: the call-site wraps it and degrades to the generic reply.
    */
   recall?: (agentName: string, query: string) => Promise<MemoryEntry[]>;
+  /**
+   * Phase C · Slice C1 — apply a conversation-warmth affinity bonus (a→b). A
+   * constructor dep, like affinityText/writeMemory (the frozen handleReply
+   * signature is UNCHANGED). When ABSENT (frozen tests that omit it), warmth is
+   * simply not applied — strictly additive, byte-identical to today. Never
+   * trusted to throw: the _commit call-site wraps it.
+   */
+  applyWarmth?: (agentName: string, otherName: string, bonus: number) => void;
 }
 
 export class ConversationSystem {
@@ -383,6 +392,7 @@ export class ConversationSystem {
   private readonly affinityText: NonNullable<ConversationOpts["affinityText"]>;
   private readonly writeMemory: ConversationOpts["writeMemory"];
   private readonly recall: ConversationOpts["recall"];
+  private readonly applyWarmth: ConversationOpts["applyWarmth"];
 
   constructor(opts: ConversationOpts) {
     this.bus = opts.bus;
@@ -392,6 +402,7 @@ export class ConversationSystem {
     this.affinityText = opts.affinityText ?? (() => "");
     this.writeMemory = opts.writeMemory;
     this.recall = opts.recall;
+    this.applyWarmth = opts.applyWarmth;
   }
 
   /**
@@ -586,6 +597,19 @@ export class ConversationSystem {
         if (sumB) this.writeMemory(bName, sumB, SUMMARY_IMPORTANCE);
       } catch {/* defensive */}
     }
+
+    // 1c. Warmth bonus (Phase C · Slice C1): score the WHOLE transcript's warmth
+    //     with the static valence lexicon and apply a positive-only affinity
+    //     bonus to BOTH directions — only when > 0, so no warm words ⇒ no second
+    //     mutation ⇒ byte-identical to today. Symmetric (mirrors the +2). Wrapped
+    //     defensively: warmth must NEVER break the commit.
+    try {
+      const bonus = warmthBonus(turns);
+      if (bonus > 0) {
+        this.applyWarmth?.(aName, bName, bonus);
+        this.applyWarmth?.(bName, aName, bonus);
+      }
+    } catch {/* warmth must never break the commit */}
 
     // 2. Delayed bubbles: show every turn ≥ 1 sequentially, each in try/catch.
     //    First reply at REPLY_BUBBLE_DELAY_MS; each subsequent +TURN_GAP_MS.
