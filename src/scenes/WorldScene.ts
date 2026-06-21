@@ -56,12 +56,14 @@ import { getTimeSystem, getWorld } from "../world/instance";
 import {
   BENCH_POS,
   BUILDINGS,
+  HOMESTEADS,
   NOTICE_BOARD_POS,
   WELL_POS,
   WORLD_OBJECTS,
 } from "../world/map";
 import { activityEmoji } from "../obs/activityEmoji";
 import { buildingStyle } from "../obs/buildingStyle";
+import { hamletRoofTint } from "../obs/hamletStyle";
 import {
   FURNITURE_FRAMES,
   INTERIOR_FLOOR_FRAME,
@@ -191,6 +193,14 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
 
   /** assets-mode per-tile objects, keyed "x,y" */
   private readonly overlays = new Map<string, Phaser.GameObjects.Image>();
+  /**
+   * Per-tile hamlet tint for house footprints, keyed "x,y". Built ONCE in
+   * create() from HOMESTEADS (deterministic spec order) before any tile draws,
+   * so the cutaway wall-ring AND floor cases can tint each house by its
+   * neighbourhood (the floor is the large area that makes it read at a glance).
+   * Civic tiles aren't in HOMESTEADS → no key → stay neutral.
+   */
+  private readonly houseTileTint = new Map<string, number>();
   private readonly cropSprites = new Map<
     string,
     Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle
@@ -258,6 +268,8 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       : null;
 
     this.setupCamera();
+
+    this.buildHouseTileTints();
 
     if (this.useAssets) {
       this.buildBaseLayer();
@@ -701,6 +713,26 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
     return frames[(x * 7 + y * 13) % frames.length];
   }
 
+  /**
+   * Precompute the per-tile hamlet tint for every house footprint cell.
+   * Deterministic: iterates HOMESTEADS in spec order, derives each footprint
+   * center, resolves its hamlet tint, and stamps every footprint tile key. Pure
+   * (no RNG/clock); runs before tiles draw so the wall + floor cases look it up.
+   */
+  private buildHouseTileTints(): void {
+    this.houseTileTint.clear();
+    for (const h of HOMESTEADS) {
+      const cx = h.house.x + (h.size.w - 1) / 2;
+      const cy = h.house.y + (h.size.h - 1) / 2;
+      const tint = hamletRoofTint(cx, cy);
+      for (let y = h.house.y; y < h.house.y + h.size.h; y++) {
+        for (let x = h.house.x; x < h.house.x + h.size.w; x++) {
+          this.houseTileTint.set(`${x},${y}`, tint);
+        }
+      }
+    }
+  }
+
   private drawTileAssets(x: number, y: number): void {
     const world = getWorld();
     const tile = world.getTile(x, y);
@@ -762,19 +794,23 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
       }
       case "floor":
       case "bedTile":
-      case "shopTile":
+      case "shopTile": {
         // Walkable indoor floor (room interior, door-gap, bed/shop overlay
         // cells): a warm, seamless wood-plank tile (cozy cottage), NOT the
         // interior.png checkerboard stone. The tile layer owns the floor;
         // furniture + sign are added by paintInterior at prop depth, agents
         // y-sort above. Falls back to the legacy stone frame only if the
         // dedicated wood-floor sheet failed to load (degraded mode).
-        if (this.textures.exists(INTERIOR_FLOOR_TEXTURE)) {
-          place(INTERIOR_FLOOR_TEXTURE, INTERIOR_FLOOR_FRAME, DEPTH_OVERLAY);
-        } else {
-          place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
-        }
+        const floor = this.textures.exists(INTERIOR_FLOOR_TEXTURE)
+          ? place(INTERIOR_FLOOR_TEXTURE, INTERIOR_FLOOR_FRAME, DEPTH_OVERLAY)
+          : place("interior", INTERIOR_FRAMES.FLOOR, DEPTH_OVERLAY);
+        // Per-hamlet color identity also washes the house FLOOR (the large
+        // interior area) so a neighbourhood reads at a glance, not just its
+        // wall outline. Civic floors aren't in HOMESTEADS → no key → no tint.
+        const floorTint = this.houseTileTint.get(key);
+        if (floorTint !== undefined) floor.setTint(floorTint);
         break;
+      }
       case "building":
         break; // retained-but-unused TileType: no tile stamps it (dead-but-valid)
       case "wall": {
@@ -789,11 +825,15 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
           // as dark "gold blocks" when ringed around a room). Falls back to the
           // legacy interior wall frame only if the wood-wall sheet failed to
           // load (degraded mode).
-          if (this.textures.exists(INTERIOR_WALL_TEXTURE)) {
-            place(INTERIOR_WALL_TEXTURE, INTERIOR_WALL_FRAME, DEPTH_FACADE);
-          } else {
-            place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
-          }
+          const wall = this.textures.exists(INTERIOR_WALL_TEXTURE)
+            ? place(INTERIOR_WALL_TEXTURE, INTERIOR_WALL_FRAME, DEPTH_FACADE)
+            : place("interior", INTERIOR_FRAMES.WALL[x % INTERIOR_FRAMES.WALL.length], DEPTH_FACADE);
+          // Per-hamlet color identity: a wash multiplied onto the timber wall
+          // ring for house footprints (civic walls aren't in HOMESTEADS → no
+          // key → no tint); the floor case washes the interior too. Tints the
+          // SAME image place() returned (no double-place).
+          const wallTint = this.houseTileTint.get(key);
+          if (wallTint !== undefined) wall.setTint(wallTint);
         }
         break;
       }
@@ -897,12 +937,19 @@ export class WorldScene extends Phaser.Scene implements RenderApi {
           : [HOUSE_FRAMES.DOOR_A_TOP, HOUSE_FRAMES.DOOR_A_BOT];
       const windowX = b.doorX === b.x0 ? b.x1 : b.x0;
       const style = buildingStyle(b.kind);
+      // Houses get their per-hamlet wash (derived from the footprint center) so
+      // the degraded closed-facade fallback matches the cutaway wall identity;
+      // civic kinds keep their kind tint from buildingStyle.
+      const facadeTint =
+        b.kind === "house"
+          ? hamletRoofTint(b.x0 + (b.x1 - b.x0) / 2, b.y0 + (b.y1 - b.y0) / 2)
+          : style.tint;
       this.paintFacade(b.x0, b.y0, b.x1, b.y1, {
         doorX: b.doorX,
         door,
         windowX,
         crateXs: isShop ? [b.x0, b.x1] : undefined,
-        tint: style.tint,
+        tint: facadeTint,
         sign: style.sign,
         signFrame,
       });
