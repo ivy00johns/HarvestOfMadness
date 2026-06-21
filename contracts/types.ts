@@ -750,6 +750,20 @@ export interface RelationshipStore {
     kind: "TALK_TO" | "GIVE_GIFT",
     eventText: string
   ): void;
+  /**
+   * Phase C · Slice C1 — apply a conversation-WARMTH bonus (a positive-only raw
+   * affinity delta) to an existing/new pair. Adjusts affinity only (clamped);
+   * does NOT bump talks/interactions/gift counters (the talk was already counted
+   * by the synchronous recordInteraction). Guards bonus<=0 so it can never lower
+   * affinity (warmth-only). Emits the same "relationship_updated" event shape
+   * { otherName, affinity, delta: bonus } so the feed + inspector update.
+   */
+  recordWarmth(
+    agentName: string,
+    otherName: string,
+    bonus: number,
+    eventText: string
+  ): void;
 }
 
 // ---------------------------------------------------------------------------

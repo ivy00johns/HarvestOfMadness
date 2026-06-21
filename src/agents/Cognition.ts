@@ -371,6 +371,11 @@ export class CognitionSystem implements ExecutorCognitionHooks {
       // no new memories this slice. The store retrieve never throws into us, and
       // the ConversationSystem wraps this regardless.
       recall: (name, query) => this.memory.retrieve(name, query, CONVERSATION_RECALL_K),
+      // Phase C · Slice C1 — apply a conversation-warmth affinity bonus on top of
+      // the synchronous TALK_TO +2 floor. recordWarmth adjusts affinity only
+      // (clamped, positive-only) without bumping talk/interaction/gift counters.
+      applyWarmth: (a, b, bonus) =>
+        this.relationships.recordWarmth(a, b, bonus, "a warm conversation"),
     });
   }
 

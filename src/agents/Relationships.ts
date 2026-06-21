@@ -142,6 +142,50 @@ export class RelationshipStoreImpl implements RelationshipStore {
     this.deps.onChange?.(agentName);
   }
 
+  /**
+   * Phase C · Slice C1 — apply a conversation-warmth bonus. Adjusts affinity
+   * only (clamped); does NOT bump talks/interactions/gift counters (the talk was
+   * already counted by the synchronous recordInteraction). Warmth-only: guards
+   * bonus<=0 so it can never LOWER affinity. Emits the same "relationship_updated"
+   * event shape { otherName, affinity, delta: bonus } so the feed + inspector
+   * update, then notifies onChange. Defense-in-depth even though the only caller
+   * passes a clamped positive bonus.
+   */
+  recordWarmth(
+    agentName: string,
+    otherName: string,
+    bonus: number,
+    eventText: string,
+  ): void {
+    if (agentName === otherName) return; // no self-relationships
+    if (!Number.isFinite(bonus) || bonus <= 0) return; // warmth-only: never lowers
+
+    // Warmth only ADJUSTS an already-counted talk: onTalk runs recordInteraction
+    // for both directions synchronously BEFORE this fire-and-forget path, so the
+    // row always exists here. If it somehow doesn't, there was no talk to warm —
+    // do nothing rather than synthesize a misleading "we talked 0 times" row.
+    const row = this.rows.get(this.key(agentName, otherName));
+    if (!row) return;
+
+    const today = this.deps.now().day;
+    row.affinity = clampAffinity(row.affinity + bonus);
+    row.updatedDay = today;
+    // Same-day this no-ops (lastSummaryDay already today after recordInteraction);
+    // a warmth tweak need not change the one-liner — match recordInteraction.
+    this.refreshSummaryLazily(row, eventText, today);
+
+    const t = this.deps.now();
+    this.deps.bus.emit({
+      day: t.day,
+      phase: t.phase,
+      kind: "relationship_updated",
+      agentName,
+      text: `${agentName} -> ${otherName}: affinity ${row.affinity} (+${bonus})`,
+      payload: { otherName, affinity: row.affinity, delta: bonus },
+    });
+    this.deps.onChange?.(agentName);
+  }
+
   /** At most one summary refresh per pair per game-day. */
   private refreshSummaryLazily(row: Row, eventText: string, today: number): void {
     if (row.lastSummaryDay === today) return;
