@@ -275,9 +275,23 @@ Status: `[x]` done · `[~]` partial · `[ ]` planned.
       4 so it grounds recall + reflection without becoming a rumor; the
       conversation `writeMemory` wiring now pins the exact importance (a "Chatted
       with…" leak into gossip, found via TDD, is closed). **Remaining (follow-on
-      slices):** sentiment-driven affinity (replaces the flat +2/talk — high risk,
-      touches the frozen affinity assertions) → structured GossipBoard
-      (subject/claim) + rumor distortion → live-LLM summarization + call metering.
+      slices):** structured GossipBoard (subject/claim) + rumor distortion →
+      live-LLM summarization + call metering. _(Sentiment-driven affinity shipped
+      as C1 — see below.)_
+- [x] **Sentiment-driven affinity** (C1): a conversation's WARMTH now moves the
+      relationship instead of a flat +2/talk. A neutral or cold chat still yields
+      exactly +2 (unchanged); a genuinely warm chat earns a deterministic positive
+      bonus on top (up to +8). ✓ `1c8f46b` — new pure `src/agents/sentiment.ts`
+      (`warmthBonus` + a curated positive-only `WARMTH_LEXICON`, scored over the
+      transcript at conversation completion); `Relationships.recordWarmth` applies
+      the bonus as a separate positive-only adjustment (never lowers, never bumps
+      talk/gift counters), wired through `Conversation._commit`. **Warmth-only** by
+      design choice (no negative lexicon); **zero extra LLM calls** (live-LLM
+      scoring stays deferred to C3). **Strictly additive** — the lexicon excludes
+      the neutral-filler words ("good"/"care") that appear in curt mock variants,
+      so no warm words ⇒ byte-identical to today and every frozen affinity
+      assertion holds untouched (zero test churn). 1259→1279, deterministic;
+      independent mutation-teeth (scorer + wiring) + 4 adversarial critics (all ship).
 - [x] **Per-hamlet visual identity** (C4): each of the five hamlets (NW/NE/SW/SE +
       central Greenhollow) gets a distinct color so neighbourhoods read at a glance.
       ✓ `38556ff` — new pure `src/obs/hamletStyle.ts` (`hamletOf` position classifier
